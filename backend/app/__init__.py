@@ -1,0 +1,2 @@
+"""ZPPZ FastAPI application package."""
+

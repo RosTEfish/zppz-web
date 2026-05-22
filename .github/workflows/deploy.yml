@@ -1,0 +1,154 @@
+name: Deploy to Linux server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/zppz' }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      SERVICE_NAME: ${{ vars.DEPLOY_SERVICE_NAME || 'zppz-web' }}
+      APP_PORT: ${{ vars.APP_PORT || '8000' }}
+      KEEP_RELEASES: ${{ vars.KEEP_RELEASES || '5' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate deploy configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is empty. Add it in Settings -> Secrets and variables -> Actions -> Repository secrets."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Normalize SSH target
+        env:
+          RAW_DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          RAW_DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+
+          trim_one_line() {
+            local value="$1"
+            value="${value//$'\r'/}"
+            value="${value//$'\n'/}"
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+            printf '%s' "$value"
+          }
+
+          deploy_host="$(trim_one_line "$RAW_DEPLOY_HOST")"
+          deploy_user="$(trim_one_line "$RAW_DEPLOY_USER")"
+          deploy_port="$(trim_one_line "$DEPLOY_PORT")"
+
+          if [[ "$deploy_host" =~ [[:space:]/@] ]]; then
+            echo "::error::DEPLOY_HOST must be a bare host or IP, for example 8.137.151.24. Do not include http://, user@, spaces, or extra lines."
+            exit 1
+          fi
+
+          if [[ "$deploy_user" =~ [[:space:]@/] ]]; then
+            echo "::error::DEPLOY_USER must be only the Linux username, for example deploy."
+            exit 1
+          fi
+
+          if [[ ! "$deploy_port" =~ ^[0-9]+$ ]]; then
+            echo "::error::DEPLOY_PORT must be a number, for example 22."
+            exit 1
+          fi
+
+          {
+            echo "DEPLOY_HOST=$deploy_host"
+            echo "DEPLOY_USER=$deploy_user"
+            echo "DEPLOY_PORT=$deploy_port"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare release archive
+        run: |
+          set -euo pipefail
+          release_name="zppz-web-${GITHUB_SHA::12}"
+          archive_path="${RUNNER_TEMP}/${release_name}.tar.gz"
+          printf '%s\n' "$GITHUB_SHA" > REVISION
+          echo "RELEASE_NAME=${release_name}" >> "$GITHUB_ENV"
+          echo "ARCHIVE_PATH=${archive_path}" >> "$GITHUB_ENV"
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.claude' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='frontend/node_modules' \
+            --exclude='node_modules' \
+            --exclude='uploads' \
+            --exclude='logs' \
+            --exclude='*.db' \
+            --exclude='*.sqlite' \
+            --exclude='*.sqlite3' \
+            -czf "${archive_path}" .
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -T 30 -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/tmp/ssh-keyscan.err || {
+            echo "::warning::ssh-keyscan failed. SSH will continue with StrictHostKeyChecking=accept-new."
+            sed 's/^/ssh-keyscan: /' /tmp/ssh-keyscan.err
+          }
+
+      - name: Upload release archive
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes \
+            -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH/.deploy/incoming'"
+          scp -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes \
+            -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" "$ARCHIVE_PATH" \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.deploy/incoming/${RELEASE_NAME}.tar.gz"
+
+      - name: Activate release
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes \
+            -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_NAME='$RELEASE_NAME' SERVICE_NAME='$SERVICE_NAME' APP_PORT='$APP_PORT' KEEP_RELEASES='$KEEP_RELEASES' bash -s" \
+            < scripts/deploy_remote.sh
