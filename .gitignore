@@ -39,7 +39,6 @@ dist/
 .claude/
 .vscode/
 .idea/
-DESIGN.md
 *.swp
 *.swo
 *~
