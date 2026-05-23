@@ -7,6 +7,8 @@ from app.core.config import get_settings
 
 
 router = APIRouter(prefix="/assets", tags=["assets"])
+DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
+BACKGROUND_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400"}
 
 
 def latest_file(folder: str, suffixes: set[str]) -> Path | None:
@@ -26,7 +28,7 @@ def download_rule():
     file = latest_file("rules", {".pdf"})
     if not file:
         raise HTTPException(status_code=404, detail="暂无规则文件")
-    return FileResponse(file, media_type="application/pdf", filename=file.name)
+    return FileResponse(file, media_type="application/pdf", filename=file.name, headers=DOWNLOAD_CACHE_HEADERS)
 
 
 @router.get("/banlist")
@@ -40,7 +42,7 @@ def download_banlist():
     file = latest_file("banlists", {".xlsx", ".xls", ".csv"})
     if not file:
         raise HTTPException(status_code=404, detail="暂无 banlist 文件")
-    return FileResponse(file, filename=file.name)
+    return FileResponse(file, filename=file.name, headers=DOWNLOAD_CACHE_HEADERS)
 
 
 @router.get("/backgrounds")
@@ -59,5 +61,4 @@ def background_file(file_name: str):
     file = get_settings().assets_dir / "backgrounds" / safe
     if not file.exists():
         raise HTTPException(status_code=404, detail="背景不存在")
-    return FileResponse(file)
-
+    return FileResponse(file, headers=BACKGROUND_CACHE_HEADERS)

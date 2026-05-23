@@ -1,10 +1,9 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import { HashRouter, Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import {
   AudioLines,
   BadgeCheck,
   BarChart3,
-  ClipboardList,
   Dice5,
   FileArchive,
   FileText,
@@ -50,7 +49,22 @@ function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
     };
   }, deps);
 
-  return { data, state, error, reload: () => loader().then(setData) };
+  async function reload() {
+    setState("loading");
+    setError("");
+    try {
+      const next = await loader();
+      setData(next);
+      setState("ready");
+      return next;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加载失败");
+      setState("error");
+      throw err;
+    }
+  }
+
+  return { data, state, error, reload };
 }
 
 function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
@@ -375,24 +389,26 @@ function GuessGamePage() {
   const { isLoggedIn } = useAuth();
 
   async function openChart(chart: GuessChartRead) {
-    const detail = await api.guessChart(chart.id);
+    if (active?.id === chart.id) return;
+    const [detail, nextComments] = await Promise.all([api.guessChart(chart.id), api.comments(chart.id)]);
     setActive(detail);
-    setComments(await api.comments(chart.id));
+    setComments(nextComments);
   }
 
   async function vote(chart: GuessChartRead, voteType: "love" | "funny") {
     if (chart.my_votes.includes(voteType)) await api.unvote(chart.id, voteType);
     else await api.vote(chart.id, voteType);
-    await charts.reload();
-    if (active?.id === chart.id) setActive(await api.guessChart(chart.id));
+    const activeReload = active?.id === chart.id ? api.guessChart(chart.id) : Promise.resolve(null);
+    const [, nextActive] = await Promise.all([charts.reload(), activeReload]);
+    if (nextActive) setActive(nextActive);
   }
 
   async function sendComment(event: FormEvent) {
     event.preventDefault();
     if (!active || !comment.trim()) return;
-    await api.createComment(active.id, comment.trim());
+    const created = await api.createComment(active.id, comment.trim());
     setComment("");
-    setComments(await api.comments(active.id));
+    setComments((items) => [created, ...items]);
   }
 
   return (

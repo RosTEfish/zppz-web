@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.security import get_current_user, get_optional_user, require_role, user_payload
 from app.db.session import get_db
 from app.models import GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, ImportIssue, User
-from app.modules.common import serialize_chart
+from app.modules.common import serialize_chart, serialize_charts
 from app.modules.events.service import get_current_event
 from app.modules.guess_game.service import list_comments, put_vote, remove_vote
 from app.schemas import AuthorGuessRequest, CommentCreate, GuessChartCreate, GuessChartRead, GuessCommentRead, VoteRequest
@@ -19,7 +19,7 @@ admin_router = APIRouter(prefix="/admin/guess-game", tags=["admin-guess-game"])
 def charts(user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
     rows = db.scalars(select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc())).all()
-    return [serialize_chart(db, row, user.id if user else None) for row in rows]
+    return serialize_charts(db, rows, user.id if user else None)
 
 
 @router.get("/charts/{chart_id}", response_model=GuessChartRead)
@@ -90,7 +90,7 @@ def delete_author_guess(chart_id: int, user: User = Depends(get_current_user), d
 def admin_charts(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
     rows = db.scalars(select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc())).all()
-    return [serialize_chart(db, row) for row in rows]
+    return serialize_charts(db, rows)
 
 
 @admin_router.post("/charts", response_model=GuessChartRead)

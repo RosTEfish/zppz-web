@@ -1,13 +1,13 @@
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models import Event, EventSetting
 from app.schemas import EventUpdate
 
 
 def get_current_event(db: Session) -> Event:
-    event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+    event = db.scalar(select(Event).options(joinedload(Event.settings)).where(Event.is_current.is_(True)))
     if not event:
         event = Event(name="这谱谱这正赛", slug="zppz-current", is_current=True)
         event.settings = EventSetting()

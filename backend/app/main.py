@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -28,6 +29,8 @@ from app.modules.users.router import router as users_router
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="2.0.0", openapi_url=f"{settings.api_prefix}/openapi.json")
 
+app.add_middleware(GZipMiddleware, minimum_size=512)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -35,6 +38,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code < 400:
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        return response
 
 
 @app.on_event("startup")
@@ -80,7 +91,7 @@ frontend_dist = repo_root / "frontend" / "dist"
 frontend_assets = frontend_dist / "assets"
 
 if frontend_assets.exists():
-    app.mount("/assets", StaticFiles(directory=frontend_assets), name="frontend-assets")
+    app.mount("/assets", CachedStaticFiles(directory=frontend_assets), name="frontend-assets")
 
 
 @app.get("/")

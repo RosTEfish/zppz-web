@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -29,12 +31,7 @@ def serialize_submission(item: Submission) -> dict:
     }
 
 
-def serialize_chart(db: Session, chart: GuessChart, current_user_id: int | None = None) -> dict:
-    love_votes = db.scalar(select(func.count()).select_from(GuessVote).where(GuessVote.chart_id == chart.id, GuessVote.vote_type == "love")) or 0
-    funny_votes = db.scalar(select(func.count()).select_from(GuessVote).where(GuessVote.chart_id == chart.id, GuessVote.vote_type == "funny")) or 0
-    my_votes: list[str] = []
-    if current_user_id:
-        my_votes = list(db.scalars(select(GuessVote.vote_type).where(GuessVote.chart_id == chart.id, GuessVote.user_id == current_user_id)).all())
+def _chart_payload(chart: GuessChart, love_votes: int = 0, funny_votes: int = 0, my_votes: list[str] | None = None) -> dict:
     return {
         "id": chart.id,
         "title": chart.title,
@@ -52,6 +49,43 @@ def serialize_chart(db: Session, chart: GuessChart, current_user_id: int | None 
         "created_at": chart.created_at,
         "love_votes": love_votes,
         "funny_votes": funny_votes,
-        "my_votes": my_votes,
+        "my_votes": my_votes or [],
     }
 
+
+def serialize_chart(db: Session, chart: GuessChart, current_user_id: int | None = None) -> dict:
+    return serialize_charts(db, [chart], current_user_id)[0]
+
+
+def serialize_charts(db: Session, charts: Sequence[GuessChart], current_user_id: int | None = None) -> list[dict]:
+    if not charts:
+        return []
+
+    chart_ids = [chart.id for chart in charts]
+    vote_counts: dict[int, dict[str, int]] = {chart_id: {"love": 0, "funny": 0} for chart_id in chart_ids}
+    for chart_id, vote_type, count in db.execute(
+        select(GuessVote.chart_id, GuessVote.vote_type, func.count())
+        .where(GuessVote.chart_id.in_(chart_ids))
+        .group_by(GuessVote.chart_id, GuessVote.vote_type)
+    ):
+        vote_counts.setdefault(chart_id, {})[vote_type] = int(count)
+
+    my_votes_by_chart: dict[int, list[str]] = {chart_id: [] for chart_id in chart_ids}
+    if current_user_id:
+        for chart_id, vote_type in db.execute(
+            select(GuessVote.chart_id, GuessVote.vote_type).where(
+                GuessVote.chart_id.in_(chart_ids),
+                GuessVote.user_id == current_user_id,
+            )
+        ):
+            my_votes_by_chart.setdefault(chart_id, []).append(vote_type)
+
+    return [
+        _chart_payload(
+            chart,
+            love_votes=vote_counts.get(chart.id, {}).get("love", 0),
+            funny_votes=vote_counts.get(chart.id, {}).get("funny", 0),
+            my_votes=my_votes_by_chart.get(chart.id, []),
+        )
+        for chart in charts
+    ]

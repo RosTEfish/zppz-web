@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import ensure_roles, hash_password, require_role, user_payload
 from app.db.session import get_db
@@ -13,7 +13,8 @@ router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 @router.get("", response_model=list[UserRead])
 def list_users(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> list[dict]:
-    return [user_payload(user) for user in db.scalars(select(User).order_by(User.created_at.desc())).all()]
+    users = db.scalars(select(User).options(selectinload(User.roles)).order_by(User.created_at.desc())).all()
+    return [user_payload(user) for user in users]
 
 
 @router.put("/{user_id}", response_model=UserRead)
@@ -39,4 +40,3 @@ def reset_password(payload: ResetPasswordRequest, _: User = Depends(require_role
     user.password_hash = hash_password(payload.new_password)
     db.commit()
     return {"message": "密码已重置"}
-

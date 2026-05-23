@@ -84,8 +84,9 @@ export interface GuessCommentRead {
 }
 
 const API_PREFIX = "/api/v1";
+const pendingGetRequests = new Map<string, Promise<unknown>>();
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   const hasBody = options.body !== undefined && !(options.body instanceof FormData);
   if (hasBody && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
@@ -101,6 +102,20 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     throw new Error(message);
   }
   return payload as T;
+}
+
+export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  if (method !== "GET" || options.signal) {
+    return performRequest<T>(path, options);
+  }
+
+  const pending = pendingGetRequests.get(path);
+  if (pending) return pending as Promise<T>;
+
+  const task = performRequest<T>(path, options).finally(() => pendingGetRequests.delete(path));
+  pendingGetRequests.set(path, task);
+  return task;
 }
 
 export const api = {
@@ -153,4 +168,3 @@ export function formatTime(value?: string | null): string {
   if (!value) return "未设置";
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
-
