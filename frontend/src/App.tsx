@@ -1,10 +1,9 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
-import { HashRouter, Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import {
   AudioLines,
   BadgeCheck,
   BarChart3,
-  ClipboardList,
   Dice5,
   FileArchive,
   FileText,
@@ -91,16 +90,16 @@ function Shell() {
         </Link>
         <nav>
           {nav.map(([label, to, Icon]) => (
-            <Link key={to} to={to} className="nav-link">
+            <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end={to === "/"}>
               <Icon size={18} />
               {label}
-            </Link>
+            </NavLink>
           ))}
           {(isAdmin || isPoolEditor) && (
-            <Link to="/admin" className="nav-link nav-admin">
+            <NavLink to="/admin" className={({ isActive }) => (isActive ? "nav-link nav-admin active" : "nav-link nav-admin")}>
               <PanelLeft size={18} />
               管理工作台
-            </Link>
+            </NavLink>
           )}
         </nav>
       </aside>
@@ -169,16 +168,17 @@ function HomePage() {
       <div className="hero-panel">
         <div>
           <p className="eyebrow">赛事进行中</p>
+          <h2>{event?.name || "这谱谱这"}</h2>
           <div className="hero-actions">
-            <Link to={user ? "/songs" : "/auth"} className="primary-action">开始处理任务</Link>
+            <Link to={user ? "/songs" : "/auth"} className="primary-action">曲池入口</Link>
             <Link to="/guess" className="secondary-action">进入猜谱会场</Link>
           </div>
         </div>
         <div className="hero-radar">
-          <span>曲池</span>
-          <span>抽签</span>
-          <span>投稿</span>
-          <span>猜谱</span>
+          <span><Music2 size={20} />曲池</span>
+          <span><Dice5 size={20} />抽签</span>
+          <span><UploadCloud size={20} />投稿</span>
+          <span><Sparkles size={20} />猜谱</span>
         </div>
       </div>
       {config?.announcement_text && <Notice>{config.announcement_text}</Notice>}
@@ -189,21 +189,21 @@ function HomePage() {
         <StatCard icon={Sparkles} label="乐子票额度" value={event?.settings.funny_vote_limit ?? "-"} />
       </div>
       <div className="section-grid">
-        <WorkflowCard icon={Music2} title="提交曲池" text="按身份限制提交候选曲目，后台可以导入导出和修正。" to="/songs" />
-        <WorkflowCard icon={Dice5} title="查看抽签" text="抽签后参赛者只看到自己的任务，后台保留全量结果。" to="/draw" />
-        <WorkflowCard icon={UploadCloud} title="上传投稿" text="音频、压缩包和 J 位投稿统一走持久化文件存储。" to="/submissions" />
-        <WorkflowCard icon={Sparkles} title="猜谱互动" text="支持真爱票、乐子票、评论和作者猜测。" to="/guess" />
+        <WorkflowCard icon={Music2} title="提交曲池" meta="Song Pool" to="/songs" />
+        <WorkflowCard icon={Dice5} title="查看抽签" meta="Draw" to="/draw" />
+        <WorkflowCard icon={UploadCloud} title="上传投稿" meta="Submission" to="/submissions" />
+        <WorkflowCard icon={Sparkles} title="猜谱会场" meta="Guess Game" to="/guess" />
       </div>
     </section>
   );
 }
 
-function WorkflowCard({ icon: Icon, title, text, to }: { icon: React.ElementType; title: string; text: string; to: string }) {
+function WorkflowCard({ icon: Icon, title, meta, to }: { icon: React.ElementType; title: string; meta: string; to: string }) {
   return (
     <Link to={to} className="workflow-card">
-      <Icon size={22} />
+      <span className="workflow-icon"><Icon size={22} /></span>
       <strong>{title}</strong>
-      <span>{text}</span>
+      <span>{meta}</span>
     </Link>
   );
 }
@@ -267,14 +267,14 @@ function AssetsPage() {
       </header>
       <div className="section-grid two">
         <a className="workflow-card" href="/api/v1/assets/rule/download" target="_blank" rel="noreferrer">
-          <FileText size={24} />
+          <span className="workflow-icon"><FileText size={24} /></span>
           <strong>规则 PDF</strong>
-          <span>打开当前赛事规则文件。</span>
+          <span>Rulebook</span>
         </a>
         <a className="workflow-card" href="/api/v1/assets/banlist/download" target="_blank" rel="noreferrer">
-          <FileArchive size={24} />
+          <span className="workflow-icon"><FileArchive size={24} /></span>
           <strong>Ban 曲列表</strong>
-          <span>下载当前赛事 banlist 表格。</span>
+          <span>Banlist</span>
         </a>
       </div>
     </section>
@@ -351,7 +351,7 @@ function SubmissionPage() {
   return (
     <section className="page-stack">
       <header className="section-heading"><UploadCloud size={22} /><div><p className="eyebrow">Submission</p><h2>投稿上传</h2></div></header>
-      <label className="upload-drop"><UploadCloud size={30} /><strong>选择音频或压缩包</strong><span>支持后端配置的文件类型和大小限制</span><input type="file" onChange={(e) => void upload(e.target.files?.[0])} /></label>
+      <label className="upload-drop"><UploadCloud size={30} /><strong>选择音频或压缩包</strong><span>Audio / Archive</span><input type="file" onChange={(e) => void upload(e.target.files?.[0])} /></label>
       {message && <Notice tone="success">{message}</Notice>}
       <FileTable files={files.data || []} />
     </section>
