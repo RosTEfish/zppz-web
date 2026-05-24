@@ -26,6 +26,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     linear-gradient(90deg, rgba(21, 23, 19, 0.035) 1px, transparent 1px),
     linear-gradient(180deg, rgba(21, 23, 19, 0.035) 1px, transparent 1px),
@@ -47,6 +48,36 @@ textarea {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(49, 93, 132, 0.5);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: fixed;
+  left: 16px;
+  top: 12px;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 900;
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 .app-shell {
@@ -69,6 +100,7 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   padding: 8px;
   margin-bottom: 28px;
 }
@@ -87,6 +119,9 @@ button {
 .brand strong,
 .brand small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand small {
@@ -111,6 +146,7 @@ button {
 }
 
 .nav-link:hover,
+.nav-link.active,
 .nav-admin {
   background: #283529;
   color: #fffdf7;
@@ -140,6 +176,7 @@ button {
 .section-heading h2 {
   margin: 0;
   line-height: 1.15;
+  text-wrap: balance;
 }
 
 .eyebrow {
@@ -177,6 +214,7 @@ button {
   background: var(--paper);
   color: var(--ink);
   font-weight: 800;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms ease;
 }
 
 .role-toggle-grid {
@@ -209,8 +247,30 @@ button {
   border-color: var(--green);
 }
 
+.primary-action:hover,
+.primary-action:focus-visible {
+  background: #1d4f3a;
+  border-color: #1d4f3a;
+}
+
 .secondary-action {
   background: #efe6d1;
+}
+
+.secondary-action:hover,
+.vote-button:hover,
+.button-row button:hover {
+  border-color: var(--green);
+  background: #fff9ec;
+}
+
+.primary-action:active,
+.secondary-action:active,
+.icon-button:active,
+.vote-button:active,
+.tabbar button:active,
+.button-row button:active {
+  transform: scale(0.96);
 }
 
 .icon-button {
@@ -319,6 +379,8 @@ button {
   gap: 10px;
   min-height: 150px;
   padding: 18px;
+  content-visibility: auto;
+  contain-intrinsic-size: 150px;
 }
 
 .workflow-card svg,
@@ -332,6 +394,7 @@ button {
 .notice {
   color: var(--muted);
   line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .section-heading {
@@ -394,6 +457,14 @@ button {
   color: var(--ink);
 }
 
+.form-panel input:focus-visible,
+.form-panel select:focus-visible,
+.form-panel textarea:focus-visible,
+.comment-form input:focus-visible {
+  border-color: var(--blue);
+  background: var(--paper);
+}
+
 .form-panel textarea {
   min-height: 82px;
   resize: vertical;
@@ -446,6 +517,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   min-width: 720px;
+  font-variant-numeric: tabular-nums;
 }
 
 th,
@@ -454,6 +526,7 @@ td {
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 th {
@@ -492,6 +565,8 @@ th {
   padding: 16px;
   text-align: left;
   color: var(--ink);
+  content-visibility: auto;
+  contain-intrinsic-size: 150px;
 }
 
 .chart-card span {
@@ -549,6 +624,7 @@ th {
   padding: 10px;
   border-radius: 8px;
   background: #f0eadc;
+  overflow-wrap: anywhere;
 }
 
 .fit {
@@ -601,5 +677,16 @@ th {
 
   .hero-panel h2 {
     font-size: 2.1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

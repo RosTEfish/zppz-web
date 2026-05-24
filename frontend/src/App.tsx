@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useState } from "react";
-import { HashRouter, Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AudioLines,
   BadgeCheck,
@@ -70,7 +70,7 @@ function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
 function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
   return (
     <div className="metric-card">
-      <Icon size={18} />
+      <Icon size={18} aria-hidden="true" focusable="false" />
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -78,7 +78,11 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
 }
 
 function Notice({ children, tone = "info" }: { children: React.ReactNode; tone?: "info" | "error" | "success" }) {
-  return <div className={`notice notice-${tone}`}>{children}</div>;
+  return (
+    <div className={`notice notice-${tone}`} role={tone === "error" ? "alert" : "status"} aria-live="polite">
+      {children}
+    </div>
+  );
 }
 
 function Shell() {
@@ -95,6 +99,7 @@ function Shell() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">跳到主要内容</a>
       <aside className="sidebar">
         <Link to="/" className="brand">
           <span className="brand-mark">谱</span>
@@ -105,16 +110,16 @@ function Shell() {
         </Link>
         <nav>
           {nav.map(([label, to, Icon]) => (
-            <Link key={to} to={to} className="nav-link">
-              <Icon size={18} />
+            <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end={to === "/"}>
+              <Icon size={18} aria-hidden="true" focusable="false" />
               {label}
-            </Link>
+            </NavLink>
           ))}
           {(isAdmin || isPoolEditor) && (
-            <Link to="/admin" className="nav-link nav-admin">
-              <PanelLeft size={18} />
+            <NavLink to="/admin" className={({ isActive }) => (isActive ? "nav-link nav-admin active" : "nav-link nav-admin")}>
+              <PanelLeft size={18} aria-hidden="true" focusable="false" />
               管理工作台
-            </Link>
+            </NavLink>
           )}
         </nav>
       </aside>
@@ -128,22 +133,22 @@ function Shell() {
             {isLoggedIn && user ? (
               <>
                 <span className="user-pill">
-                  <BadgeCheck size={16} />
+                  <BadgeCheck size={16} aria-hidden="true" focusable="false" />
                   {user.display_name || user.user_code}
                 </span>
-                <button className="icon-button" onClick={() => void logout()} title="退出登录">
-                  <LogOut size={18} />
+                <button className="icon-button" type="button" onClick={() => void logout()} title="退出登录" aria-label="退出登录">
+                  <LogOut size={18} aria-hidden="true" focusable="false" />
                 </button>
               </>
             ) : (
               <Link className="primary-action" to="/auth">
-                <LogIn size={17} />
+                <LogIn size={17} aria-hidden="true" focusable="false" />
                 登录 / 注册
               </Link>
             )}
           </div>
         </header>
-        <main className="content">
+        <main className="content" id="main-content">
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/auth" element={<AuthPage />} />
@@ -163,14 +168,14 @@ function Shell() {
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { isLoggedIn, loading } = useAuth();
-  if (loading) return <Notice>正在确认登录状态...</Notice>;
+  if (loading) return <Notice>正在确认登录状态…</Notice>;
   if (!isLoggedIn) return <Navigate to="/auth" replace />;
   return <>{children}</>;
 }
 
 function AdminOnly({ children }: { children: React.ReactNode }) {
   const { isAdmin, isPoolEditor, loading } = useAuth();
-  if (loading) return <Notice>正在确认权限...</Notice>;
+  if (loading) return <Notice>正在确认权限…</Notice>;
   if (!isAdmin && !isPoolEditor) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
@@ -215,7 +220,7 @@ function HomePage() {
 function WorkflowCard({ icon: Icon, title, text, to }: { icon: React.ElementType; title: string; text: string; to: string }) {
   return (
     <Link to={to} className="workflow-card">
-      <Icon size={22} />
+      <Icon size={22} aria-hidden="true" focusable="false" />
       <strong>{title}</strong>
       <span>{text}</span>
     </Link>
@@ -228,16 +233,20 @@ function AuthPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [form, setForm] = useState({ user_code: "", qq_id: "", password: "", identity: "audience" });
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setBusy(true);
     try {
       if (mode === "login") await login(form.user_code, form.password);
       else await register(form.user_code, form.qq_id, form.password, form.identity);
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -251,19 +260,19 @@ function AuthPage() {
           <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>登录</button>
           <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>注册</button>
         </div>
-        <label>参赛 ID<input value={form.user_code} onChange={(e) => setForm({ ...form, user_code: e.target.value })} required /></label>
-        {mode === "register" && <label>QQ 号<input value={form.qq_id} onChange={(e) => setForm({ ...form, qq_id: e.target.value })} required /></label>}
-        <label>密码<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} /></label>
+        <label>参赛 ID<input name="user_code" autoComplete="username" spellCheck={false} value={form.user_code} onChange={(e) => setForm({ ...form, user_code: e.target.value })} required /></label>
+        {mode === "register" && <label>QQ 号<input name="qq_id" autoComplete="off" inputMode="numeric" spellCheck={false} value={form.qq_id} onChange={(e) => setForm({ ...form, qq_id: e.target.value })} required /></label>}
+        <label>密码<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} /></label>
         {mode === "register" && (
           <label>身份
-            <select value={form.identity} onChange={(e) => setForm({ ...form, identity: e.target.value })}>
+            <select name="identity" autoComplete="off" value={form.identity} onChange={(e) => setForm({ ...form, identity: e.target.value })}>
               <option value="audience">观众</option>
               <option value="participant">参赛者</option>
             </select>
           </label>
         )}
         {error && <Notice tone="error">{error}</Notice>}
-        <button className="primary-action" type="submit">{mode === "login" ? "登录" : "创建账号"}</button>
+        <button className="primary-action" type="submit" disabled={busy}>{busy ? "处理中…" : mode === "login" ? "登录" : "创建账号"}</button>
       </form>
     </section>
   );
@@ -273,7 +282,7 @@ function AssetsPage() {
   return (
     <section className="page-stack">
       <header className="section-heading">
-        <FileText size={22} />
+        <FileText size={22} aria-hidden="true" focusable="false" />
         <div>
           <p className="eyebrow">赛事文件</p>
           <h2>规则与 banlist</h2>
@@ -281,12 +290,12 @@ function AssetsPage() {
       </header>
       <div className="section-grid two">
         <a className="workflow-card" href="/api/v1/assets/rule/download" target="_blank" rel="noreferrer">
-          <FileText size={24} />
+          <FileText size={24} aria-hidden="true" focusable="false" />
           <strong>规则 PDF</strong>
           <span>打开当前赛事规则文件。</span>
         </a>
         <a className="workflow-card" href="/api/v1/assets/banlist/download" target="_blank" rel="noreferrer">
-          <FileArchive size={24} />
+          <FileArchive size={24} aria-hidden="true" focusable="false" />
           <strong>Ban 曲列表</strong>
           <span>下载当前赛事 banlist 表格。</span>
         </a>
@@ -311,16 +320,16 @@ function SongPoolPage() {
 
   return (
     <section className="page-stack">
-      <header className="section-heading"><Music2 size={22} /><div><p className="eyebrow">Song Pool</p><h2>我的曲池提交</h2></div></header>
+      <header className="section-heading"><Music2 size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Song Pool</p><h2>我的曲池提交</h2></div></header>
       <form className="form-panel compact" onSubmit={submit}>
-        <label>曲名<input value={form.song_name} onChange={(e) => setForm({ ...form, song_name: e.target.value })} required /></label>
-        <label>曲师 / 艺术家<input value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} required /></label>
-        <label>分类<select value={form.song_type} onChange={(e) => setForm({ ...form, song_type: e.target.value })}><option value="A">A: Pop + 技术向</option><option value="B">B: 通常音游曲</option><option value="C">C: 小众宝藏</option></select></label>
-        <label>备注<textarea value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} /></label>
+        <label>曲名<input name="song_name" autoComplete="off" value={form.song_name} onChange={(e) => setForm({ ...form, song_name: e.target.value })} required /></label>
+        <label>曲师 / 艺术家<input name="artist" autoComplete="off" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} required /></label>
+        <label>分类<select name="song_type" autoComplete="off" value={form.song_type} onChange={(e) => setForm({ ...form, song_type: e.target.value })}><option value="A">A: Pop + 技术向</option><option value="B">B: 通常音游曲</option><option value="C">C: 小众宝藏</option></select></label>
+        <label>备注<textarea name="remark" autoComplete="off" value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} /></label>
         <button className="primary-action" type="submit">提交曲目</button>
         {message && <Notice tone="success">{message}</Notice>}
       </form>
-      <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中..." : "还没有提交曲目"} />
+      <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} />
     </section>
   );
 }
@@ -341,15 +350,15 @@ function DrawPage() {
   const rows = useAsync(() => api.myDraw(), []);
   return (
     <section className="page-stack">
-      <header className="section-heading"><Dice5 size={22} /><div><p className="eyebrow">Draw</p><h2>我的抽签结果</h2></div></header>
-      <AssignmentList rows={rows.data || []} emptyText={rows.state === "loading" ? "加载中..." : "暂未抽签"} />
+      <header className="section-heading"><Dice5 size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Draw</p><h2>我的抽签结果</h2></div></header>
+      <AssignmentList rows={rows.data || []} emptyText={rows.state === "loading" ? "加载中…" : "暂未抽签"} />
     </section>
   );
 }
 
 function AssignmentList({ rows, emptyText }: { rows: DrawAssignmentRead[]; emptyText: string }) {
   if (!rows.length) return <Notice>{emptyText}</Notice>;
-  return <div className="section-grid">{rows.map((row) => <div className="workflow-card" key={row.id}><Dice5 size={22} /><strong>{row.song.song_name}</strong><span>{row.song.artist} · {row.song.song_type}</span><small>分配给 {row.assigned_to.user_code}</small></div>)}</div>;
+  return <div className="section-grid">{rows.map((row) => <div className="workflow-card" key={row.id}><Dice5 size={22} aria-hidden="true" focusable="false" /><strong>{row.song.song_name}</strong><span>{row.song.artist} · {row.song.song_type}</span><small>分配给 {row.assigned_to.user_code}</small></div>)}</div>;
 }
 
 function SubmissionPage() {
@@ -364,8 +373,8 @@ function SubmissionPage() {
   }
   return (
     <section className="page-stack">
-      <header className="section-heading"><UploadCloud size={22} /><div><p className="eyebrow">Submission</p><h2>投稿上传</h2></div></header>
-      <label className="upload-drop"><UploadCloud size={30} /><strong>选择音频或压缩包</strong><span>支持后端配置的文件类型和大小限制</span><input type="file" onChange={(e) => void upload(e.target.files?.[0])} /></label>
+      <header className="section-heading"><UploadCloud size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Submission</p><h2>投稿上传</h2></div></header>
+      <label className="upload-drop"><UploadCloud size={30} aria-hidden="true" focusable="false" /><strong>选择音频或压缩包</strong><span>支持后端配置的文件类型和大小限制</span><input name="submission_file" type="file" onChange={(e) => void upload(e.target.files?.[0])} /></label>
       {message && <Notice tone="success">{message}</Notice>}
       <FileTable files={files.data || []} />
     </section>
@@ -414,14 +423,14 @@ function GuessGamePage() {
   return (
     <section className="guess-layout">
       <div className="page-stack">
-        <header className="section-heading"><Sparkles size={22} /><div><p className="eyebrow">Guess Game</p><h2>猜谱会场</h2></div></header>
+        <header className="section-heading"><Sparkles size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Guess Game</p><h2>猜谱会场</h2></div></header>
         <div className="chart-grid">
           {(charts.data || []).map((chart) => (
-            <button key={chart.id} className="chart-card" onClick={() => void openChart(chart)}>
+            <button key={chart.id} type="button" className="chart-card" onClick={() => void openChart(chart)}>
               <span>{chart.level}</span>
               <strong>{chart.title}</strong>
               <small>{chart.author} · {chart.lane}</small>
-              <div><Heart size={15} /> {chart.love_votes}<MessageCircle size={15} /> {chart.funny_votes}</div>
+              <div><Heart size={15} aria-hidden="true" focusable="false" /> {chart.love_votes}<MessageCircle size={15} aria-hidden="true" focusable="false" /> {chart.funny_votes}</div>
             </button>
           ))}
         </div>
@@ -434,12 +443,12 @@ function GuessGamePage() {
             <h3>{active.title}</h3>
             <p>{active.author} · {active.level} · 播放 {active.plays}</p>
             <div className="button-row">
-              <button onClick={() => void vote(active, "love")} disabled={!isLoggedIn} className={active.my_votes.includes("love") ? "active vote-button" : "vote-button"}><Heart size={16} /> 真爱 {active.love_votes}</button>
-              <button onClick={() => void vote(active, "funny")} disabled={!isLoggedIn} className={active.my_votes.includes("funny") ? "active vote-button" : "vote-button"}><Sparkles size={16} /> 乐子 {active.funny_votes}</button>
+              <button type="button" onClick={() => void vote(active, "love")} disabled={!isLoggedIn} className={active.my_votes.includes("love") ? "active vote-button" : "vote-button"}><Heart size={16} aria-hidden="true" focusable="false" /> 真爱 {active.love_votes}</button>
+              <button type="button" onClick={() => void vote(active, "funny")} disabled={!isLoggedIn} className={active.my_votes.includes("funny") ? "active vote-button" : "vote-button"}><Sparkles size={16} aria-hidden="true" focusable="false" /> 乐子 {active.funny_votes}</button>
             </div>
             <form onSubmit={sendComment} className="comment-form">
-              <input placeholder={isLoggedIn ? "写一句评论" : "登录后评论"} value={comment} onChange={(e) => setComment(e.target.value)} disabled={!isLoggedIn} />
-              <button disabled={!isLoggedIn}>发送</button>
+              <input name="comment" autoComplete="off" placeholder={isLoggedIn ? "写一句评论…" : "登录后评论"} value={comment} onChange={(e) => setComment(e.target.value)} disabled={!isLoggedIn} />
+              <button type="submit" disabled={!isLoggedIn}>发送</button>
             </form>
             <div className="comment-list">{comments.map((item) => <p key={item.id}><strong>{item.user.user_code}</strong>{item.content}</p>)}</div>
           </>
@@ -450,13 +459,18 @@ function GuessGamePage() {
 }
 
 function AdminWorkbench() {
-  const [tab, setTab] = useState("overview");
   const tabs = ["overview", "users", "songs", "draw", "submissions", "guess"] as const;
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab");
+  const tab = tabs.includes(tabParam as (typeof tabs)[number]) ? (tabParam as (typeof tabs)[number]) : "overview";
   const labels: Record<string, string> = { overview: "总览", users: "用户", songs: "曲池", draw: "抽签", submissions: "投稿", guess: "猜谱" };
+  function selectTab(next: (typeof tabs)[number]) {
+    setParams(next === "overview" ? {} : { tab: next });
+  }
   return (
     <section className="page-stack">
-      <header className="section-heading"><ShieldCheck size={22} /><div><p className="eyebrow">Admin Workbench</p><h2>赛事工作台</h2></div></header>
-      <div className="tabbar">{tabs.map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{labels[item]}</button>)}</div>
+      <header className="section-heading"><ShieldCheck size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Admin Workbench</p><h2>赛事工作台</h2></div></header>
+      <div className="tabbar" role="tablist">{tabs.map((item) => <button key={item} type="button" role="tab" aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>{labels[item]}</button>)}</div>
       {tab === "overview" && <AdminOverview />}
       {tab === "users" && <AdminUsers />}
       {tab === "songs" && <AdminSongs />}
@@ -504,7 +518,7 @@ function AdminUsers() {
               <td>{user.user_code}</td>
               <td>{user.qq_id}</td>
               <td>
-                <select value={user.identity} onChange={(event) => void saveUser(user, { identity: event.target.value })}>
+                <select name={`identity-${user.id}`} autoComplete="off" value={user.identity} onChange={(event) => void saveUser(user, { identity: event.target.value })}>
                   <option value="audience">观众</option>
                   <option value="participant">参赛者</option>
                 </select>
@@ -513,14 +527,14 @@ function AdminUsers() {
                 <div className="role-toggle-grid">
                   {Object.entries(roleLabels).map(([role, label]) => (
                     <label key={role} className="role-toggle">
-                      <input type="checkbox" checked={user.roles.includes(role)} onChange={() => void toggleRole(user, role)} />
+                      <input name={`role-${user.id}-${role}`} type="checkbox" checked={user.roles.includes(role)} onChange={() => void toggleRole(user, role)} />
                       <span>{label}</span>
                     </label>
                   ))}
                 </div>
               </td>
               <td>
-                <button onClick={() => void saveUser(user, { is_active: true })}>启用</button>
+                <button type="button" onClick={() => void saveUser(user, { is_active: true })}>启用</button>
               </td>
             </tr>
           ))}
@@ -541,7 +555,7 @@ function AdminDraw() {
     await api.runDraw();
     await rows.reload();
   }
-  return <div className="page-stack"><button className="primary-action fit" onClick={() => void run()}><Dice5 size={17} /> 重新抽签</button><AssignmentList rows={rows.data || []} emptyText="暂无抽签结果" /></div>;
+  return <div className="page-stack"><button className="primary-action fit" type="button" onClick={() => void run()}><Dice5 size={17} aria-hidden="true" focusable="false" /> 重新抽签</button><AssignmentList rows={rows.data || []} emptyText="暂无抽签结果" /></div>;
 }
 
 function AdminSubmissions() {
@@ -561,10 +575,10 @@ function AdminGuess() {
   return (
     <div className="page-stack">
       <form className="form-panel compact" onSubmit={submit}>
-        <label>标题<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
-        <label>作者<input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} required /></label>
-        <label>等级<input value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} required /></label>
-        <label>分组<input value={form.guess_group_key} onChange={(e) => setForm({ ...form, guess_group_key: e.target.value })} /></label>
+        <label>标题<input name="title" autoComplete="off" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
+        <label>作者<input name="author" autoComplete="off" value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} required /></label>
+        <label>等级<input name="level" autoComplete="off" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} required /></label>
+        <label>分组<input name="guess_group_key" autoComplete="off" value={form.guess_group_key} onChange={(e) => setForm({ ...form, guess_group_key: e.target.value })} /></label>
         <button className="primary-action" type="submit">新增谱面</button>
       </form>
       <div className="chart-grid">{(charts.data || []).map((chart) => <div className="chart-card static" key={chart.id}><span>{chart.level}</span><strong>{chart.title}</strong><small>{chart.author}</small></div>)}</div>
