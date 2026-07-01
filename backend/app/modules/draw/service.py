@@ -4,7 +4,7 @@ import time
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import DrawAssignment, Song, User
 from app.modules.events.service import get_current_event
@@ -144,8 +144,8 @@ def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssign
     stmt = (
         select(DrawAssignment)
         .options(
-            joinedload(DrawAssignment.assigned_to).joinedload(User.roles),
-            joinedload(DrawAssignment.song).joinedload(Song.submitter).joinedload(User.roles),
+            selectinload(DrawAssignment.assigned_to).selectinload(User.roles),
+            selectinload(DrawAssignment.song).selectinload(Song.submitter).selectinload(User.roles),
         )
         .where(DrawAssignment.event_id == event.id)
         .order_by(DrawAssignment.created_at.desc())

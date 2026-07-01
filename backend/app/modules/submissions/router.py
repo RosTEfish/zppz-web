@@ -4,7 +4,7 @@ import io
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_current_user, require_role
 from app.db.session import get_db
@@ -24,7 +24,7 @@ def my_submissions(user: User = Depends(get_current_user), db: Session = Depends
     event = get_current_event(db)
     rows = db.scalars(
         select(Submission)
-        .options(joinedload(Submission.user).joinedload(User.roles))
+        .options(selectinload(Submission.user).selectinload(User.roles))
         .where(Submission.event_id == event.id, Submission.user_id == user.id)
         .order_by(Submission.created_at.desc())
     ).all()
@@ -96,7 +96,7 @@ def admin_list_submissions(_: User = Depends(require_role("admin", "pool_editor"
     event = get_current_event(db)
     rows = db.scalars(
         select(Submission)
-        .options(joinedload(Submission.user).joinedload(User.roles))
+        .options(selectinload(Submission.user).selectinload(User.roles))
         .where(Submission.event_id == event.id)
         .order_by(Submission.created_at.desc())
     ).all()
@@ -126,4 +126,3 @@ def admin_download_zip(_: User = Depends(require_role("admin", "pool_editor")), 
                 zip_file.write(path, arcname=f"{row.user_id}-{row.file_name}")
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/zip", headers={"Content-Disposition": "attachment; filename=submissions.zip"})
-

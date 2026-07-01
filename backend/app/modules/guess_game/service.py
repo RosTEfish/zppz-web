@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, User
 from app.modules.events.service import get_current_event
@@ -39,7 +39,7 @@ def list_comments(db: Session, chart_id: int) -> list[GuessComment]:
     return list(
         db.scalars(
             select(GuessComment)
-            .options(joinedload(GuessComment.user).joinedload(User.roles))
+            .options(selectinload(GuessComment.user).selectinload(User.roles))
             .where(GuessComment.chart_id == chart_id)
             .order_by(GuessComment.created_at.desc())
         ).all()
@@ -53,4 +53,3 @@ def set_author_candidates(db: Session, rows: list[dict]) -> int:
         db.add(GuessAuthorCandidate(event_id=event.id, user_id=int(row["user_id"]), display_id=str(row.get("display_id") or "")))
     db.commit()
     return len(rows)
-

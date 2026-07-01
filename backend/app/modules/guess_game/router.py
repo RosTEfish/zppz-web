@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_current_user, get_optional_user, require_role, user_payload
 from app.db.session import get_db
@@ -146,7 +146,7 @@ def admin_author_candidates(_: User = Depends(require_role("admin", "pool_editor
     event = get_current_event(db)
     rows = db.scalars(
         select(GuessAuthorCandidate)
-        .options(joinedload(GuessAuthorCandidate.user).joinedload(User.roles))
+        .options(selectinload(GuessAuthorCandidate.user).selectinload(User.roles))
         .where(GuessAuthorCandidate.event_id == event.id)
     ).all()
     return [{"id": row.id, "display_id": row.display_id, "user": user_payload(row.user)} for row in rows]

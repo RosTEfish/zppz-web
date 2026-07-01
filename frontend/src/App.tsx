@@ -416,6 +416,7 @@ function SongPoolPage() {
         {error && <Notice tone="error">{error}</Notice>}
         {message && <Notice tone="success">{message}</Notice>}
       </form>
+      {songs.error && <Notice tone="error">{songs.error}</Notice>}
       <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} />
     </section>
   );
@@ -734,7 +735,7 @@ function AdminUsers() {
 
 function AdminSongs() {
   const songs = useAsync(() => api.adminSongs(), []);
-  return <SongTable songs={songs.data || []} emptyText="曲池为空" />;
+  return <div className="page-stack">{songs.error && <Notice tone="error">{songs.error}</Notice>}<SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "曲池为空"} /></div>;
 }
 
 function AdminDraw() {

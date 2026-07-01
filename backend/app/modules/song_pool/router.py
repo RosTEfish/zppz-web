@@ -4,7 +4,7 @@ import io
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.security import get_current_user, require_role
 from app.db.session import get_db
@@ -23,7 +23,7 @@ def my_songs(user: User = Depends(get_current_user), db: Session = Depends(get_d
     event = get_current_event(db)
     songs = db.scalars(
         select(Song)
-        .options(joinedload(Song.submitter).joinedload(User.roles))
+        .options(selectinload(Song.submitter).selectinload(User.roles))
         .where(Song.event_id == event.id, Song.submitted_by_id == user.id)
         .order_by(Song.created_at.desc())
     ).all()
@@ -58,7 +58,7 @@ def admin_list_songs(_: User = Depends(require_role("admin", "pool_editor")), db
     event = get_current_event(db)
     songs = db.scalars(
         select(Song)
-        .options(joinedload(Song.submitter).joinedload(User.roles))
+        .options(selectinload(Song.submitter).selectinload(User.roles))
         .where(Song.event_id == event.id)
         .order_by(Song.created_at.desc())
     ).all()
@@ -113,4 +113,3 @@ async def import_songs(file: UploadFile, _: User = Depends(require_role("admin",
         created += 1
     db.commit()
     return {"message": f"已导入 {created} 首曲目", "created": created}
-
