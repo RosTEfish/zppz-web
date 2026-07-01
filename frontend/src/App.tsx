@@ -64,7 +64,13 @@ function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
     }
   }
 
-  return { data, state, error, reload };
+  function replace(next: T) {
+    setData(next);
+    setState("ready");
+    setError("");
+  }
+
+  return { data, state, error, reload, replace };
 }
 
 function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
@@ -209,7 +215,7 @@ function HomePage() {
       </div>
       <div className="section-grid">
         <WorkflowCard icon={Music2} title="提交曲池" text="按身份限制提交候选曲目，后台可以导入导出和修正。" to="/songs" />
-        <WorkflowCard icon={Dice5} title="查看抽签" text="抽签后参赛者只看到自己的任务，后台保留全量结果。" to="/draw" />
+        <WorkflowCard icon={Dice5} title="自助抽曲" text="参赛选手自行抽取任务曲，不满意时可重新抽取。" to="/draw" />
         <WorkflowCard icon={UploadCloud} title="上传投稿" text="音频、压缩包和 J 位投稿统一走持久化文件存储。" to="/submissions" />
         <WorkflowCard icon={Sparkles} title="猜谱互动" text="支持真爱票、乐子票、评论和作者猜测。" to="/guess" />
       </div>
@@ -348,17 +354,54 @@ function SongTable({ songs, emptyText }: { songs: SongRead[]; emptyText: string 
 
 function DrawPage() {
   const rows = useAsync(() => api.myDraw(), []);
+  const { user } = useAuth();
+  const { event } = useConfig();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [drawError, setDrawError] = useState("");
+  const isParticipant = user?.identity === "participant";
+
+  async function drawMine() {
+    if (!isParticipant || busy) return;
+    setBusy(true);
+    setMessage("");
+    setDrawError("");
+    try {
+      const nextRows = await api.drawMine();
+      rows.replace(nextRows);
+      setMessage(nextRows.length ? "抽取完成，当前结果已更新。" : "抽取完成。");
+    } catch (err) {
+      setDrawError(err instanceof Error ? err.message : "抽取失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="page-stack">
       <header className="section-heading"><Dice5 size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Draw</p><h2>我的抽签结果</h2></div></header>
-      <AssignmentList rows={rows.data || []} emptyText={rows.state === "loading" ? "加载中…" : "暂未抽签"} />
+      <div className="draw-console">
+        <div>
+          <strong>{isParticipant ? `每次抽取 ${event?.settings.draw_songs_per_participant ?? "-"} 首` : "仅参赛选手可抽取"}</strong>
+          <span>{isParticipant ? "重新抽取会替换当前结果。" : "当前账号身份不是参赛选手。"}</span>
+        </div>
+        {isParticipant && (
+          <button className="primary-action fit" type="button" onClick={() => void drawMine()} disabled={busy}>
+            <Dice5 size={17} aria-hidden="true" focusable="false" />
+            {busy ? "抽取中…" : (rows.data || []).length ? "重新抽取" : "开始抽取"}
+          </button>
+        )}
+      </div>
+      {message && <Notice tone="success">{message}</Notice>}
+      {(drawError || rows.error) && <Notice tone="error">{drawError || rows.error}</Notice>}
+      <AssignmentList rows={rows.data || []} emptyText={rows.state === "loading" ? "加载中…" : "暂未抽签"} showAssignee={false} />
     </section>
   );
 }
 
-function AssignmentList({ rows, emptyText }: { rows: DrawAssignmentRead[]; emptyText: string }) {
+function AssignmentList({ rows, emptyText, showAssignee = true }: { rows: DrawAssignmentRead[]; emptyText: string; showAssignee?: boolean }) {
   if (!rows.length) return <Notice>{emptyText}</Notice>;
-  return <div className="section-grid">{rows.map((row) => <div className="workflow-card" key={row.id}><Dice5 size={22} aria-hidden="true" focusable="false" /><strong>{row.song.song_name}</strong><span>{row.song.artist} · {row.song.song_type}</span><small>分配给 {row.assigned_to.user_code}</small></div>)}</div>;
+  return <div className="section-grid">{rows.map((row) => <div className="workflow-card" key={row.id}><Dice5 size={22} aria-hidden="true" focusable="false" /><strong>{row.song.song_name}</strong><span>{row.song.artist} · {row.song.song_type}</span><small>{showAssignee ? `分配给 ${row.assigned_to.user_code}` : `抽取于 ${formatTime(row.created_at)}`}</small></div>)}</div>;
 }
 
 function SubmissionPage() {
@@ -552,10 +595,11 @@ function AdminSongs() {
 function AdminDraw() {
   const rows = useAsync(() => api.adminDrawResults(), []);
   async function run() {
+    if (!window.confirm("这会清空并重建所有参赛者的抽签结果，确定继续吗？")) return;
     await api.runDraw();
     await rows.reload();
   }
-  return <div className="page-stack"><button className="primary-action fit" type="button" onClick={() => void run()}><Dice5 size={17} aria-hidden="true" focusable="false" /> 重新抽签</button><AssignmentList rows={rows.data || []} emptyText="暂无抽签结果" /></div>;
+  return <div className="page-stack"><button className="secondary-action fit" type="button" onClick={() => void run()}><Dice5 size={17} aria-hidden="true" focusable="false" /> 全局重新抽签</button><AssignmentList rows={rows.data || []} emptyText="暂无抽签结果" /></div>;
 }
 
 function AdminSubmissions() {

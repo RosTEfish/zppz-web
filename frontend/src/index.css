@@ -352,7 +352,8 @@ input:disabled {
 .detail-panel,
 .notice,
 .chart-card,
-.upload-drop {
+.upload-drop,
+.draw-console {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 253, 247, 0.92);
@@ -401,6 +402,24 @@ input:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.draw-console {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+}
+
+.draw-console div {
+  display: grid;
+  gap: 5px;
+}
+
+.draw-console span {
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .auth-layout,
@@ -665,6 +684,11 @@ th {
 
   .detail-panel {
     position: static;
+  }
+
+  .draw-console {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

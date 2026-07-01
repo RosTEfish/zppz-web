@@ -136,6 +136,7 @@ export const api = {
   updateSong: (id: number, payload: { song_name: string; artist: string; song_type: string; remark: string }) =>
     apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   myDraw: () => apiRequest<DrawAssignmentRead[]>("/draw/results"),
+  drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
   runDraw: () => apiRequest<DrawAssignmentRead[]>("/admin/draw", { method: "POST" }),
   adminDrawResults: () => apiRequest<DrawAssignmentRead[]>("/admin/draw/results"),
   mySubmissions: () => apiRequest<StoredFileRead[]>("/submissions"),

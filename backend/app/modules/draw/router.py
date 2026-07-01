@@ -5,7 +5,7 @@ from app.core.security import get_current_user, require_role
 from app.db.session import get_db
 from app.models import User
 from app.modules.common import serialize_song
-from app.modules.draw.service import get_draw_results, run_draw
+from app.modules.draw.service import draw_for_user, get_draw_results, run_draw
 from app.schemas import DrawAssignmentRead
 
 
@@ -29,6 +29,11 @@ def my_draw_results(user: User = Depends(get_current_user), db: Session = Depend
     return [serialize_assignment(item) for item in get_draw_results(db, user.id)]
 
 
+@router.post("/me", response_model=list[DrawAssignmentRead])
+def draw_my_songs(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return [serialize_assignment(item) for item in draw_for_user(db, user)]
+
+
 @admin_router.post("", response_model=list[DrawAssignmentRead])
 def admin_run_draw(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> list[dict]:
     return [serialize_assignment(item) for item in run_draw(db)]
@@ -44,4 +49,3 @@ def admin_draw_stats(_: User = Depends(require_role("admin", "pool_editor")), db
     rows = get_draw_results(db)
     assigned_user_ids = {item.assigned_to_id for item in rows}
     return {"assignments": len(rows), "assigned_users": len(assigned_user_ids)}
-
