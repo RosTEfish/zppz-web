@@ -616,6 +616,15 @@ th {
   cursor: pointer;
 }
 
+.upload-drop-busy {
+  border-color: var(--green);
+  background: rgba(219, 232, 213, 0.55);
+}
+
+.upload-drop-busy input {
+  cursor: wait;
+}
+
 .guess-layout {
   grid-template-columns: minmax(0, 1fr) 360px;
 }

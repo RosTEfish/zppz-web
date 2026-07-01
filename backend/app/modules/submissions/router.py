@@ -1,7 +1,7 @@
 from zipfile import ZIP_DEFLATED, ZipFile
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -32,7 +32,7 @@ def my_submissions(user: User = Depends(get_current_user), db: Session = Depends
 
 
 @router.post("", response_model=StoredFileRead)
-def upload_submission(file: UploadFile, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def upload_submission(file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     storage_path, size = save_upload(file, f"events/{event.id}/submissions/{user.id}")
     row = Submission(event_id=event.id, user_id=user.id, file_name=file.filename or "upload", storage_path=storage_path, file_size=size)
@@ -44,7 +44,7 @@ def upload_submission(file: UploadFile, user: User = Depends(get_current_user), 
 
 
 @router.post("/{submission_id}/replace", response_model=StoredFileRead)
-def replace_submission(submission_id: int, file: UploadFile, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def replace_submission(submission_id: int, file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     row = db.get(Submission, submission_id)
     if not row or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="投稿不存在")
@@ -76,7 +76,7 @@ def my_j_track(user: User = Depends(get_current_user), db: Session = Depends(get
 
 
 @router.post("/j-track")
-def upload_j_track(file: UploadFile, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def upload_j_track(file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     storage_path, size = save_upload(file, f"events/{event.id}/j-track/{user.id}")
     row = db.scalar(select(JTrackSubmission).where(JTrackSubmission.event_id == event.id, JTrackSubmission.user_id == user.id))

@@ -553,18 +553,33 @@ function AssignmentList({ rows, emptyText, showAssignee = true }: { rows: DrawAs
 function SubmissionPage() {
   const files = useAsync(() => api.mySubmissions(), []);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
   async function upload(file?: File) {
     if (!file) return;
     setMessage("");
-    await api.uploadSubmission(file);
-    await files.reload();
-    setMessage("投稿已上传");
+    setError("");
+    setBusy(true);
+    try {
+      const created = await api.uploadSubmission(file);
+      const current = files.data || [];
+      files.replace([created, ...current.filter((item) => item.id !== created.id)]);
+      setMessage("投稿已上传");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "投稿上传失败");
+    } finally {
+      setBusy(false);
+    }
   }
+
   return (
     <section className="page-stack">
       <header className="section-heading"><UploadCloud size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Submission</p><h2>投稿上传</h2></div></header>
-      <label className="upload-drop"><UploadCloud size={30} aria-hidden="true" focusable="false" /><strong>选择音频或压缩包</strong><span>支持后端配置的文件类型和大小限制</span><input name="submission_file" type="file" onChange={(e) => void upload(e.target.files?.[0])} /></label>
+      <label className={busy ? "upload-drop upload-drop-busy" : "upload-drop"}><UploadCloud size={30} aria-hidden="true" focusable="false" /><strong>{busy ? "上传中…" : "选择音频或压缩包"}</strong><span>支持 mp3、wav、flac、aac、m4a、ogg、zip、7z、rar，最大 100 MB</span><input name="submission_file" type="file" disabled={busy} onChange={(e) => { void upload(e.target.files?.[0]); e.currentTarget.value = ""; }} /></label>
+      {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
+      {files.error && <Notice tone="error">{files.error}</Notice>}
       <FileTable files={files.data || []} />
     </section>
   );
@@ -818,7 +833,7 @@ function AdminDraw() {
 
 function AdminSubmissions() {
   const files = useAsync(() => api.adminSubmissions(), []);
-  return <FileTable files={files.data || []} />;
+  return <div className="page-stack">{files.error && <Notice tone="error">{files.error}</Notice>}<FileTable files={files.data || []} /></div>;
 }
 
 function AdminGuess() {
