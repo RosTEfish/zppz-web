@@ -598,6 +598,23 @@ th {
   gap: 8px;
 }
 
+.danger-action {
+  color: var(--red);
+}
+
+.disabled-action {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.table-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .upload-drop {
   position: relative;
   display: grid;

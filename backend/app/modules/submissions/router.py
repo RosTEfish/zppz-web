@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.models import JTrackSubmission, Submission, User
 from app.modules.common import serialize_submission
 from app.modules.events.service import get_current_event
-from app.modules.submissions.service import absolute_storage_path, save_upload
+from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
 from app.schemas import StoredFileRead
 
 
@@ -48,11 +48,13 @@ def replace_submission(submission_id: int, file: UploadFile = File(...), user: U
     row = db.get(Submission, submission_id)
     if not row or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="投稿不存在")
+    old_storage_path = row.storage_path
     storage_path, size = save_upload(file, f"events/{row.event_id}/submissions/{user.id}")
     row.file_name = file.filename or "upload"
     row.storage_path = storage_path
     row.file_size = size
     db.commit()
+    delete_stored_file(old_storage_path)
     db.refresh(row)
     row.user = user
     return serialize_submission(row)
@@ -63,8 +65,10 @@ def delete_submission(submission_id: int, user: User = Depends(get_current_user)
     row = db.get(Submission, submission_id)
     if not row or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="投稿不存在")
+    storage_path = row.storage_path
     db.delete(row)
     db.commit()
+    delete_stored_file(storage_path)
     return {"message": "投稿已删除"}
 
 
@@ -101,6 +105,40 @@ def admin_list_submissions(_: User = Depends(require_role("admin", "pool_editor"
         .order_by(Submission.created_at.desc())
     ).all()
     return [serialize_submission(row) for row in rows]
+
+
+@admin_router.post("/{submission_id}/replace", response_model=StoredFileRead)
+def admin_replace_submission(
+    submission_id: int,
+    file: UploadFile = File(...),
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.get(Submission, submission_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    old_storage_path = row.storage_path
+    storage_path, size = save_upload(file, f"events/{row.event_id}/submissions/{row.user_id}")
+    row.file_name = file.filename or "upload"
+    row.storage_path = storage_path
+    row.file_size = size
+    db.commit()
+    delete_stored_file(old_storage_path)
+    db.refresh(row)
+    row.user = db.get(User, row.user_id)
+    return serialize_submission(row)
+
+
+@admin_router.delete("/{submission_id}")
+def admin_delete_submission(submission_id: int, _: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
+    row = db.get(Submission, submission_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    storage_path = row.storage_path
+    db.delete(row)
+    db.commit()
+    delete_stored_file(storage_path)
+    return {"message": "投稿已删除"}
 
 
 @admin_router.get("/{submission_id}/download")

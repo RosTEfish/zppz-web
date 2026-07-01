@@ -91,6 +91,16 @@ def admin_update_song(song_id: int, payload: SongCreate, _: User = Depends(requi
     return serialize_song(song)
 
 
+@admin_router.delete("/{song_id}")
+def admin_delete_song(song_id: int, _: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
+    song = db.get(Song, song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="曲目不存在")
+    db.delete(song)
+    db.commit()
+    return {"message": "曲目已删除"}
+
+
 @admin_router.get("/export.csv")
 def export_songs(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)):
     event = get_current_event(db)

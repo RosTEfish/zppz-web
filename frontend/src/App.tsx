@@ -15,9 +15,11 @@ import {
   Music2,
   PanelLeft,
   Pencil,
+  RefreshCw,
   Save,
   ShieldCheck,
   Sparkles,
+  Trash2,
   X,
   UploadCloud,
   Users,
@@ -414,6 +416,13 @@ function SongPoolPage() {
     setMessage("曲目已更新");
   }
 
+  async function deleteSong(song: SongRead) {
+    await api.deleteSong(song.id);
+    songs.replace((songs.data || []).filter((item) => item.id !== song.id));
+    setError("");
+    setMessage("曲目已删除");
+  }
+
   return (
     <section className="page-stack">
       <header className="section-heading"><Music2 size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Song Pool</p><h2>我的曲池提交</h2></div></header>
@@ -427,17 +436,27 @@ function SongPoolPage() {
         {message && <Notice tone="success">{message}</Notice>}
       </form>
       {songs.error && <Notice tone="error">{songs.error}</Notice>}
-      <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} onSave={saveSong} />
+      <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} onSave={saveSong} onDelete={deleteSong} />
     </section>
   );
 }
 
-function SongTable({ songs, emptyText, onSave }: { songs: SongRead[]; emptyText: string; onSave?: (song: SongRead, payload: SongPayload) => Promise<void> }) {
+function SongTable({
+  songs,
+  emptyText,
+  onSave,
+  onDelete,
+}: {
+  songs: SongRead[];
+  emptyText: string;
+  onSave?: (song: SongRead, payload: SongPayload) => Promise<void>;
+  onDelete?: (song: SongRead) => Promise<void>;
+}) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<SongPayload>({ song_name: "", artist: "", song_type: "A", remark: "" });
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const canEdit = Boolean(onSave);
+  const hasActions = Boolean(onSave || onDelete);
 
   function startEdit(song: SongRead) {
     setEditingId(song.id);
@@ -459,13 +478,28 @@ function SongTable({ songs, emptyText, onSave }: { songs: SongRead[]; emptyText:
     }
   }
 
+  async function deleteSong(song: SongRead) {
+    if (!onDelete) return;
+    if (!window.confirm(`确定删除「${song.song_name}」吗？`)) return;
+    setBusyId(song.id);
+    setError("");
+    try {
+      await onDelete(song);
+      if (editingId === song.id) setEditingId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (!songs.length) return <Notice>{emptyText}</Notice>;
   return (
     <>
       {error && <Notice tone="error">{error}</Notice>}
       <div className="table-shell">
         <table>
-          <thead><tr><th>曲名</th><th>曲师</th><th>分类</th><th>提交者</th><th>备注</th>{canEdit && <th>操作</th>}</tr></thead>
+          <thead><tr><th>曲名</th><th>曲师</th><th>分类</th><th>提交者</th><th>备注</th>{hasActions && <th>操作</th>}</tr></thead>
           <tbody>{songs.map((song) => {
             const isEditing = editingId === song.id;
             return (
@@ -475,7 +509,7 @@ function SongTable({ songs, emptyText, onSave }: { songs: SongRead[]; emptyText:
                 <td>{isEditing ? <select className="table-input" name={`song-type-${song.id}`} autoComplete="off" value={draft.song_type} onChange={(e) => setDraft({ ...draft, song_type: e.target.value })}><option value="A">A</option><option value="B">B</option><option value="C">C</option></select> : song.song_type}</td>
                 <td>{song.submitter?.user_code || "-"}</td>
                 <td>{isEditing ? <textarea className="table-input table-textarea" name={`remark-${song.id}`} autoComplete="off" value={draft.remark} onChange={(e) => setDraft({ ...draft, remark: e.target.value })} /> : song.remark || "-"}</td>
-                {canEdit && (
+                {hasActions && (
                   <td>
                     <div className="table-actions">
                       {isEditing ? (
@@ -483,8 +517,11 @@ function SongTable({ songs, emptyText, onSave }: { songs: SongRead[]; emptyText:
                           <button className="icon-button" type="button" onClick={() => void save(song)} disabled={busyId === song.id || !draft.song_name.trim() || !draft.artist.trim()} title="保存" aria-label="保存"><Save size={16} aria-hidden="true" focusable="false" /></button>
                           <button className="icon-button" type="button" onClick={() => setEditingId(null)} disabled={busyId === song.id} title="取消" aria-label="取消"><X size={16} aria-hidden="true" focusable="false" /></button>
                         </>
-                      ) : (
+                      ) : onSave ? (
                         <button className="icon-button" type="button" onClick={() => startEdit(song)} title="编辑" aria-label={`编辑 ${song.song_name}`}><Pencil size={16} aria-hidden="true" focusable="false" /></button>
+                      ) : null}
+                      {!isEditing && onDelete && (
+                        <button className="icon-button danger-action" type="button" onClick={() => void deleteSong(song)} disabled={busyId === song.id} title="删除" aria-label={`删除 ${song.song_name}`}><Trash2 size={16} aria-hidden="true" focusable="false" /></button>
                       )}
                     </div>
                   </td>
@@ -573,6 +610,20 @@ function SubmissionPage() {
     }
   }
 
+  async function replaceFile(row: StoredFileRead, file: File) {
+    const updated = await api.replaceSubmission(row.id, file);
+    files.replace((files.data || []).map((item) => (item.id === updated.id ? updated : item)));
+    setError("");
+    setMessage("投稿已替换");
+  }
+
+  async function deleteFile(row: StoredFileRead) {
+    await api.deleteSubmission(row.id);
+    files.replace((files.data || []).filter((item) => item.id !== row.id));
+    setError("");
+    setMessage("投稿已删除");
+  }
+
   return (
     <section className="page-stack">
       <header className="section-heading"><UploadCloud size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Submission</p><h2>投稿上传</h2></div></header>
@@ -580,17 +631,59 @@ function SubmissionPage() {
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
       {files.error && <Notice tone="error">{files.error}</Notice>}
-      <FileTable files={files.data || []} />
+      <FileTable files={files.data || []} onReplace={replaceFile} onDelete={deleteFile} />
     </section>
   );
 }
 
-function FileTable({ files }: { files: StoredFileRead[] }) {
+function FileTable({
+  files,
+  onReplace,
+  onDelete,
+}: {
+  files: StoredFileRead[];
+  onReplace?: (row: StoredFileRead, file: File) => Promise<void>;
+  onDelete?: (row: StoredFileRead) => Promise<void>;
+}) {
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const hasActions = Boolean(onReplace || onDelete);
+
+  async function replaceFile(row: StoredFileRead, file?: File) {
+    if (!onReplace || !file) return;
+    setBusyId(row.id);
+    setError("");
+    try {
+      await onReplace(row, file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "替换失败");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deleteFile(row: StoredFileRead) {
+    if (!onDelete) return;
+    if (!window.confirm(`确定删除「${row.file_name}」吗？`)) return;
+    setBusyId(row.id);
+    setError("");
+    try {
+      await onDelete(row);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (!files.length) return <Notice>暂无投稿文件</Notice>;
   return (
-    <div className="table-shell">
-      <table><thead><tr><th>文件</th><th>大小</th><th>状态</th><th>用户</th><th>时间</th></tr></thead><tbody>{files.map((file) => <tr key={file.id}><td>{file.file_name}</td><td>{formatMB(file.file_size)}</td><td>{file.review_status}</td><td>{file.user?.user_code || "-"}</td><td>{formatTime(file.created_at)}</td></tr>)}</tbody></table>
-    </div>
+    <>
+      {error && <Notice tone="error">{error}</Notice>}
+      <div className="table-shell">
+        <table><thead><tr><th>文件</th><th>大小</th><th>状态</th><th>用户</th><th>时间</th>{hasActions && <th>操作</th>}</tr></thead><tbody>{files.map((file) => <tr key={file.id}><td>{file.file_name}</td><td>{formatMB(file.file_size)}</td><td>{file.review_status}</td><td>{file.user?.user_code || "-"}</td><td>{formatTime(file.created_at)}</td>{hasActions && <td><div className="table-actions">{onReplace && <label className={busyId === file.id ? "icon-button disabled-action" : "icon-button"} title="替换文件" aria-label={`替换 ${file.file_name}`}><RefreshCw size={16} aria-hidden="true" focusable="false" /><input className="table-file-input" name={`replace-file-${file.id}`} type="file" accept=".zip,.7z,.rar" disabled={busyId === file.id} onChange={(e) => { void replaceFile(file, e.target.files?.[0]); e.currentTarget.value = ""; }} /></label>}{onDelete && <button className="icon-button danger-action" type="button" onClick={() => void deleteFile(file)} disabled={busyId === file.id} title="删除" aria-label={`删除 ${file.file_name}`}><Trash2 size={16} aria-hidden="true" focusable="false" /></button>}</div></td>}</tr>)}</tbody></table>
+      </div>
+    </>
   );
 }
 
@@ -818,7 +911,11 @@ function AdminSongs() {
     const updated = await api.updateSong(song.id, payload);
     songs.replace((songs.data || []).map((item) => (item.id === updated.id ? updated : item)));
   }
-  return <div className="page-stack">{songs.error && <Notice tone="error">{songs.error}</Notice>}<SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "曲池为空"} onSave={saveSong} /></div>;
+  async function deleteSong(song: SongRead) {
+    await api.deleteAdminSong(song.id);
+    songs.replace((songs.data || []).filter((item) => item.id !== song.id));
+  }
+  return <div className="page-stack">{songs.error && <Notice tone="error">{songs.error}</Notice>}<SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "曲池为空"} onSave={saveSong} onDelete={deleteSong} /></div>;
 }
 
 function AdminDraw() {
@@ -833,7 +930,15 @@ function AdminDraw() {
 
 function AdminSubmissions() {
   const files = useAsync(() => api.adminSubmissions(), []);
-  return <div className="page-stack">{files.error && <Notice tone="error">{files.error}</Notice>}<FileTable files={files.data || []} /></div>;
+  async function replaceFile(row: StoredFileRead, file: File) {
+    const updated = await api.replaceAdminSubmission(row.id, file);
+    files.replace((files.data || []).map((item) => (item.id === updated.id ? updated : item)));
+  }
+  async function deleteFile(row: StoredFileRead) {
+    await api.deleteAdminSubmission(row.id);
+    files.replace((files.data || []).filter((item) => item.id !== row.id));
+  }
+  return <div className="page-stack">{files.error && <Notice tone="error">{files.error}</Notice>}<FileTable files={files.data || []} onReplace={replaceFile} onDelete={deleteFile} /></div>;
 }
 
 function AdminGuess() {

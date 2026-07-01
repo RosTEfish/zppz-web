@@ -37,9 +37,23 @@ def absolute_storage_path(relative_path: str) -> Path:
     return get_settings().data_dir / relative_path
 
 
+def delete_stored_file(relative_path: str) -> None:
+    settings = get_settings()
+    data_dir = settings.data_dir.resolve()
+    path = (data_dir / relative_path).resolve()
+    try:
+        path.relative_to(data_dir)
+    except ValueError:
+        return
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        return
+
+
 def copy_asset_from_repo(source: Path, target_folder: str) -> None:
     settings = get_settings()
     target = settings.assets_dir / target_folder / source.name
     if source.exists() and not target.exists():
         shutil.copy2(source, target)
-

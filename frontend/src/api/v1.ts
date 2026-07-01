@@ -159,6 +159,7 @@ export const api = {
   adminSongs: () => apiRequest<SongRead[]>("/admin/song-pool"),
   updateSong: (id: number, payload: SongPayload) =>
     apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteAdminSong: (id: number) => apiRequest<{ message: string }>(`/admin/song-pool/${id}`, { method: "DELETE" }),
   myDraw: () => apiRequest<DrawAssignmentRead[]>("/draw/results"),
   drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
   runDraw: () => apiRequest<DrawAssignmentRead[]>("/admin/draw", { method: "POST" }),
@@ -169,7 +170,19 @@ export const api = {
     form.set("file", file);
     return apiRequest<StoredFileRead>("/submissions", { method: "POST", body: form });
   },
+  replaceSubmission: (id: number, file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: form });
+  },
+  deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   adminSubmissions: () => apiRequest<StoredFileRead[]>("/admin/submissions"),
+  replaceAdminSubmission: (id: number, file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: form });
+  },
+  deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
   guessCharts: () => apiRequest<GuessChartRead[]>("/guess-game/charts"),
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
   vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
