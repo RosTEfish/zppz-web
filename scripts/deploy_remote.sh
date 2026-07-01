@@ -38,6 +38,8 @@ DATABASE_URL=sqlite:///$app_dir/data/zppz_v2.db
 DATA_DIR=$app_dir/data
 ADMIN_SEED_CODE=admin
 ADMIN_SEED_PASSWORD=change-me-please
+MAX_UPLOAD_MB=100
+ALLOWED_EXTENSIONS=zip,7z,rar
 EOF
 fi
 

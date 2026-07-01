@@ -287,7 +287,7 @@ function HomePage() {
       <div className="section-grid">
         <WorkflowCard icon={Music2} title="提交曲池" text="按身份限制提交候选曲目，后台可以导入导出和修正。" to="/songs" />
         <WorkflowCard icon={Dice5} title="自助抽曲" text="参赛选手自行抽取任务曲，不满意时可重新抽取。" to="/draw" />
-        <WorkflowCard icon={UploadCloud} title="上传投稿" text="音频、压缩包和 J 位投稿统一走持久化文件存储。" to="/submissions" />
+        <WorkflowCard icon={UploadCloud} title="上传投稿" text="投稿文件统一打包为压缩包上传，并走持久化文件存储。" to="/submissions" />
         <WorkflowCard icon={Sparkles} title="猜谱互动" text="支持真爱票、乐子票、评论和作者猜测。" to="/guess" />
       </div>
     </section>
@@ -576,7 +576,7 @@ function SubmissionPage() {
   return (
     <section className="page-stack">
       <header className="section-heading"><UploadCloud size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Submission</p><h2>投稿上传</h2></div></header>
-      <label className={busy ? "upload-drop upload-drop-busy" : "upload-drop"}><UploadCloud size={30} aria-hidden="true" focusable="false" /><strong>{busy ? "上传中…" : "选择音频或压缩包"}</strong><span>支持 mp3、wav、flac、aac、m4a、ogg、zip、7z、rar，最大 100 MB</span><input name="submission_file" type="file" disabled={busy} onChange={(e) => { void upload(e.target.files?.[0]); e.currentTarget.value = ""; }} /></label>
+      <label className={busy ? "upload-drop upload-drop-busy" : "upload-drop"}><UploadCloud size={30} aria-hidden="true" focusable="false" /><strong>{busy ? "上传中…" : "选择压缩包"}</strong><span>支持 zip、7z、rar，最大 100 MB</span><input name="submission_file" type="file" accept=".zip,.7z,.rar" disabled={busy} onChange={(e) => { void upload(e.target.files?.[0]); e.currentTarget.value = ""; }} /></label>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
       {files.error && <Notice tone="error">{files.error}</Notice>}

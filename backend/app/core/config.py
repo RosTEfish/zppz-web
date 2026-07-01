@@ -3,6 +3,16 @@ from pathlib import Path
 import os
 
 
+ARCHIVE_UPLOAD_EXTENSIONS = {"zip", "7z", "rar"}
+
+
+def parse_allowed_extensions(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    normalized = value.replace(";", ",").replace("，", ",").replace("、", ",")
+    return {item.strip().lower().lstrip(".") for item in normalized.split(",") if item.strip()}
+
+
 class Settings:
     app_name = "ZPPZ Arena"
     api_prefix = "/api/v1"
@@ -15,7 +25,8 @@ class Settings:
     uploads_dir = data_dir / "uploads"
     assets_dir = data_dir / "assets"
     max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", "100"))
-    allowed_extensions = {item.strip().lower() for item in os.getenv("ALLOWED_EXTENSIONS", "mp3,wav,flac,aac,m4a,ogg,zip,7z,rar").split(",") if item.strip()}
+    configured_extensions = parse_allowed_extensions(os.getenv("ALLOWED_EXTENSIONS"))
+    allowed_extensions = (configured_extensions & ARCHIVE_UPLOAD_EXTENSIONS) or ARCHIVE_UPLOAD_EXTENSIONS
     admin_seed_code = os.getenv("ADMIN_SEED_CODE", "admin")
     admin_seed_password = os.getenv("ADMIN_SEED_PASSWORD", "change-me")
     secure_cookies = os.getenv("SECURE_COOKIES", "false").lower() in {"1", "true", "yes", "on"}
@@ -29,4 +40,3 @@ def get_settings() -> Settings:
     (settings.assets_dir / "banlists").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "backgrounds").mkdir(parents=True, exist_ok=True)
     return settings
-
