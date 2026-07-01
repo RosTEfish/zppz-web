@@ -29,6 +29,19 @@ export interface EventRead {
   };
 }
 
+export interface EventUpdatePayload {
+  name: string;
+  participant_song_limit: number;
+  audience_song_limit: number;
+  draw_songs_per_participant: number;
+  true_love_vote_limit: number;
+  funny_vote_limit: number;
+  announcement_text: string;
+  registration_deadline?: string | null;
+  submission_deadline?: string | null;
+  guess_game_open_at?: string | null;
+}
+
 export interface SongRead {
   id: number;
   song_name: string;
@@ -127,7 +140,7 @@ export const api = {
   changePassword: (old_password: string, new_password: string) =>
     apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
   currentEvent: () => apiRequest<EventRead>("/events/current"),
-  updateEvent: (payload: unknown) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
+  updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
   mySongs: () => apiRequest<SongRead[]>("/song-pool/me"),
   createSong: (payload: { song_name: string; artist: string; song_type: string; remark: string }) =>
     apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),

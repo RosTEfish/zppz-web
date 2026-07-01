@@ -201,6 +201,7 @@ input:disabled {
 .secondary-action,
 .icon-button,
 .vote-button,
+.segmented button,
 .tabbar button,
 .button-row button {
   display: inline-flex;
@@ -463,6 +464,17 @@ input:disabled {
   font-size: 0.88rem;
 }
 
+.field-block {
+  display: grid;
+  gap: 7px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
 .form-panel input,
 .form-panel select,
 .form-panel textarea,
@@ -487,6 +499,15 @@ input:disabled {
 .form-panel textarea {
   min-height: 82px;
   resize: vertical;
+}
+
+.settings-form .wide,
+.settings-form .notice {
+  grid-column: 1 / -1;
+}
+
+.identity-segment button {
+  min-width: 120px;
 }
 
 .segmented,

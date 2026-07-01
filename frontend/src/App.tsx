@@ -21,9 +21,69 @@ import {
 } from "lucide-react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
-import { api, DrawAssignmentRead, formatMB, formatTime, GuessChartRead, GuessCommentRead, SongRead, StoredFileRead, UserRead } from "./api/v1";
+import { api, DrawAssignmentRead, EventRead, EventUpdatePayload, formatMB, formatTime, GuessChartRead, GuessCommentRead, SongRead, StoredFileRead, UserRead } from "./api/v1";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
+type AdminTab = "overview" | "settings" | "users" | "songs" | "draw" | "submissions" | "guess";
+
+interface EventSettingsForm {
+  name: string;
+  participant_song_limit: string;
+  audience_song_limit: string;
+  draw_songs_per_participant: string;
+  true_love_vote_limit: string;
+  funny_vote_limit: string;
+  announcement_text: string;
+  registration_deadline: string;
+  submission_deadline: string;
+  guess_game_open_at: string;
+}
+
+const emptySettingsForm: EventSettingsForm = {
+  name: "",
+  participant_song_limit: "5",
+  audience_song_limit: "3",
+  draw_songs_per_participant: "1",
+  true_love_vote_limit: "3",
+  funny_vote_limit: "3",
+  announcement_text: "",
+  registration_deadline: "",
+  submission_deadline: "",
+  guess_game_open_at: "",
+};
+
+function toDateTimeLocal(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function toSettingsForm(event: EventRead | null): EventSettingsForm {
+  if (!event) return emptySettingsForm;
+  return {
+    name: event.name,
+    participant_song_limit: String(event.settings.participant_song_limit),
+    audience_song_limit: String(event.settings.audience_song_limit),
+    draw_songs_per_participant: String(event.settings.draw_songs_per_participant),
+    true_love_vote_limit: String(event.settings.true_love_vote_limit),
+    funny_vote_limit: String(event.settings.funny_vote_limit),
+    announcement_text: event.settings.announcement_text,
+    registration_deadline: toDateTimeLocal(event.settings.registration_deadline),
+    submission_deadline: toDateTimeLocal(event.settings.submission_deadline),
+    guess_game_open_at: toDateTimeLocal(event.settings.guess_game_open_at),
+  };
+}
+
+function toOptionalDateTime(value: string): string | null {
+  return value ? value : null;
+}
+
+function toPositiveInteger(value: string, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
   const [data, setData] = useState<T | null>(null);
@@ -270,12 +330,13 @@ function AuthPage() {
         {mode === "register" && <label>QQ 号<input name="qq_id" autoComplete="off" inputMode="numeric" spellCheck={false} value={form.qq_id} onChange={(e) => setForm({ ...form, qq_id: e.target.value })} required /></label>}
         <label>密码<input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} /></label>
         {mode === "register" && (
-          <label>身份
-            <select name="identity" autoComplete="off" value={form.identity} onChange={(e) => setForm({ ...form, identity: e.target.value })}>
-              <option value="audience">观众</option>
-              <option value="participant">参赛者</option>
-            </select>
-          </label>
+          <div className="field-block">
+            <span className="field-label">身份</span>
+            <div className="segmented identity-segment" role="radiogroup" aria-label="身份">
+              <button type="button" role="radio" aria-checked={form.identity === "audience"} className={form.identity === "audience" ? "active" : ""} onClick={() => setForm({ ...form, identity: "audience" })}>观众</button>
+              <button type="button" role="radio" aria-checked={form.identity === "participant"} className={form.identity === "participant" ? "active" : ""} onClick={() => setForm({ ...form, identity: "participant" })}>参赛选手</button>
+            </div>
+          </div>
         )}
         {error && <Notice tone="error">{error}</Notice>}
         <button className="primary-action" type="submit" disabled={busy}>{busy ? "处理中…" : mode === "login" ? "登录" : "创建账号"}</button>
@@ -502,12 +563,13 @@ function GuessGamePage() {
 }
 
 function AdminWorkbench() {
-  const tabs = ["overview", "users", "songs", "draw", "submissions", "guess"] as const;
+  const { isAdmin } = useAuth();
+  const tabs: AdminTab[] = isAdmin ? ["overview", "settings", "users", "songs", "draw", "submissions", "guess"] : ["overview", "users", "songs", "draw", "submissions", "guess"];
   const [params, setParams] = useSearchParams();
   const tabParam = params.get("tab");
-  const tab = tabs.includes(tabParam as (typeof tabs)[number]) ? (tabParam as (typeof tabs)[number]) : "overview";
-  const labels: Record<string, string> = { overview: "总览", users: "用户", songs: "曲池", draw: "抽签", submissions: "投稿", guess: "猜谱" };
-  function selectTab(next: (typeof tabs)[number]) {
+  const tab: AdminTab = tabs.includes(tabParam as AdminTab) ? (tabParam as AdminTab) : "overview";
+  const labels: Record<AdminTab, string> = { overview: "总览", settings: "设置", users: "用户", songs: "曲池", draw: "抽签", submissions: "投稿", guess: "猜谱" };
+  function selectTab(next: AdminTab) {
     setParams(next === "overview" ? {} : { tab: next });
   }
   return (
@@ -515,6 +577,7 @@ function AdminWorkbench() {
       <header className="section-heading"><ShieldCheck size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Admin Workbench</p><h2>赛事工作台</h2></div></header>
       <div className="tabbar" role="tablist">{tabs.map((item) => <button key={item} type="button" role="tab" aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>{labels[item]}</button>)}</div>
       {tab === "overview" && <AdminOverview />}
+      {tab === "settings" && <AdminSettings />}
       {tab === "users" && <AdminUsers />}
       {tab === "songs" && <AdminSongs />}
       {tab === "draw" && <AdminDraw />}
@@ -528,6 +591,68 @@ function AdminOverview() {
   const stats = useAsync(() => api.adminStats(), []);
   const items = stats.data || {};
   return <div className="metric-grid">{Object.entries(items).map(([key, value]) => <React.Fragment key={key}><StatCard icon={BarChart3} label={key} value={Number(value)} /></React.Fragment>)}</div>;
+}
+
+function AdminSettings() {
+  const { event, refreshConfig } = useConfig();
+  const [form, setForm] = useState<EventSettingsForm>(() => toSettingsForm(event));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setForm(toSettingsForm(event));
+  }, [event]);
+
+  function patchForm(patch: Partial<EventSettingsForm>) {
+    setForm((current) => ({ ...current, ...patch }));
+  }
+
+  async function submit(eventSubmit: FormEvent) {
+    eventSubmit.preventDefault();
+    setBusy(true);
+    setMessage("");
+    setError("");
+    const payload: EventUpdatePayload = {
+      name: form.name.trim(),
+      participant_song_limit: toPositiveInteger(form.participant_song_limit, 5),
+      audience_song_limit: toPositiveInteger(form.audience_song_limit, 3),
+      draw_songs_per_participant: toPositiveInteger(form.draw_songs_per_participant, 1),
+      true_love_vote_limit: toPositiveInteger(form.true_love_vote_limit, 3),
+      funny_vote_limit: toPositiveInteger(form.funny_vote_limit, 3),
+      announcement_text: form.announcement_text,
+      registration_deadline: toOptionalDateTime(form.registration_deadline),
+      submission_deadline: toOptionalDateTime(form.submission_deadline),
+      guess_game_open_at: toOptionalDateTime(form.guess_game_open_at),
+    };
+    try {
+      await api.updateEvent(payload);
+      await refreshConfig();
+      setMessage("赛事设置已保存");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="form-panel compact settings-form" onSubmit={submit}>
+      <label className="wide">赛事名称<input name="event_name" autoComplete="off" value={form.name} onChange={(e) => patchForm({ name: e.target.value })} required /></label>
+      <label>参赛者曲目上限<input name="participant_song_limit" type="number" min={0} max={50} value={form.participant_song_limit} onChange={(e) => patchForm({ participant_song_limit: e.target.value })} required /></label>
+      <label>观众曲目上限<input name="audience_song_limit" type="number" min={0} max={50} value={form.audience_song_limit} onChange={(e) => patchForm({ audience_song_limit: e.target.value })} required /></label>
+      <label>每人抽曲数<input name="draw_songs_per_participant" type="number" min={1} max={10} value={form.draw_songs_per_participant} onChange={(e) => patchForm({ draw_songs_per_participant: e.target.value })} required /></label>
+      <label>真爱票额度<input name="true_love_vote_limit" type="number" min={0} max={50} value={form.true_love_vote_limit} onChange={(e) => patchForm({ true_love_vote_limit: e.target.value })} required /></label>
+      <label>乐子票额度<input name="funny_vote_limit" type="number" min={0} max={50} value={form.funny_vote_limit} onChange={(e) => patchForm({ funny_vote_limit: e.target.value })} required /></label>
+      <label>注册截止<input name="registration_deadline" type="datetime-local" value={form.registration_deadline} onChange={(e) => patchForm({ registration_deadline: e.target.value })} /></label>
+      <label>投稿截止<input name="submission_deadline" type="datetime-local" value={form.submission_deadline} onChange={(e) => patchForm({ submission_deadline: e.target.value })} /></label>
+      <label>猜谱开放<input name="guess_game_open_at" type="datetime-local" value={form.guess_game_open_at} onChange={(e) => patchForm({ guess_game_open_at: e.target.value })} /></label>
+      <label className="wide">公告<textarea name="announcement_text" autoComplete="off" value={form.announcement_text} onChange={(e) => patchForm({ announcement_text: e.target.value })} /></label>
+      {error && <Notice tone="error">{error}</Notice>}
+      {message && <Notice tone="success">{message}</Notice>}
+      <button className="primary-action fit" type="submit" disabled={busy}>{busy ? "保存中…" : "保存设置"}</button>
+    </form>
+  );
 }
 
 function AdminUsers() {
