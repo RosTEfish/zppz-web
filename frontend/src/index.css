@@ -576,6 +576,28 @@ th {
   background: #f0eadc;
 }
 
+.table-input {
+  width: 100%;
+  min-width: 120px;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--field);
+  color: var(--ink);
+}
+
+.table-textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .upload-drop {
   position: relative;
   display: grid;

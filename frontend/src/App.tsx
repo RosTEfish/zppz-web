@@ -14,14 +14,17 @@ import {
   MessageCircle,
   Music2,
   PanelLeft,
+  Pencil,
+  Save,
   ShieldCheck,
   Sparkles,
+  X,
   UploadCloud,
   Users,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
-import { api, DrawAssignmentRead, EventRead, EventUpdatePayload, formatMB, formatTime, GuessChartRead, GuessCommentRead, SongRead, StoredFileRead, UserRead } from "./api/v1";
+import { api, DrawAssignmentRead, EventRead, EventUpdatePayload, formatMB, formatTime, GuessChartRead, GuessCommentRead, SongPayload, SongRead, StoredFileRead, UserRead } from "./api/v1";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type AdminTab = "overview" | "settings" | "users" | "songs" | "draw" | "submissions" | "guess";
@@ -404,6 +407,13 @@ function SongPoolPage() {
     }
   }
 
+  async function saveSong(song: SongRead, payload: SongPayload) {
+    const updated = await api.updateMySong(song.id, payload);
+    songs.replace((songs.data || []).map((item) => (item.id === updated.id ? updated : item)));
+    setError("");
+    setMessage("曲目已更新");
+  }
+
   return (
     <section className="page-stack">
       <header className="section-heading"><Music2 size={22} aria-hidden="true" focusable="false" /><div><p className="eyebrow">Song Pool</p><h2>我的曲池提交</h2></div></header>
@@ -417,20 +427,74 @@ function SongPoolPage() {
         {message && <Notice tone="success">{message}</Notice>}
       </form>
       {songs.error && <Notice tone="error">{songs.error}</Notice>}
-      <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} />
+      <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} onSave={saveSong} />
     </section>
   );
 }
 
-function SongTable({ songs, emptyText }: { songs: SongRead[]; emptyText: string }) {
+function SongTable({ songs, emptyText, onSave }: { songs: SongRead[]; emptyText: string; onSave?: (song: SongRead, payload: SongPayload) => Promise<void> }) {
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<SongPayload>({ song_name: "", artist: "", song_type: "A", remark: "" });
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const canEdit = Boolean(onSave);
+
+  function startEdit(song: SongRead) {
+    setEditingId(song.id);
+    setDraft({ song_name: song.song_name, artist: song.artist, song_type: song.song_type, remark: song.remark });
+    setError("");
+  }
+
+  async function save(song: SongRead) {
+    if (!onSave) return;
+    setBusyId(song.id);
+    setError("");
+    try {
+      await onSave(song, draft);
+      setEditingId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (!songs.length) return <Notice>{emptyText}</Notice>;
   return (
-    <div className="table-shell">
-      <table>
-        <thead><tr><th>曲名</th><th>曲师</th><th>分类</th><th>提交者</th><th>备注</th></tr></thead>
-        <tbody>{songs.map((song) => <tr key={song.id}><td>{song.song_name}</td><td>{song.artist}</td><td>{song.song_type}</td><td>{song.submitter?.user_code || "-"}</td><td>{song.remark || "-"}</td></tr>)}</tbody>
-      </table>
-    </div>
+    <>
+      {error && <Notice tone="error">{error}</Notice>}
+      <div className="table-shell">
+        <table>
+          <thead><tr><th>曲名</th><th>曲师</th><th>分类</th><th>提交者</th><th>备注</th>{canEdit && <th>操作</th>}</tr></thead>
+          <tbody>{songs.map((song) => {
+            const isEditing = editingId === song.id;
+            return (
+              <tr key={song.id}>
+                <td>{isEditing ? <input className="table-input" name={`song-name-${song.id}`} autoComplete="off" value={draft.song_name} onChange={(e) => setDraft({ ...draft, song_name: e.target.value })} required /> : song.song_name}</td>
+                <td>{isEditing ? <input className="table-input" name={`artist-${song.id}`} autoComplete="off" value={draft.artist} onChange={(e) => setDraft({ ...draft, artist: e.target.value })} required /> : song.artist}</td>
+                <td>{isEditing ? <select className="table-input" name={`song-type-${song.id}`} autoComplete="off" value={draft.song_type} onChange={(e) => setDraft({ ...draft, song_type: e.target.value })}><option value="A">A</option><option value="B">B</option><option value="C">C</option></select> : song.song_type}</td>
+                <td>{song.submitter?.user_code || "-"}</td>
+                <td>{isEditing ? <textarea className="table-input table-textarea" name={`remark-${song.id}`} autoComplete="off" value={draft.remark} onChange={(e) => setDraft({ ...draft, remark: e.target.value })} /> : song.remark || "-"}</td>
+                {canEdit && (
+                  <td>
+                    <div className="table-actions">
+                      {isEditing ? (
+                        <>
+                          <button className="icon-button" type="button" onClick={() => void save(song)} disabled={busyId === song.id || !draft.song_name.trim() || !draft.artist.trim()} title="保存" aria-label="保存"><Save size={16} aria-hidden="true" focusable="false" /></button>
+                          <button className="icon-button" type="button" onClick={() => setEditingId(null)} disabled={busyId === song.id} title="取消" aria-label="取消"><X size={16} aria-hidden="true" focusable="false" /></button>
+                        </>
+                      ) : (
+                        <button className="icon-button" type="button" onClick={() => startEdit(song)} title="编辑" aria-label={`编辑 ${song.song_name}`}><Pencil size={16} aria-hidden="true" focusable="false" /></button>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -735,7 +799,11 @@ function AdminUsers() {
 
 function AdminSongs() {
   const songs = useAsync(() => api.adminSongs(), []);
-  return <div className="page-stack">{songs.error && <Notice tone="error">{songs.error}</Notice>}<SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "曲池为空"} /></div>;
+  async function saveSong(song: SongRead, payload: SongPayload) {
+    const updated = await api.updateSong(song.id, payload);
+    songs.replace((songs.data || []).map((item) => (item.id === updated.id ? updated : item)));
+  }
+  return <div className="page-stack">{songs.error && <Notice tone="error">{songs.error}</Notice>}<SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "曲池为空"} onSave={saveSong} /></div>;
 }
 
 function AdminDraw() {

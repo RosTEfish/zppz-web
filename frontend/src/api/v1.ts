@@ -52,6 +52,13 @@ export interface SongRead {
   created_at: string;
 }
 
+export interface SongPayload {
+  song_name: string;
+  artist: string;
+  song_type: string;
+  remark: string;
+}
+
 export interface StoredFileRead {
   id: number;
   file_name: string;
@@ -144,11 +151,13 @@ export const api = {
   currentEvent: () => apiRequest<EventRead>("/events/current"),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
   mySongs: () => apiRequest<SongRead[]>("/song-pool/me"),
-  createSong: (payload: { song_name: string; artist: string; song_type: string; remark: string }) =>
+  createSong: (payload: SongPayload) =>
     apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),
+  updateMySong: (id: number, payload: SongPayload) =>
+    apiRequest<SongRead>(`/song-pool/me/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteSong: (id: number) => apiRequest<{ message: string }>(`/song-pool/me/${id}`, { method: "DELETE" }),
   adminSongs: () => apiRequest<SongRead[]>("/admin/song-pool"),
-  updateSong: (id: number, payload: { song_name: string; artist: string; song_type: string; remark: string }) =>
+  updateSong: (id: number, payload: SongPayload) =>
     apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   myDraw: () => apiRequest<DrawAssignmentRead[]>("/draw/results"),
   drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),

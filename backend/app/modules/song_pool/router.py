@@ -42,6 +42,20 @@ def create_song(payload: SongCreate, user: User = Depends(get_current_user), db:
     return serialize_song(song)
 
 
+@router.put("/me/{song_id}", response_model=SongRead)
+def update_my_song(song_id: int, payload: SongCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    event = get_current_event(db)
+    song = db.scalar(select(Song).where(Song.id == song_id, Song.event_id == event.id, Song.submitted_by_id == user.id))
+    if not song:
+        raise HTTPException(status_code=404, detail="曲目不存在")
+    for key, value in payload.model_dump().items():
+        setattr(song, key, value)
+    db.commit()
+    db.refresh(song)
+    song.submitter = user
+    return serialize_song(song)
+
+
 @router.delete("/me/{song_id}")
 def delete_my_song(song_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
