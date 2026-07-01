@@ -120,7 +120,9 @@ async function performRequest<T>(path: string, options: RequestInit = {}): Promi
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
   if (method !== "GET" || options.signal) {
-    return performRequest<T>(path, options);
+    const result = await performRequest<T>(path, options);
+    if (method !== "GET") pendingGetRequests.clear();
+    return result;
   }
 
   const pending = pendingGetRequests.get(path);

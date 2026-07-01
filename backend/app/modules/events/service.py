@@ -45,5 +45,5 @@ def assert_song_limit(db: Session, user_id: int, identity: str) -> None:
     event = get_current_event(db)
     limit = event.settings.participant_song_limit if identity == "participant" else event.settings.audience_song_limit
     count = db.scalar(select(func.count()).select_from(Song).where(Song.event_id == event.id, Song.submitted_by_id == user_id))
-    if count and count >= limit:
+    if (count or 0) >= limit:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"当前身份最多可提交 {limit} 首曲目")

@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AudioLines,
@@ -89,18 +89,21 @@ function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
   const [data, setData] = useState<T | null>(null);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setState("loading");
     loader()
       .then((next) => {
-        if (!alive) return;
+        if (!alive || requestId !== requestIdRef.current) return;
         setData(next);
         setState("ready");
       })
       .catch((err) => {
-        if (!alive) return;
+        if (!alive || requestId !== requestIdRef.current) return;
         setError(err instanceof Error ? err.message : "加载失败");
         setState("error");
       });
@@ -110,14 +113,18 @@ function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
   }, deps);
 
   async function reload() {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setState("loading");
     setError("");
     try {
       const next = await loader();
+      if (requestId !== requestIdRef.current) return next;
       setData(next);
       setState("ready");
       return next;
     } catch (err) {
+      if (requestId !== requestIdRef.current) throw err;
       setError(err instanceof Error ? err.message : "加载失败");
       setState("error");
       throw err;
@@ -125,6 +132,7 @@ function useAsync<T>(loader: () => Promise<T>, deps: React.DependencyList) {
   }
 
   function replace(next: T) {
+    requestIdRef.current += 1;
     setData(next);
     setState("ready");
     setError("");
@@ -375,14 +383,25 @@ function SongPoolPage() {
   const songs = useAsync(() => api.mySongs(), []);
   const [form, setForm] = useState({ song_name: "", artist: "", song_type: "A", remark: "" });
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setMessage("");
-    await api.createSong(form);
-    setForm({ song_name: "", artist: "", song_type: "A", remark: "" });
-    await songs.reload();
-    setMessage("曲目已提交");
+    setError("");
+    setBusy(true);
+    try {
+      const created = await api.createSong(form);
+      const current = songs.data || [];
+      songs.replace([created, ...current.filter((song) => song.id !== created.id)]);
+      setForm({ song_name: "", artist: "", song_type: "A", remark: "" });
+      setMessage("曲目已提交");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "曲目提交失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -393,7 +412,8 @@ function SongPoolPage() {
         <label>曲师 / 艺术家<input name="artist" autoComplete="off" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} required /></label>
         <label>分类<select name="song_type" autoComplete="off" value={form.song_type} onChange={(e) => setForm({ ...form, song_type: e.target.value })}><option value="A">A: Pop + 技术向</option><option value="B">B: 通常音游曲</option><option value="C">C: 小众宝藏</option></select></label>
         <label>备注<textarea name="remark" autoComplete="off" value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} /></label>
-        <button className="primary-action" type="submit">提交曲目</button>
+        <button className="primary-action" type="submit" disabled={busy}>{busy ? "提交中…" : "提交曲目"}</button>
+        {error && <Notice tone="error">{error}</Notice>}
         {message && <Notice tone="success">{message}</Notice>}
       </form>
       <SongTable songs={songs.data || []} emptyText={songs.state === "loading" ? "加载中…" : "还没有提交曲目"} />
