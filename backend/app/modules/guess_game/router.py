@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.models import GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, ImportIssue, User
 from app.modules.common import serialize_chart, serialize_charts
 from app.modules.events.service import get_current_event
+from app.modules.guess_game.importer import rebuild_event_charts
 from app.modules.guess_game.service import list_comments, put_vote, remove_vote
 from app.schemas import AuthorGuessRequest, CommentCreate, GuessChartCreate, GuessChartRead, GuessCommentRead, VoteRequest
 
@@ -127,11 +128,8 @@ def admin_delete_chart(chart_id: int, _: User = Depends(require_role("admin", "p
 
 @admin_router.post("/parse-submissions")
 def admin_parse_submissions(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
-    # The parser is intentionally isolated here: richer maidata/archive parsing can
-    # evolve without changing the public route contract.
     event = get_current_event(db)
-    issues = db.scalars(select(ImportIssue).where(ImportIssue.event_id == event.id)).all()
-    return {"message": "解析任务已完成", "created": 0, "issues": len(issues)}
+    return rebuild_event_charts(db, event.id).as_dict()
 
 
 @admin_router.get("/import-issues")

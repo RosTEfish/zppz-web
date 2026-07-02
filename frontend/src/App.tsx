@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
-import { api, DrawAssignmentRead, EventRead, EventUpdatePayload, formatMB, formatTime, GuessChartRead, GuessCommentRead, SongPayload, SongRead, StoredFileRead, UserRead } from "./api/v1";
+import { api, DrawAssignmentRead, EventRead, EventUpdatePayload, formatMB, formatTime, GuessChartRead, GuessCommentRead, GuessImportSummary, SongPayload, SongRead, StoredFileRead, UserRead } from "./api/v1";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type AdminTab = "overview" | "settings" | "users" | "songs" | "draw" | "submissions" | "guess";
@@ -724,10 +724,11 @@ function GuessGamePage() {
         <div className="chart-grid">
           {(charts.data || []).map((chart) => (
             <button key={chart.id} type="button" className="chart-card" onClick={() => void openChart(chart)}>
+              {chart.cover_path ? <img className="chart-cover" src={chart.cover_path} alt="" loading="lazy" decoding="async" /> : <div className="chart-cover chart-cover-empty"><Music2 size={26} aria-hidden="true" focusable="false" /></div>}
               <span>{chart.level}</span>
               <strong>{chart.title}</strong>
               <small>{chart.author} · {chart.lane}</small>
-              <div><Heart size={15} aria-hidden="true" focusable="false" /> {chart.love_votes}<MessageCircle size={15} aria-hidden="true" focusable="false" /> {chart.funny_votes}</div>
+              <div className="chart-card-meta"><Heart size={15} aria-hidden="true" focusable="false" /> {chart.love_votes}<MessageCircle size={15} aria-hidden="true" focusable="false" /> {chart.funny_votes}</div>
             </button>
           ))}
         </div>
@@ -943,7 +944,27 @@ function AdminSubmissions() {
 
 function AdminGuess() {
   const charts = useAsync(() => api.adminCharts(), []);
+  const issues = useAsync(() => api.importIssues(), []);
   const [form, setForm] = useState({ title: "", author: "", level: "1", lane: "normal", guess_group_key: "", is_self_selected: false });
+  const [summary, setSummary] = useState<GuessImportSummary | null>(null);
+  const [parseError, setParseError] = useState("");
+  const [parsing, setParsing] = useState(false);
+
+  async function parseSubmissions() {
+    if (!window.confirm("重新扫描当前赛事的全部投稿？已有谱面会增量更新。")) return;
+    setParsing(true);
+    setParseError("");
+    try {
+      const result = await api.parseSubmissions();
+      setSummary(result);
+      await Promise.all([charts.reload(), issues.reload()]);
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : "投稿解析失败");
+    } finally {
+      setParsing(false);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     await api.createChart(form);
@@ -952,6 +973,15 @@ function AdminGuess() {
   }
   return (
     <div className="page-stack">
+      <div className="admin-action-bar">
+        <div><FileArchive size={20} aria-hidden="true" focusable="false" /><strong>投稿解析</strong></div>
+        <button className="secondary-action" type="button" onClick={() => void parseSubmissions()} disabled={parsing}>
+          <RefreshCw size={17} aria-hidden="true" focusable="false" /> {parsing ? "解析中…" : "重新解析全部投稿"}
+        </button>
+      </div>
+      {summary && <Notice tone={summary.issues ? "info" : "success"}>扫描 {summary.scanned} 份，新增 {summary.created}，更新 {summary.updated}，删除 {summary.deleted}，问题 {summary.issues}</Notice>}
+      {parseError && <Notice tone="error">{parseError}</Notice>}
+      {charts.error && <Notice tone="error">{charts.error}</Notice>}
       <form className="form-panel compact" onSubmit={submit}>
         <label>标题<input name="title" autoComplete="off" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
         <label>作者<input name="author" autoComplete="off" value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} required /></label>
@@ -959,7 +989,16 @@ function AdminGuess() {
         <label>分组<input name="guess_group_key" autoComplete="off" value={form.guess_group_key} onChange={(e) => setForm({ ...form, guess_group_key: e.target.value })} /></label>
         <button className="primary-action" type="submit">新增谱面</button>
       </form>
-      <div className="chart-grid">{(charts.data || []).map((chart) => <div className="chart-card static" key={chart.id}><span>{chart.level}</span><strong>{chart.title}</strong><small>{chart.author}</small></div>)}</div>
+      <div className="chart-grid">{(charts.data || []).map((chart) => <div className="chart-card static" key={chart.id}>{chart.cover_path ? <img className="chart-cover" src={chart.cover_path} alt="" loading="lazy" decoding="async" /> : null}<span>{chart.level}</span><strong>{chart.title}</strong><small>{chart.author}</small></div>)}</div>
+      {issues.error && <Notice tone="error">{issues.error}</Notice>}
+      {(issues.data || []).length ? (
+        <div className="table-shell">
+          <table className="issue-table">
+            <thead><tr><th>来源</th><th>文件</th><th>类型</th><th>问题</th><th>时间</th></tr></thead>
+            <tbody>{(issues.data || []).map((issue) => <tr key={issue.id}><td>{issue.source_type === "j" ? "J 赛道" : "普通"}</td><td>{issue.file_name || "-"}</td><td>{issue.issue_type}</td><td>{issue.message}</td><td>{formatTime(issue.created_at)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : issues.state === "ready" ? <Notice>暂无解析问题</Notice> : null}
     </div>
   );
 }

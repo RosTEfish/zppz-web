@@ -9,6 +9,7 @@ from app.core.config import get_settings
 router = APIRouter(prefix="/assets", tags=["assets"])
 DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
 BACKGROUND_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400"}
+IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 def latest_file(folder: str, suffixes: set[str]) -> Path | None:
@@ -62,3 +63,12 @@ def background_file(file_name: str):
     if not file.exists():
         raise HTTPException(status_code=404, detail="背景不存在")
     return FileResponse(file, headers=BACKGROUND_CACHE_HEADERS)
+
+
+@router.get("/guess-covers/{file_name}")
+def guess_cover(file_name: str):
+    safe = Path(file_name).name
+    file = get_settings().assets_dir / "guess-covers" / safe
+    if safe != file_name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}:
+        raise HTTPException(status_code=404, detail="猜谱封面不存在")
+    return FileResponse(file, headers=IMMUTABLE_CACHE_HEADERS)

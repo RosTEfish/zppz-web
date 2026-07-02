@@ -39,4 +39,5 @@ def get_settings() -> Settings:
     (settings.assets_dir / "rules").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "banlists").mkdir(parents=True, exist_ok=True)
     (settings.assets_dir / "backgrounds").mkdir(parents=True, exist_ok=True)
+    (settings.assets_dir / "guess-covers").mkdir(parents=True, exist_ok=True)
     return settings

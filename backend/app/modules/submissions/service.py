@@ -21,15 +21,19 @@ def save_upload(file: UploadFile, folder: str) -> tuple[str, int]:
     safe_name = Path(file.filename or "upload.bin").name
     target = target_dir / f"{uuid4().hex}_{safe_name}"
     size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = file.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > settings.max_upload_mb * 1024 * 1024:
-                raise HTTPException(status_code=413, detail=f"文件不能超过 {settings.max_upload_mb} MB")
-            out.write(chunk)
+    try:
+        with target.open("wb") as out:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > settings.max_upload_mb * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"文件不能超过 {settings.max_upload_mb} MB")
+                out.write(chunk)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
     return str(target.relative_to(settings.data_dir)).replace("\\", "/"), size
 
 

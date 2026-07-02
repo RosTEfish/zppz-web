@@ -103,6 +103,24 @@ export interface GuessCommentRead {
   created_at: string;
 }
 
+export interface GuessImportIssueRead {
+  id: number;
+  source_type: string;
+  file_name: string;
+  issue_type: string;
+  message: string;
+  created_at: string;
+}
+
+export interface GuessImportSummary {
+  message: string;
+  scanned: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  issues: number;
+}
+
 const API_PREFIX = "/api/v1";
 const pendingGetRequests = new Map<string, Promise<unknown>>();
 
@@ -190,6 +208,8 @@ export const api = {
   comments: (chartId: number) => apiRequest<GuessCommentRead[]>(`/guess-game/charts/${chartId}/comments`),
   createComment: (chartId: number, content: string) => apiRequest<GuessCommentRead>(`/guess-game/charts/${chartId}/comments`, { method: "POST", body: JSON.stringify({ content }) }),
   adminCharts: () => apiRequest<GuessChartRead[]>("/admin/guess-game/charts"),
+  parseSubmissions: () => apiRequest<GuessImportSummary>("/admin/guess-game/parse-submissions", { method: "POST" }),
+  importIssues: () => apiRequest<GuessImportIssueRead[]>("/admin/guess-game/import-issues"),
   createChart: (payload: { title: string; author: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) =>
     apiRequest<GuessChartRead>("/admin/guess-game/charts", { method: "POST", body: JSON.stringify(payload) }),
   users: () => apiRequest<UserRead[]>("/admin/users"),

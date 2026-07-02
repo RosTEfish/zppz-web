@@ -642,6 +642,22 @@ th {
   cursor: wait;
 }
 
+.admin-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-block: 1px solid var(--line);
+}
+
+.admin-action-bar > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--green);
+}
+
 .guess-layout {
   grid-template-columns: minmax(0, 1fr) 360px;
 }
@@ -649,16 +665,33 @@ th {
 .chart-card {
   display: grid;
   gap: 9px;
-  min-height: 150px;
-  padding: 16px;
+  min-height: 240px;
+  padding: 0 0 16px;
+  overflow: hidden;
   text-align: left;
   color: var(--ink);
   content-visibility: auto;
-  contain-intrinsic-size: 150px;
+  contain-intrinsic-size: 240px;
+}
+
+.chart-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #e7e1d3;
+}
+
+.chart-cover-empty {
+  display: grid;
+  place-items: center;
+  color: var(--green);
+  background: repeating-linear-gradient(135deg, #e8e4d8 0, #e8e4d8 12px, #f1ede3 12px, #f1ede3 24px);
 }
 
 .chart-card span {
   width: fit-content;
+  margin-inline: 16px;
   padding: 4px 8px;
   border-radius: 8px;
   background: var(--green-2);
@@ -666,7 +699,17 @@ th {
   font-weight: 900;
 }
 
-.chart-card div {
+.chart-card > span:first-child {
+  margin-top: 16px;
+}
+
+.chart-card > strong,
+.chart-card > small,
+.chart-card-meta {
+  margin-inline: 16px;
+}
+
+.chart-card-meta {
   display: flex;
   gap: 12px;
   align-items: center;

@@ -1,0 +1,227 @@
+from io import BytesIO
+from pathlib import Path
+import shutil
+from zipfile import ZIP_DEFLATED, ZipFile
+
+import pytest
+import py7zr
+from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+
+from app.core.config import get_settings
+from app.db.bootstrap import seed_defaults
+from app.db.session import Base, SessionLocal, engine
+from app.main import app
+from app.models import GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Submission, User
+from app.modules.guess_game.importer import ArchiveParseError, parse_archive
+
+
+@pytest.fixture(autouse=True)
+def reset_db_and_files():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        seed_defaults(db)
+    settings = get_settings()
+    shutil.rmtree(settings.uploads_dir, ignore_errors=True)
+    shutil.rmtree(settings.assets_dir / "guess-covers", ignore_errors=True)
+    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    (settings.assets_dir / "guess-covers").mkdir(parents=True, exist_ok=True)
+
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def archive_bytes(maidata: str, encoding: str = "utf-8", cover: bytes | None = b"cover") -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("nested/maidata.txt", maidata.encode(encoding))
+        if cover is not None:
+            archive.writestr("nested/bg.png", cover)
+    return buffer.getvalue()
+
+
+def register(client: TestClient, code: str = "player1") -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"user_code": code, "qq_id": code, "password": "secret123", "identity": "audience"},
+    )
+    assert response.status_code == 201, response.text
+
+
+def login_admin(client: TestClient) -> None:
+    response = client.post("/api/v1/auth/login", json={"user_code": "admin", "password": "change-me-please"})
+    assert response.status_code == 200, response.text
+
+
+def upload(client: TestClient, content: bytes, name: str = "chart.zip"):
+    return client.post("/api/v1/submissions", files={"file": (name, content, "application/zip")})
+
+
+def test_parser_supports_nested_files_multiple_levels_and_fallback_encodings(tmp_path: Path):
+    cases = [
+        ("&title=中文标题\n&artist=作者\n&lv_4=【13+】\n&lv_5=14", "gbk", "中文标题"),
+        ("&title=テスト\n&artist=作家\n&lv_3=[12]", "shift_jis", "テスト"),
+    ]
+    for index, (maidata, encoding, expected_title) in enumerate(cases):
+        path = tmp_path / f"case-{index}.zip"
+        path.write_bytes(archive_bytes(maidata, encoding))
+        parsed = parse_archive(path)
+        assert parsed.title == expected_title
+        assert parsed.levels[0].level in {"13+", "12"}
+        assert parsed.cover_bytes == b"cover"
+
+
+def test_parser_rejects_missing_required_fields_and_allows_missing_cover(tmp_path: Path):
+    missing_title = tmp_path / "invalid.zip"
+    missing_title.write_bytes(archive_bytes("&artist=artist\n&lv_4=13"))
+    with pytest.raises(ArchiveParseError, match="title"):
+        parse_archive(missing_title)
+
+    no_cover = tmp_path / "no-cover.zip"
+    no_cover.write_bytes(archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13", cover=None))
+    parsed = parse_archive(no_cover)
+    assert parsed.cover_bytes is None
+    assert parsed.warnings[0].issue_type == "bg_missing"
+
+
+def test_parser_reads_only_required_7z_members(tmp_path: Path):
+    path = tmp_path / "chart.7z"
+    with py7zr.SevenZipFile(path, "w") as archive:
+        archive.writestr("&title=Seven\n&artist=Artist\n&lv_4=13+", "nested/maidata.txt")
+        archive.writestr(b"cover", "nested/bg.jpg")
+        archive.writestr(b"unused", "nested/music.ogg")
+    parsed = parse_archive(path)
+    assert parsed.title == "Seven"
+    assert [(level.slot, level.level) for level in parsed.levels] == [("4", "13+")]
+    assert parsed.cover_suffix == ".jpg"
+    assert parsed.cover_bytes == b"cover"
+
+
+def test_upload_creates_charts_and_serves_cover(client: TestClient):
+    register(client)
+    response = upload(client, archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13+\n&lv_5=14"))
+    assert response.status_code == 200, response.text
+
+    charts = client.get("/api/v1/guess-game/charts")
+    assert charts.status_code == 200
+    assert {(row["source_level_slot"], row["level"]) for row in charts.json()} == {("4", "13+"), ("5", "14")}
+    cover_path = charts.json()[0]["cover_path"]
+    assert cover_path.startswith("/api/v1/assets/guess-covers/")
+    assert client.get(cover_path).status_code == 200
+
+
+def test_j_track_upload_and_delete_sync_charts(client: TestClient):
+    register(client)
+    response = client.post(
+        "/api/v1/submissions/j-track",
+        files={"file": ("j-track.zip", archive_bytes("&title=J Song\n&artist=Artist\n&lv_6=15"), "application/zip")},
+    )
+    assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        chart = db.scalar(select(GuessChart))
+        assert chart is not None
+        assert chart.lane == "j"
+        assert chart.source_submission_type == "j"
+
+    deleted = client.delete("/api/v1/submissions/j-track")
+    assert deleted.status_code == 200, deleted.text
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(GuessChart)) == 0
+
+
+def test_incremental_replace_preserves_matching_chart_interactions(client: TestClient):
+    register(client)
+    first = upload(client, archive_bytes("&title=Old\n&artist=Artist\n&lv_4=13\n&lv_5=14"))
+    assert first.status_code == 200, first.text
+    submission_id = first.json()["id"]
+
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.user_code == "player1"))
+        slot_four = db.scalar(select(GuessChart).where(GuessChart.source_level_slot == "4"))
+        assert user and slot_four
+        original_chart_id = slot_four.id
+        db.add(GuessVote(chart_id=slot_four.id, user_id=user.id, vote_type="love"))
+        db.add(GuessComment(chart_id=slot_four.id, user_id=user.id, content="keep"))
+        db.add(GuessAuthorGuess(chart_id=slot_four.id, user_id=user.id, guessed_user_id=user.id))
+        db.commit()
+
+    replacement = archive_bytes("&title=Updated\n&artist=Artist\n&lv_4=13+\n&lv_6=15")
+    response = client.post(
+        f"/api/v1/submissions/{submission_id}/replace",
+        files={"file": ("replacement.zip", replacement, "application/zip")},
+    )
+    assert response.status_code == 200, response.text
+
+    with SessionLocal() as db:
+        charts = {chart.source_level_slot: chart for chart in db.scalars(select(GuessChart)).all()}
+        assert set(charts) == {"4", "6"}
+        assert charts["4"].id == original_chart_id
+        assert charts["4"].title == "Updated"
+        assert db.scalar(select(func.count()).select_from(GuessVote).where(GuessVote.chart_id == original_chart_id)) == 1
+        assert db.scalar(select(func.count()).select_from(GuessComment).where(GuessComment.chart_id == original_chart_id)) == 1
+        assert db.scalar(select(func.count()).select_from(GuessAuthorGuess).where(GuessAuthorGuess.chart_id == original_chart_id)) == 1
+
+
+def test_invalid_upload_and_replace_leave_no_partial_state(client: TestClient):
+    register(client)
+    invalid = upload(client, archive_bytes("&artist=Artist\n&lv_4=13"), "invalid.zip")
+    assert invalid.status_code == 400
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Submission)) == 0
+        assert db.scalar(select(func.count()).select_from(GuessChart)) == 0
+    assert not list(get_settings().uploads_dir.rglob("*.zip"))
+
+    first = upload(client, archive_bytes("&title=Stable\n&artist=Artist\n&lv_4=13"))
+    assert first.status_code == 200
+    submission_id = first.json()["id"]
+    with SessionLocal() as db:
+        original = db.get(Submission, submission_id)
+        original_storage_path = original.storage_path
+        chart_id = db.scalar(select(GuessChart.id))
+
+    failed = client.post(
+        f"/api/v1/submissions/{submission_id}/replace",
+        files={"file": ("broken.zip", archive_bytes("&artist=Artist\n&lv_4=14"), "application/zip")},
+    )
+    assert failed.status_code == 400
+    with SessionLocal() as db:
+        current = db.get(Submission, submission_id)
+        assert current.storage_path == original_storage_path
+        assert db.scalar(select(GuessChart.id)) == chart_id
+
+
+def test_admin_rebuild_reports_invalid_legacy_file_without_removing_charts(client: TestClient):
+    register(client)
+    created = upload(client, archive_bytes("&title=Stable\n&artist=Artist\n&lv_4=13"))
+    assert created.status_code == 200
+    with SessionLocal() as db:
+        submission = db.get(Submission, created.json()["id"])
+        chart_id = db.scalar(select(GuessChart.id))
+        (get_settings().data_dir / submission.storage_path).write_bytes(b"not a zip")
+
+    denied = client.post("/api/v1/admin/guess-game/parse-submissions")
+    assert denied.status_code == 403
+    login_admin(client)
+    rebuilt = client.post("/api/v1/admin/guess-game/parse-submissions")
+    assert rebuilt.status_code == 200, rebuilt.text
+    assert rebuilt.json()["scanned"] == 1
+    assert rebuilt.json()["issues"] == 1
+    with SessionLocal() as db:
+        assert db.scalar(select(GuessChart.id)) == chart_id
+        assert db.scalar(select(func.count()).select_from(ImportIssue)) == 1
+
+
+def test_delete_submission_removes_only_its_charts_and_cover(client: TestClient):
+    register(client)
+    created = upload(client, archive_bytes("&title=Delete Me\n&artist=Artist\n&lv_4=13"))
+    assert created.status_code == 200
+    cover_path = client.get("/api/v1/guess-game/charts").json()[0]["cover_path"]
+    response = client.delete(f"/api/v1/submissions/{created.json()['id']}")
+    assert response.status_code == 200
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(GuessChart)) == 0
+    assert client.get(cover_path).status_code == 404
