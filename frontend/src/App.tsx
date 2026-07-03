@@ -101,6 +101,7 @@ import {
 } from "./api/v1";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
+import beianIcon from "./assets/beian.png";
 
 const DRAWER_WIDTH = 248;
 const EMPTY_SONG: SongPayload = { song_name: "", artist: "", song_type: "A", remark: "" };
@@ -252,7 +253,7 @@ function SiteFooter() {
             京ICP备2026012070号-1
           </Typography>
           <Stack component="a" href="https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846" target="_blank" rel="noopener noreferrer" direction="row" spacing={0.5} sx={{ alignItems: "center", color: "text.secondary", "&:hover": { color: "text.primary" } }}>
-            <Box component="img" src="/beian.png" alt="公安备案图标" sx={{ width: 18, height: 18, objectFit: "contain" }} />
+            <Box component="img" src={beianIcon} alt="公安备案图标" sx={{ width: 18, height: 18, objectFit: "contain" }} />
             <Typography variant="caption" color="inherit">京公网安备11010802047846号</Typography>
           </Stack>
         </Stack>
