@@ -32,6 +32,14 @@ def download_rule():
     return FileResponse(file, media_type="application/pdf", filename=file.name, headers=DOWNLOAD_CACHE_HEADERS)
 
 
+@router.get("/rule/view")
+def view_rule():
+    file = latest_file("rules", {".pdf"})
+    if not file:
+        raise HTTPException(status_code=404, detail="暂无规则文件")
+    return FileResponse(file, media_type="application/pdf", headers=DOWNLOAD_CACHE_HEADERS)
+
+
 @router.get("/banlist")
 def banlist() -> dict:
     file = latest_file("banlists", {".xlsx", ".xls", ".csv"})

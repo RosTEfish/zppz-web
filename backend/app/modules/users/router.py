@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import ensure_roles, hash_password, require_role, user_payload
 from app.db.session import get_db
-from app.models import User
+from app.models import Role, User
 from app.schemas import AdminUserUpdate, ResetPasswordRequest, UserRead
 
 
@@ -22,6 +22,18 @@ def update_user(user_id: int, payload: AdminUserUpdate, _: User = Depends(requir
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    removes_active_admin = user.is_active and user.has_role("admin") and (
+        "admin" not in payload.roles or not payload.is_active
+    )
+    if removes_active_admin:
+        another_active_admin = db.scalar(
+            select(User.id)
+            .join(User.roles)
+            .where(Role.name == "admin", User.is_active.is_(True), User.id != user.id)
+            .limit(1)
+        )
+        if another_active_admin is None:
+            raise HTTPException(status_code=409, detail="至少需要保留一名启用中的管理员")
     roles = ensure_roles(db)
     user.identity = payload.identity
     user.display_name = payload.display_name

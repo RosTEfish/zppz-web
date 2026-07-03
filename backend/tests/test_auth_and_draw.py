@@ -74,6 +74,55 @@ def test_song_pool_requires_auth(client: TestClient):
     assert response.status_code == 401
 
 
+def test_rule_can_be_viewed_inline(client: TestClient):
+    response = client.get("/api/v1/assets/rule/view")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "attachment" not in response.headers.get("content-disposition", "")
+    assert response.content.startswith(b"%PDF")
+
+    banlist = client.get("/api/v1/assets/banlist/download")
+    assert banlist.status_code == 200
+    assert "attachment" in banlist.headers.get("content-disposition", "")
+    assert banlist.content.startswith(b"PK")
+
+
+def test_admin_role_management_keeps_an_active_admin(client: TestClient):
+    register_user(client, "deputy")
+    response = client.post("/api/v1/auth/login", json={"user_code": "admin", "password": "change-me-please"})
+    assert response.status_code == 200, response.text
+
+    users = client.get("/api/v1/admin/users").json()
+    admin = next(user for user in users if user["user_code"] == "admin")
+    deputy = next(user for user in users if user["user_code"] == "deputy")
+    admin_payload = {
+        "identity": admin["identity"],
+        "roles": [role for role in admin["roles"] if role != "admin"],
+        "display_name": admin["display_name"],
+        "is_active": True,
+    }
+
+    blocked = client.put(f"/api/v1/admin/users/{admin['id']}", json=admin_payload)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == "至少需要保留一名启用中的管理员"
+
+    promoted = client.put(
+        f"/api/v1/admin/users/{deputy['id']}",
+        json={
+            "identity": deputy["identity"],
+            "roles": [*deputy["roles"], "admin"],
+            "display_name": deputy["display_name"],
+            "is_active": True,
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["is_admin"] is True
+
+    demoted = client.put(f"/api/v1/admin/users/{admin['id']}", json=admin_payload)
+    assert demoted.status_code == 200, demoted.text
+    assert demoted.json()["is_admin"] is False
+
+
 def test_self_draw_requires_auth_and_participant(client: TestClient):
     response = client.post("/api/v1/draw/me")
     assert response.status_code == 401

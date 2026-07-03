@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -67,6 +67,8 @@ describe("Material application shell", () => {
     expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
     expect(screen.getByText("公告内容")).toBeInTheDocument();
     expect(screen.getByText("等待开放")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
+    expect(screen.getByRole("link", { name: "往期 Ban 曲列表" })).toHaveAttribute("href", "/api/v1/assets/banlist/download");
   });
 
   it("labels chart activity as views instead of plays", async () => {
@@ -75,5 +77,50 @@ describe("Material application shell", () => {
     expect(await screen.findByText("测试谱面")).toBeInTheDocument();
     expect(screen.getByText("查看 7")).toBeInTheDocument();
     expect(screen.queryByText(/播放/)).not.toBeInTheDocument();
+  });
+
+  it("submits the administrator role from user management", async () => {
+    window.history.pushState({}, "", "/admin/users");
+    const admin = {
+      id: 1,
+      user_code: "admin",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "赛事管理员",
+      roles: ["admin", "pool_editor", "participant"],
+      is_admin: true,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    const member = {
+      id: 2,
+      user_code: "member",
+      qq_id: "2",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const updateBodies: Array<{ roles: string[] }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/auth/me")) return json({ user: admin });
+      if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/admin/users") && (init?.method || "GET") === "GET") return json([member]);
+      if (path.endsWith("/admin/users/2") && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as { roles: string[] };
+        updateBodies.push(body);
+        return json({ ...member, roles: body.roles, is_admin: body.roles.includes("admin") });
+      }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "管理员" }));
+
+    await waitFor(() => expect(updateBodies).toHaveLength(1));
+    expect(updateBodies[0].roles).toContain("admin");
   });
 });

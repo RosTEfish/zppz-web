@@ -50,6 +50,7 @@ import {
 import {
   Archive,
   BarChart3,
+  BookOpenText,
   Check,
   ChevronRight,
   CircleUserRound,
@@ -294,7 +295,11 @@ function HomePage() {
         <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
         <Typography variant="h1" sx={{ mt: 0.5 }}>{event?.name || "赛事进行中"}</Typography>
         {event?.settings.announcement_text ? <Typography color="text.secondary" sx={{ mt: 1.5, maxWidth: 760, whiteSpace: "pre-wrap" }}>{event.settings.announcement_text}</Typography> : null}
-        {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />} sx={{ mt: 2.5 }}>进入赛事</Button> : null}
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2.5, flexWrap: "wrap" }}>
+          {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />}>进入赛事</Button> : null}
+          <Button component="a" href="/api/v1/assets/rule/view" target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<BookOpenText size={18} />}>查看规则</Button>
+          <Button component="a" href="/api/v1/assets/banlist/download" variant="outlined" startIcon={<FileDown size={18} />}>往期 Ban 曲列表</Button>
+        </Stack>
       </Paper>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
         {stages.map(({ label, value, icon: Icon, to }) => (
@@ -593,13 +598,38 @@ function AdminSettings() {
   return <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}><Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" }, gap: 2 }}><TextField label="赛事名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />{numberField("participant_song_limit", "参赛者曲目上限")}{numberField("audience_song_limit", "观众曲目上限")}{numberField("draw_songs_per_participant", "每人抽取曲目数")}{numberField("true_love_vote_limit", "真爱票上限")}{numberField("funny_vote_limit", "欢乐票上限")}<TextField type="datetime-local" label="投稿截止" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(form.submission_deadline)} onChange={(e) => setForm({ ...form, submission_deadline: e.target.value || null })} /><TextField type="datetime-local" label="猜谱开放" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(form.guess_game_open_at)} onChange={(e) => setForm({ ...form, guess_game_open_at: e.target.value || null })} /><TextField label="公告" multiline minRows={3} value={form.announcement_text} onChange={(e) => setForm({ ...form, announcement_text: e.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /><Paper variant="outlined" sx={{ p: 1.5, gridColumn: { md: "1 / -1" } }}><FormControlLabel control={<Switch checked={form.submissions_open} onChange={(e) => setForm({ ...form, submissions_open: e.target.checked })} />} label="开放投稿" /></Paper></Box>{error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}<Button variant="contained" startIcon={<Save size={17} />} onClick={() => void save()} sx={{ mt: 2 }}>保存设置</Button><Snackbar open={Boolean(message)} autoHideDuration={2500} onClose={() => setMessage("")} message={message} /></Paper>;
 }
 
+function updateRole(roles: string[], role: string, enabled: boolean): string[] {
+  if (enabled) return roles.includes(role) ? roles : [...roles, role];
+  return roles.filter((item) => item !== role);
+}
+
 function AdminUsers() {
   const users = useResource(api.users, []);
   const [error, setError] = useState("");
   async function change(user: UserRead, patch: Partial<{ identity: string; roles: string[]; display_name: string; is_active: boolean }>) {
     try { await api.updateUser(user.id, { identity: patch.identity ?? user.identity, roles: patch.roles ?? user.roles, display_name: patch.display_name ?? user.display_name, is_active: patch.is_active ?? user.is_active ?? true }); await users.reload(); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); }
   }
-  return <>{error ? <Alert severity="error">{error}</Alert> : null}<ResourceState loading={users.loading} error={users.error} />{users.data ? <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell>账号</TableCell><TableCell>显示名</TableCell><TableCell>身份</TableCell><TableCell>权限</TableCell><TableCell>启用</TableCell></TableRow></TableHead><TableBody>{users.data.map((user) => <TableRow key={user.id}><TableCell>{user.user_code}</TableCell><TableCell><TextField size="small" defaultValue={user.display_name} onBlur={(e) => { if (e.target.value !== user.display_name) void change(user, { display_name: e.target.value }); }} /></TableCell><TableCell><Select size="small" value={user.identity} onChange={(e) => void change(user, { identity: e.target.value })}><MenuItem value="participant">参赛者</MenuItem><MenuItem value="audience">观众</MenuItem></Select></TableCell><TableCell><FormControlLabel control={<Checkbox checked={user.roles.includes("pool_editor")} onChange={(e) => void change(user, { roles: e.target.checked ? [...new Set([...user.roles, "pool_editor"])] : user.roles.filter((role) => role !== "pool_editor") })} />} label="曲池编辑" /></TableCell><TableCell><Switch checked={user.is_active ?? true} onChange={(e) => void change(user, { is_active: e.target.checked })} /></TableCell></TableRow>)}</TableBody></Table></TableContainer> : null}</>;
+  return <>
+    {error ? <Alert severity="error">{error}</Alert> : null}
+    <ResourceState loading={users.loading} error={users.error} />
+    {users.data ? <TableContainer component={Paper} variant="outlined">
+      <Table size="small">
+        <TableHead><TableRow><TableCell>账号</TableCell><TableCell>显示名</TableCell><TableCell>身份</TableCell><TableCell>权限</TableCell><TableCell>启用</TableCell></TableRow></TableHead>
+        <TableBody>{users.data.map((user) => <TableRow key={user.id}>
+          <TableCell>{user.user_code}</TableCell>
+          <TableCell><TextField size="small" defaultValue={user.display_name} onBlur={(e) => { if (e.target.value !== user.display_name) void change(user, { display_name: e.target.value }); }} /></TableCell>
+          <TableCell><Select size="small" value={user.identity} onChange={(e) => void change(user, { identity: e.target.value })}><MenuItem value="participant">参赛者</MenuItem><MenuItem value="audience">观众</MenuItem></Select></TableCell>
+          <TableCell>
+            <Stack spacing={0} sx={{ minWidth: 132 }}>
+              <FormControlLabel sx={{ m: 0 }} control={<Checkbox checked={user.roles.includes("admin")} onChange={(e) => void change(user, { roles: updateRole(user.roles, "admin", e.target.checked) })} />} label="管理员" />
+              <FormControlLabel sx={{ m: 0 }} control={<Checkbox checked={user.roles.includes("pool_editor")} onChange={(e) => void change(user, { roles: updateRole(user.roles, "pool_editor", e.target.checked) })} />} label="曲池编辑" />
+            </Stack>
+          </TableCell>
+          <TableCell><Tooltip title={user.roles.includes("admin") ? "停用最后一名管理员会被系统阻止" : ""}><span><Switch checked={user.is_active ?? true} onChange={(e) => void change(user, { is_active: e.target.checked })} /></span></Tooltip></TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    </TableContainer> : null}
+  </>;
 }
 
 function AdminSongs() {
