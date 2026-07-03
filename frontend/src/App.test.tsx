@@ -69,6 +69,9 @@ describe("Material application shell", () => {
     expect(screen.getByText("等待开放")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
     expect(screen.getByRole("link", { name: "往期 Ban 曲列表" })).toHaveAttribute("href", "/api/v1/assets/banlist/download");
+    expect(screen.getByRole("link", { name: "京ICP备2026012070号-1" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
+    expect(screen.getByRole("link", { name: /京公网安备11010802047846号/ })).toHaveAttribute("href", "https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846");
+    expect(screen.getByAltText("公安备案图标")).toHaveAttribute("src", "/beian.png");
   });
 
   it("labels chart activity as views instead of plays", async () => {

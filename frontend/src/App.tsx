@@ -223,8 +223,8 @@ function AppShell() {
         </Toolbar>
       </AppBar>
       <Drawer variant={mobile ? "temporary" : "permanent"} open={mobile ? drawerOpen : true} onClose={() => setDrawerOpen(false)} ModalProps={{ keepMounted: true }} sx={{ width: DRAWER_WIDTH, flexShrink: 0, "& .MuiDrawer-paper": { width: DRAWER_WIDTH, boxSizing: "border-box" } }}>{drawer}</Drawer>
-      <Box component="main" sx={{ ml: mobile ? 0 : `${DRAWER_WIDTH}px`, pt: 8, minWidth: 0 }}>
-        <Container maxWidth="xl" sx={{ py: { xs: 2, md: 3 } }}>
+      <Box component="main" sx={{ ml: mobile ? 0 : `${DRAWER_WIDTH}px`, pt: 8, minWidth: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        <Container maxWidth="xl" sx={{ py: { xs: 2, md: 3 }, width: "100%", flex: 1 }}>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<AuthPage />} />
@@ -237,7 +237,26 @@ function AppShell() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Container>
+        <SiteFooter />
       </Box>
+    </Box>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper", py: 2 }}>
+      <Container maxWidth="xl">
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 0.75, sm: 2 }} useFlexGap sx={{ alignItems: "center", justifyContent: "center", flexWrap: "wrap", textAlign: "center" }}>
+          <Typography component="a" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" variant="caption" color="text.secondary" sx={{ "&:hover": { color: "text.primary" } }}>
+            京ICP备2026012070号-1
+          </Typography>
+          <Stack component="a" href="https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846" target="_blank" rel="noopener noreferrer" direction="row" spacing={0.5} sx={{ alignItems: "center", color: "text.secondary", "&:hover": { color: "text.primary" } }}>
+            <Box component="img" src="/beian.png" alt="公安备案图标" sx={{ width: 18, height: 18, objectFit: "contain" }} />
+            <Typography variant="caption" color="inherit">京公网安备11010802047846号</Typography>
+          </Stack>
+        </Stack>
+      </Container>
     </Box>
   );
 }
