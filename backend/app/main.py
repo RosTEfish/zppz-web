@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.db.bootstrap import create_schema, seed_defaults
+from app.db.bootstrap import create_schema, seed_defaults, upgrade_schema
 from app.db.session import SessionLocal
 from app.modules.admin.router import router as admin_router
 from app.modules.assets.router import router as assets_router
@@ -50,6 +50,7 @@ class CachedStaticFiles(StaticFiles):
 
 @app.on_event("startup")
 def startup() -> None:
+    upgrade_schema()
     create_schema()
     with SessionLocal() as db:
         seed_defaults(db)

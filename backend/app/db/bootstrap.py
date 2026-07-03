@@ -1,5 +1,8 @@
 import json
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -61,6 +64,15 @@ def sync_permissions_file(db: Session, roles: dict) -> None:
 
 def create_schema() -> None:
     Base.metadata.create_all(bind=engine)
+
+
+def upgrade_schema() -> None:
+    backend_root = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("prepend_sys_path", str(backend_root))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
+    command.upgrade(config, "head")
 
 
 def seed_defaults(db: Session) -> None:

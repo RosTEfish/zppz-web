@@ -29,30 +29,38 @@ def _safe_unlink(root: Path, relative_path: str) -> None:
 
 def _purge_current_event_legacy_submissions() -> None:
     bind = op.get_bind()
+    submission_columns = {column["name"] for column in sa.inspect(bind).get_columns("submissions")}
+    has_source_song = "source_song_id" in submission_columns
+    has_track = "track" in submission_columns
     event_ids = [row[0] for row in bind.execute(sa.text("SELECT id FROM events WHERE is_current = true"))]
     if not event_ids:
         return
 
     data_dir = Path(os.getenv("DATA_DIR", "/data")).resolve()
     for event_id in event_ids:
-        submission_paths = [
-            row[0]
-            for row in bind.execute(
-                sa.text("SELECT storage_path FROM submissions WHERE event_id = :event_id"),
-                {"event_id": event_id},
-            )
-        ]
-        submission_paths.extend(
-            row[0]
-            for row in bind.execute(
-                sa.text("SELECT storage_path FROM j_track_submissions WHERE event_id = :event_id"),
+        legacy_filter = " AND source_song_id IS NULL" if has_source_song else ""
+        track_column = "track" if has_track else "'normal' AS track"
+        submission_rows = list(
+            bind.execute(
+                sa.text(
+                    f"SELECT id, storage_path, {track_column} FROM submissions "
+                    f"WHERE event_id = :event_id{legacy_filter}"
+                ),
                 {"event_id": event_id},
             )
         )
-        chart_rows = list(
+        legacy_j_rows = list(
+            bind.execute(
+                sa.text("SELECT id, storage_path FROM j_track_submissions WHERE event_id = :event_id"),
+                {"event_id": event_id},
+            )
+        )
+        legacy_keys = {(str(row[2] or "normal"), int(row[0])) for row in submission_rows}
+        legacy_keys.update(("j", int(row[0])) for row in legacy_j_rows)
+        all_sourced_charts = list(
             bind.execute(
                 sa.text(
-                    "SELECT id, cover_path FROM guess_charts "
+                    "SELECT id, cover_path, source_submission_type, source_submission_id FROM guess_charts "
                     "WHERE event_id = :event_id "
                     "AND source_submission_type IN ('normal', 'j') "
                     "AND source_submission_id IS NOT NULL"
@@ -60,6 +68,11 @@ def _purge_current_event_legacy_submissions() -> None:
                 {"event_id": event_id},
             )
         )
+        chart_rows = [
+            row
+            for row in all_sourced_charts
+            if (str(row[2]), int(row[3])) in legacy_keys
+        ]
         chart_ids = [row[0] for row in chart_rows]
         if chart_ids:
             placeholders = ",".join(str(int(chart_id)) for chart_id in chart_ids)
@@ -67,17 +80,25 @@ def _purge_current_event_legacy_submissions() -> None:
             bind.execute(sa.text(f"DELETE FROM guess_comments WHERE chart_id IN ({placeholders})"))
             bind.execute(sa.text(f"DELETE FROM guess_votes WHERE chart_id IN ({placeholders})"))
             bind.execute(sa.text(f"DELETE FROM guess_charts WHERE id IN ({placeholders})"))
-        bind.execute(
-            sa.text("DELETE FROM import_issues WHERE event_id = :event_id AND source_type IN ('normal', 'j')"),
-            {"event_id": event_id},
-        )
-        bind.execute(sa.text("DELETE FROM submissions WHERE event_id = :event_id"), {"event_id": event_id})
+        for source_type, source_id in legacy_keys:
+            bind.execute(
+                sa.text(
+                    "DELETE FROM import_issues "
+                    "WHERE event_id = :event_id AND source_type = :source_type AND source_id = :source_id"
+                ),
+                {"event_id": event_id, "source_type": source_type, "source_id": source_id},
+            )
+        submission_ids = [int(row[0]) for row in submission_rows]
+        if submission_ids:
+            placeholders = ",".join(str(submission_id) for submission_id in submission_ids)
+            bind.execute(sa.text(f"DELETE FROM submissions WHERE id IN ({placeholders})"))
         bind.execute(sa.text("DELETE FROM j_track_submissions WHERE event_id = :event_id"), {"event_id": event_id})
 
+        submission_paths = [row[1] for row in submission_rows] + [row[1] for row in legacy_j_rows]
         for storage_path in submission_paths:
             if storage_path:
                 _safe_unlink(data_dir, storage_path)
-        for _, cover_path in chart_rows:
+        for _, cover_path, _, _ in chart_rows:
             prefix = "/api/v1/assets/guess-covers/"
             if cover_path and cover_path.startswith(prefix):
                 _safe_unlink(data_dir, f"assets/guess-covers/{Path(cover_path).name}")
