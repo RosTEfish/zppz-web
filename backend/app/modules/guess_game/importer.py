@@ -94,7 +94,7 @@ def normalize_group_key(title: str, author: str) -> str:
 
 
 def normalize_level(value: str) -> str:
-    return value.strip().replace("【", "").replace("】", "").replace("[", "").replace("]", "").strip()
+    return re.sub(r"[\[\]【】()（）]", "", value).strip()
 
 
 def decode_maidata(raw: bytes) -> str:
@@ -376,6 +376,7 @@ def sync_parsed_source(
     file_name: str,
     storage_path: str,
     parsed: ParsedArchive,
+    is_self_selected: bool | None = None,
 ) -> SyncResult:
     charts = list(
         db.scalars(
@@ -391,7 +392,9 @@ def sync_parsed_source(
     result = SyncResult(previous_cover_paths={chart.cover_path for chart in charts if chart.cover_path})
     _replace_source_issues(db, event_id, source_type, source_id, file_name, parsed.warnings)
     result.new_cover_path = _write_cover(event_id, source_type, source_id, parsed)
-    is_self_selected = any(chart.is_self_selected for chart in charts)
+    resolved_self_selected = (
+        any(chart.is_self_selected for chart in charts) if is_self_selected is None else is_self_selected
+    )
     by_slot: dict[str, GuessChart] = {}
     for chart in charts:
         if chart.source_level_slot in by_slot:
@@ -417,7 +420,7 @@ def sync_parsed_source(
             "source_level_slot": level.slot,
             "cover_path": result.new_cover_path,
             "storage_path": storage_path,
-            "is_self_selected": is_self_selected,
+            "is_self_selected": resolved_self_selected,
         }
         if chart is None:
             db.add(GuessChart(event_id=event_id, plays=0, **values))
@@ -479,7 +482,9 @@ def delete_source_charts(db: Session, event_id: int, source_type: str, source_id
 def rebuild_event_charts(db: Session, event_id: int) -> RebuildResult:
     normal = list(db.scalars(select(Submission).where(Submission.event_id == event_id).order_by(Submission.id.asc())).all())
     j_track = list(db.scalars(select(JTrackSubmission).where(JTrackSubmission.event_id == event_id).order_by(JTrackSubmission.id.asc())).all())
-    sources = [("normal", row) for row in normal] + [("j", row) for row in j_track]
+    sources = [(row.track if row.track in {"normal", "j"} else "normal", row) for row in normal] + [
+        ("j", row) for row in j_track
+    ]
     active_keys = {(source_type, row.id) for source_type, row in sources}
     result = RebuildResult(scanned=len(sources))
     stale_covers: set[str] = set()
@@ -501,6 +506,7 @@ def rebuild_event_charts(db: Session, event_id: int) -> RebuildResult:
                 file_name=row.file_name,
                 storage_path=row.storage_path,
                 parsed=parsed,
+                is_self_selected=getattr(row, "source_kind", "") == "self",
             )
             result.created += sync.created
             result.updated += sync.updated

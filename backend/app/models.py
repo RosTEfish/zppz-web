@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -83,6 +83,7 @@ class EventSetting(Base, TimestampMixin):
     registration_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     submission_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     guess_game_open_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    submissions_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     event: Mapped[Event] = relationship(back_populates="settings")
 
@@ -116,10 +117,28 @@ class DrawAssignment(Base, TimestampMixin):
 
 class Submission(Base, TimestampMixin):
     __tablename__ = "submissions"
+    __table_args__ = (
+        UniqueConstraint("event_id", "user_id", "source_song_id", name="uq_submission_event_user_song"),
+        Index(
+            "uq_submission_event_user_j_track",
+            "event_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("track = 'j'"),
+            sqlite_where=text("track = 'j'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    source_song_id: Mapped[int | None] = mapped_column(
+        ForeignKey("songs.id", ondelete="RESTRICT", name="fk_submissions_source_song_id"),
+        index=True,
+        nullable=True,
+    )
+    source_kind: Mapped[str] = mapped_column(String(20), default="", nullable=False)
+    track: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -127,6 +146,7 @@ class Submission(Base, TimestampMixin):
     review_note: Mapped[str] = mapped_column(String(500), default="", nullable=False)
 
     user: Mapped[User] = relationship()
+    source_song: Mapped[Song | None] = relationship()
 
 
 class JTrackSubmission(Base, TimestampMixin):
@@ -141,6 +161,19 @@ class JTrackSubmission(Base, TimestampMixin):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
 
     user: Mapped[User] = relationship()
+
+
+class AdminGuessArchive(Base, TimestampMixin):
+    __tablename__ = "admin_guess_archives"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    uploaded_by: Mapped[User | None] = relationship()
 
 
 class GuessChart(Base, TimestampMixin):
@@ -215,4 +248,3 @@ class ImportIssue(Base, TimestampMixin):
     file_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     issue_type: Mapped[str] = mapped_column(String(50), nullable=False)
     message: Mapped[str] = mapped_column(String(500), nullable=False)
-

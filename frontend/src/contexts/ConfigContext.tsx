@@ -16,6 +16,7 @@ interface AppConfig {
   allowed_extensions?: string[];
   registration_deadline?: string | null;
   submission_deadline?: string | null;
+  submissions_open: boolean;
 }
 
 interface ConfigContextType {
@@ -42,6 +43,7 @@ function toConfig(event: EventRead | null): AppConfig | null {
     announcement_text: event.settings.announcement_text,
     registration_deadline: event.settings.registration_deadline,
     submission_deadline: event.settings.submission_deadline,
+    submissions_open: event.settings.submissions_open,
   };
 }
 
@@ -78,4 +80,3 @@ export function useConfig() {
   if (!ctx) throw new Error("useConfig must be used within ConfigProvider");
   return ctx;
 }
-

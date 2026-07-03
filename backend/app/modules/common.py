@@ -26,6 +26,9 @@ def serialize_submission(item: Submission) -> dict:
         "file_size": item.file_size,
         "review_status": item.review_status,
         "review_note": item.review_note,
+        "source_kind": item.source_kind,
+        "track": item.track,
+        "source_song": serialize_song(item.source_song) if item.source_song else None,
         "user": user_payload(item.user) if item.user else None,
         "created_at": item.created_at,
     }

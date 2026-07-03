@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Submission, User
+from app.models import Event, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
 from app.modules.guess_game.importer import ArchiveParseError, parse_archive
 
 
@@ -47,7 +47,7 @@ def archive_bytes(maidata: str, encoding: str = "utf-8", cover: bytes | None = b
 def register(client: TestClient, code: str = "player1") -> None:
     response = client.post(
         "/api/v1/auth/register",
-        json={"user_code": code, "qq_id": code, "password": "secret123", "identity": "audience"},
+        json={"user_code": code, "qq_id": code, "password": "secret123", "identity": "participant"},
     )
     assert response.status_code == 201, response.text
 
@@ -58,7 +58,22 @@ def login_admin(client: TestClient) -> None:
 
 
 def upload(client: TestClient, content: bytes, name: str = "chart.zip"):
-    return client.post("/api/v1/submissions", files={"file": (name, content, "application/zip")})
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.user_code == "player1"))
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        song = db.scalar(select(Song).where(Song.event_id == event.id, Song.submitted_by_id == user.id))
+        if not song:
+            song = Song(event_id=event.id, submitted_by_id=user.id, song_name="Candidate", artist="Artist", song_type="A")
+            db.add(song)
+            db.flush()
+        event.settings.submissions_open = True
+        db.commit()
+        song_id = song.id
+    return client.post(
+        "/api/v1/submissions",
+        data={"song_id": str(song_id), "track": "normal"},
+        files={"file": (name, content, "application/zip")},
+    )
 
 
 def test_parser_supports_nested_files_multiple_levels_and_fallback_encodings(tmp_path: Path):
@@ -116,10 +131,15 @@ def test_upload_creates_charts_and_serves_cover(client: TestClient):
 
 def test_j_track_upload_and_delete_sync_charts(client: TestClient):
     register(client)
-    response = client.post(
-        "/api/v1/submissions/j-track",
-        files={"file": ("j-track.zip", archive_bytes("&title=J Song\n&artist=Artist\n&lv_6=15"), "application/zip")},
-    )
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.user_code == "player1"))
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        song = Song(event_id=event.id, submitted_by_id=user.id, song_name="J Candidate", artist="Artist", song_type="A")
+        db.add(song)
+        event.settings.submissions_open = True
+        db.commit()
+        song_id = song.id
+    response = client.post("/api/v1/submissions", data={"song_id": song_id, "track": "j"}, files={"file": ("j-track.zip", archive_bytes("&title=J Song\n&artist=Artist\n&lv_6=15"), "application/zip")})
     assert response.status_code == 200, response.text
     with SessionLocal() as db:
         chart = db.scalar(select(GuessChart))

@@ -1,4 +1,4 @@
-export type RoleName = "admin" | "pool_editor" | "participant" | "audience";
+export type Track = "normal" | "j";
 
 export interface UserRead {
   id: number;
@@ -9,6 +9,7 @@ export interface UserRead {
   roles: string[];
   is_admin: boolean;
   is_pool_editor: boolean;
+  is_active?: boolean;
 }
 
 export interface EventRead {
@@ -16,17 +17,7 @@ export interface EventRead {
   name: string;
   slug: string;
   is_current: boolean;
-  settings: {
-    participant_song_limit: number;
-    audience_song_limit: number;
-    draw_songs_per_participant: number;
-    true_love_vote_limit: number;
-    funny_vote_limit: number;
-    announcement_text: string;
-    registration_deadline?: string | null;
-    submission_deadline?: string | null;
-    guess_game_open_at?: string | null;
-  };
+  settings: EventUpdatePayload;
 }
 
 export interface EventUpdatePayload {
@@ -40,6 +31,7 @@ export interface EventUpdatePayload {
   registration_deadline?: string | null;
   submission_deadline?: string | null;
   guess_game_open_at?: string | null;
+  submissions_open: boolean;
 }
 
 export interface SongRead {
@@ -65,8 +57,22 @@ export interface StoredFileRead {
   file_size: number;
   review_status: string;
   review_note: string;
+  source_kind: "self" | "assigned" | string;
+  track: Track;
+  source_song?: SongRead | null;
   user?: UserRead | null;
   created_at: string;
+}
+
+export interface SubmissionTargetRead {
+  song: SongRead;
+  source_kind: "self" | "assigned";
+  submission?: StoredFileRead | null;
+}
+
+export interface SubmissionTargetsResponse {
+  is_open: boolean;
+  targets: SubmissionTargetRead[];
 }
 
 export interface DrawAssignmentRead {
@@ -81,7 +87,7 @@ export interface GuessChartRead {
   title: string;
   author: string;
   level: string;
-  lane: string;
+  lane: Track | string;
   guess_group_key: string;
   source_submission_type: string;
   source_submission_id?: number | null;
@@ -103,6 +109,19 @@ export interface GuessCommentRead {
   created_at: string;
 }
 
+export interface AuthorGuessState {
+  can_guess: boolean;
+  candidates: Array<{ user_id: number; display_id: string }>;
+  my_guess_user_id?: number | null;
+}
+
+export interface AuthorCandidateAdmin {
+  user: UserRead;
+  song_count: number;
+  selected: boolean;
+  display_id: string;
+}
+
 export interface GuessImportIssueRead {
   id: number;
   source_type: string;
@@ -121,25 +140,49 @@ export interface GuessImportSummary {
   issues: number;
 }
 
+export interface GuessStats {
+  scope: "all" | "j";
+  overview: {
+    charts: number;
+    views: number;
+    love_votes: number;
+    funny_votes: number;
+    guess_records: number;
+    counted_guesses: number;
+    correct_guesses: number;
+    accuracy: number | null;
+    users_guessing: number;
+    users_guessed: number;
+  };
+  chart_stats: Array<Record<string, unknown>>;
+  user_stats: Array<Record<string, unknown>>;
+  candidate_stats: Array<Record<string, unknown>>;
+  guess_details: Array<Record<string, unknown>>;
+}
+
 const API_PREFIX = "/api/v1";
 const pendingGetRequests = new Map<string, Promise<unknown>>();
 
-async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  const hasBody = options.body !== undefined && !(options.body instanceof FormData);
-  if (hasBody && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(`${API_PREFIX}${path}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
+async function parseResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
   if (!response.ok) {
-    const message = typeof payload === "object" && payload && "detail" in payload ? String(payload.detail) : "请求失败";
+    const detail = typeof payload === "object" && payload && "detail" in payload ? payload.detail : "请求失败";
+    const message = Array.isArray(detail)
+      ? detail.map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item))).join("；")
+      : String(detail);
     throw new Error(message);
   }
   return payload as T;
+}
+
+async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (options.body !== undefined && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const response = await fetch(`${API_PREFIX}${path}`, { ...options, headers, credentials: "include" });
+  return parseResponse<T>(response);
 }
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -149,73 +192,115 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     if (method !== "GET") pendingGetRequests.clear();
     return result;
   }
-
   const pending = pendingGetRequests.get(path);
   if (pending) return pending as Promise<T>;
-
   const task = performRequest<T>(path, options).finally(() => pendingGetRequests.delete(path));
   pendingGetRequests.set(path, task);
   return task;
 }
 
+async function download(path: string, fallbackName: string): Promise<void> {
+  const response = await fetch(`${API_PREFIX}${path}`, { credentials: "include" });
+  if (!response.ok) {
+    await parseResponse(response);
+    return;
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  const filename = encoded ? decodeURIComponent(encoded) : plain || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function submissionForm(file: File, songId?: number, track?: Track): FormData {
+  const form = new FormData();
+  form.set("file", file);
+  if (songId !== undefined) form.set("song_id", String(songId));
+  if (track) form.set("track", track);
+  return form;
+}
+
 export const api = {
   me: () => apiRequest<{ user: UserRead }>("/auth/me"),
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
-  register: (user_code: string, qq_id: string, password: string, identity = "audience") =>
-    apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
+  register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
   logout: () => apiRequest<{ message: string }>("/auth/logout", { method: "POST" }),
-  changePassword: (old_password: string, new_password: string) =>
-    apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
+  changePassword: (old_password: string, new_password: string) => apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
   currentEvent: () => apiRequest<EventRead>("/events/current"),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
+
   mySongs: () => apiRequest<SongRead[]>("/song-pool/me"),
-  createSong: (payload: SongPayload) =>
-    apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),
-  updateMySong: (id: number, payload: SongPayload) =>
-    apiRequest<SongRead>(`/song-pool/me/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  createSong: (payload: SongPayload) => apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),
+  updateMySong: (id: number, payload: SongPayload) => apiRequest<SongRead>(`/song-pool/me/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteSong: (id: number) => apiRequest<{ message: string }>(`/song-pool/me/${id}`, { method: "DELETE" }),
   adminSongs: () => apiRequest<SongRead[]>("/admin/song-pool"),
-  updateSong: (id: number, payload: SongPayload) =>
-    apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  updateSong: (id: number, payload: SongPayload) => apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteAdminSong: (id: number) => apiRequest<{ message: string }>(`/admin/song-pool/${id}`, { method: "DELETE" }),
+  exportSongs: () => download("/admin/song-pool/export.csv", "song-pool.csv"),
+  importSongs: (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return apiRequest<{ message: string; updated: number }>("/admin/song-pool/import.csv", { method: "POST", body: form });
+  },
+
   myDraw: () => apiRequest<DrawAssignmentRead[]>("/draw/results"),
   drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
   runDraw: () => apiRequest<DrawAssignmentRead[]>("/admin/draw", { method: "POST" }),
   adminDrawResults: () => apiRequest<DrawAssignmentRead[]>("/admin/draw/results"),
+
+  submissionTargets: () => apiRequest<SubmissionTargetsResponse>("/submissions/targets"),
   mySubmissions: () => apiRequest<StoredFileRead[]>("/submissions"),
-  uploadSubmission: (file: File) => {
-    const form = new FormData();
-    form.set("file", file);
-    return apiRequest<StoredFileRead>("/submissions", { method: "POST", body: form });
-  },
-  replaceSubmission: (id: number, file: File) => {
-    const form = new FormData();
-    form.set("file", file);
-    return apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: form });
-  },
+  uploadSubmission: (songId: number, track: Track, file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track) }),
+  replaceSubmission: (id: number, track: Track, file: File) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
-  adminSubmissions: () => apiRequest<StoredFileRead[]>("/admin/submissions"),
-  replaceAdminSubmission: (id: number, file: File) => {
-    const form = new FormData();
-    form.set("file", file);
-    return apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: form });
-  },
+  adminSubmissions: (track?: Track | "all") => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`),
+  replaceAdminSubmission: (id: number, file: File, track?: Track) => apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
+  downloadAdminSubmission: (id: number) => download(`/admin/submissions/${id}/download`, `submission-${id}.zip`),
+  downloadAdminSubmissions: (ids?: number[], track?: Track | "all") => {
+    const params = new URLSearchParams();
+    if (ids?.length) params.set("ids", ids.join(","));
+    if (track && track !== "all") params.set("track", track);
+    return download(`/admin/submissions/download.zip${params.size ? `?${params}` : ""}`, "submissions.zip");
+  },
+
   guessCharts: () => apiRequest<GuessChartRead[]>("/guess-game/charts"),
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
+  downloadChart: (id: number) => download(`/guess-game/charts/${id}/download`, `chart-${id}.zip`),
+  downloadCharts: (ids: number[]) => download(`/guess-game/charts/download.zip?ids=${ids.join(",")}`, "guess-charts.zip"),
   vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
   unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),
   comments: (chartId: number) => apiRequest<GuessCommentRead[]>(`/guess-game/charts/${chartId}/comments`),
   createComment: (chartId: number, content: string) => apiRequest<GuessCommentRead>(`/guess-game/charts/${chartId}/comments`, { method: "POST", body: JSON.stringify({ content }) }),
+  authorGuess: (chartId: number) => apiRequest<AuthorGuessState>(`/guess-game/charts/${chartId}/author-guess`),
+  saveAuthorGuess: (chartId: number, guessed_user_id: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/author-guess`, { method: "PUT", body: JSON.stringify({ guessed_user_id }) }),
+  clearAuthorGuess: (chartId: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/author-guess`, { method: "DELETE" }),
+
   adminCharts: () => apiRequest<GuessChartRead[]>("/admin/guess-game/charts"),
+  importCharts: (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return apiRequest<{ archive_id: number; charts: GuessChartRead[] }>("/admin/guess-game/charts/import", { method: "POST", body: form });
+  },
+  updateChart: (id: number, payload: { title: string; author: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) => apiRequest<GuessChartRead>(`/admin/guess-game/charts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteChart: (id: number) => apiRequest<{ message: string }>(`/admin/guess-game/charts/${id}`, { method: "DELETE" }),
   parseSubmissions: () => apiRequest<GuessImportSummary>("/admin/guess-game/parse-submissions", { method: "POST" }),
   importIssues: () => apiRequest<GuessImportIssueRead[]>("/admin/guess-game/import-issues"),
-  createChart: (payload: { title: string; author: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) =>
-    apiRequest<GuessChartRead>("/admin/guess-game/charts", { method: "POST", body: JSON.stringify(payload) }),
+  authorCandidates: () => apiRequest<AuthorCandidateAdmin[]>("/admin/guess-game/author-candidates"),
+  saveAuthorCandidates: (rows: Array<{ user_id: number; display_id: string }>) => apiRequest<{ message: string; count: number }>("/admin/guess-game/author-candidates", { method: "PUT", body: JSON.stringify({ rows }) }),
+  guessStats: (scope: "all" | "j") => apiRequest<GuessStats>(`/admin/guess-game/stats?scope=${scope}`),
+
   users: () => apiRequest<UserRead[]>("/admin/users"),
-  updateUser: (id: number, payload: { identity: string; roles: string[]; display_name: string; is_active: boolean }) =>
-    apiRequest<UserRead>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  adminStats: () => apiRequest<Record<string, number>>("/admin/stats"),
+  updateUser: (id: number, payload: { identity: string; roles: string[]; display_name: string; is_active: boolean }) => apiRequest<UserRead>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  siteStats: () => apiRequest<Record<string, number>>("/admin/stats"),
 };
 
 export function formatMB(size: number): string {

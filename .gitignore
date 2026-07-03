@@ -30,6 +30,7 @@ frontend/node_modules/
 frontend/dist/
 dist/
 .vite/
+.vite-cache/
 
 # Package-manager caches
 .npm/
@@ -53,3 +54,4 @@ Thumbs.db
 *.tmp
 *.cache
 .temp/
+.test-data/

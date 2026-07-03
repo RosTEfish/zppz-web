@@ -106,6 +106,7 @@ def user_payload(user: User) -> dict:
         "roles": [role.name for role in user.roles],
         "is_admin": user.has_role("admin"),
         "is_pool_editor": user.has_role("pool_editor"),
+        "is_active": user.is_active,
     }
 
 

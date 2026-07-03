@@ -1,8 +1,8 @@
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Event, EventSetting
+from app.models import DrawAssignment, Event, EventSetting, User
 from app.schemas import EventUpdate
 
 
@@ -23,6 +23,37 @@ def get_current_event(db: Session) -> Event:
 
 def update_current_event(db: Session, payload: EventUpdate) -> Event:
     event = get_current_event(db)
+    if payload.submissions_open:
+        participants = [
+            user
+            for user in
+            db.scalars(
+                select(User)
+                .options(selectinload(User.roles))
+                .where(User.identity == "participant", User.is_active.is_(True))
+                .order_by(User.user_code)
+            ).all()
+            if not user.has_role("admin")
+        ]
+        assignment_counts = dict(
+            db.execute(
+                select(DrawAssignment.assigned_to_id, func.count(DrawAssignment.id))
+                .where(DrawAssignment.event_id == event.id)
+                .group_by(DrawAssignment.assigned_to_id)
+            ).all()
+        )
+        missing = [
+            participant.user_code
+            for participant in participants
+            if assignment_counts.get(participant.id, 0) < payload.draw_songs_per_participant
+        ]
+        if missing:
+            preview = "、".join(missing[:8])
+            suffix = "等" if len(missing) > 8 else ""
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"以下参赛者尚未完成抽签：{preview}{suffix}",
+            )
     event.name = payload.name
     settings = event.settings
     settings.participant_song_limit = payload.participant_song_limit
@@ -34,6 +65,7 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     settings.registration_deadline = payload.registration_deadline
     settings.submission_deadline = payload.submission_deadline
     settings.guess_game_open_at = payload.guess_game_open_at
+    settings.submissions_open = payload.submissions_open
     db.commit()
     db.refresh(event)
     return event

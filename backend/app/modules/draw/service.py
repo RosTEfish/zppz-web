@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import DrawAssignment, Song, User
+from app.models import DrawAssignment, JTrackSubmission, Song, Submission, User
 from app.modules.events.service import get_current_event
 
 
@@ -16,11 +16,18 @@ SELF_DRAW_RETRY_DELAY_SECONDS = 0.04
 
 def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
     event = get_current_event(db)
+    _assert_draw_is_mutable(db, event.id, event.settings.submissions_open)
     existing = db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id)).first()
     if existing and not allow_redraw:
         raise HTTPException(status_code=400, detail="本赛事已经抽签，当前设置不允许重抽")
 
-    participants = db.scalars(select(User).where(User.identity == "participant", User.is_active.is_(True))).all()
+    participants = [
+        user
+        for user in db.scalars(
+            select(User).options(selectinload(User.roles)).where(User.identity == "participant", User.is_active.is_(True))
+        ).all()
+        if not user.has_role("admin")
+    ]
     songs = db.scalars(select(Song).where(Song.event_id == event.id)).all()
     if not participants:
         raise HTTPException(status_code=400, detail="没有参赛者可以抽签")
@@ -83,6 +90,7 @@ def draw_for_user(db: Session, user: User) -> list[DrawAssignment]:
 def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
     _begin_sqlite_immediate_transaction(db)
     event = get_current_event(db)
+    _assert_draw_is_mutable(db, event.id, event.settings.submissions_open)
     locked_user_id = db.scalar(select(User.id).where(User.id == user_id, User.is_active.is_(True)).with_for_update())
     if not locked_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不可用")
@@ -137,6 +145,15 @@ def _begin_sqlite_immediate_transaction(db: Session) -> None:
 def _is_retryable_operational_error(exc: OperationalError) -> bool:
     message = str(exc).lower()
     return any(fragment in message for fragment in ("database is locked", "deadlock", "lock timeout", "could not serialize"))
+
+
+def _assert_draw_is_mutable(db: Session, event_id: int, submissions_open: bool) -> None:
+    if submissions_open:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="投稿已开放，不能重新抽签")
+    has_submission = db.scalar(select(Submission.id).where(Submission.event_id == event_id).limit(1))
+    has_legacy_j = db.scalar(select(JTrackSubmission.id).where(JTrackSubmission.event_id == event_id).limit(1))
+    if has_submission or has_legacy_j:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已有投稿文件，请先清空投稿后再重新抽签")
 
 
 def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssignment]:

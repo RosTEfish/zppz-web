@@ -16,6 +16,7 @@ class UserRead(BaseModel):
     roles: list[str] = []
     is_admin: bool = False
     is_pool_editor: bool = False
+    is_active: bool = True
 
 
 class RegisterRequest(BaseModel):
@@ -49,6 +50,7 @@ class EventSettingsRead(BaseModel):
     registration_deadline: datetime | None = None
     submission_deadline: datetime | None = None
     guess_game_open_at: datetime | None = None
+    submissions_open: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -74,6 +76,7 @@ class EventUpdate(BaseModel):
     registration_deadline: datetime | None = None
     submission_deadline: datetime | None = None
     guess_game_open_at: datetime | None = None
+    submissions_open: bool = False
 
 
 class SongCreate(BaseModel):
@@ -110,10 +113,24 @@ class StoredFileRead(BaseModel):
     file_size: int
     review_status: str
     review_note: str
+    source_kind: str = ""
+    track: str = "normal"
+    source_song: SongRead | None = None
     user: UserRead | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SubmissionTargetRead(BaseModel):
+    song: SongRead
+    source_kind: str
+    submission: StoredFileRead | None = None
+
+
+class SubmissionTargetsResponse(BaseModel):
+    is_open: bool
+    targets: list[SubmissionTargetRead]
 
 
 class GuessChartCreate(BaseModel):
@@ -169,6 +186,15 @@ class AuthorGuessRequest(BaseModel):
     guessed_user_id: int
 
 
+class AuthorCandidateInput(BaseModel):
+    user_id: int
+    display_id: str = Field(default="", max_length=64)
+
+
+class AuthorCandidatesUpdate(BaseModel):
+    rows: list[AuthorCandidateInput]
+
+
 class AdminUserUpdate(BaseModel):
     identity: str
     roles: list[str]
@@ -179,4 +205,3 @@ class AdminUserUpdate(BaseModel):
 class ResetPasswordRequest(BaseModel):
     user_id: int
     new_password: str = Field(min_length=6, max_length=128)
-
