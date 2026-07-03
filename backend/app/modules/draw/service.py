@@ -21,13 +21,11 @@ def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
     if existing and not allow_redraw:
         raise HTTPException(status_code=400, detail="本赛事已经抽签，当前设置不允许重抽")
 
-    participants = [
-        user
-        for user in db.scalars(
+    participants = list(
+        db.scalars(
             select(User).options(selectinload(User.roles)).where(User.identity == "participant", User.is_active.is_(True))
         ).all()
-        if not user.has_role("admin")
-    ]
+    )
     songs = db.scalars(select(Song).where(Song.event_id == event.id)).all()
     if not participants:
         raise HTTPException(status_code=400, detail="没有参赛者可以抽签")

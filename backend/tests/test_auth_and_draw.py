@@ -147,6 +147,22 @@ def test_participant_self_draw_creates_assignment(client: TestClient):
     assert rows[0]["song"]["song_name"] == "other-song"
 
 
+def test_global_redraw_includes_admin_participants(client: TestClient):
+    register_user(client, "player1")
+    add_song_for("admin", "admin-song")
+    add_song_for("player1", "player-song")
+    response = client.post("/api/v1/auth/login", json={"user_code": "admin", "password": "change-me-please"})
+    assert response.status_code == 200, response.text
+
+    first = client.post("/api/v1/admin/draw")
+    second = client.post("/api/v1/admin/draw")
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert {row["assigned_to"]["user_code"] for row in first.json()} == {"admin", "player1"}
+    assert {row["assigned_to"]["user_code"] for row in second.json()} == {"admin", "player1"}
+
+
 def test_self_redraw_replaces_existing_assignment(client: TestClient):
     register_user(client, "player1")
     register_user(client, "player2")
