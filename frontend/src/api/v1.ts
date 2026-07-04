@@ -128,6 +128,17 @@ export interface AuthorGuessState {
   my_guess_user_id?: number | null;
 }
 
+export interface DesignerGuessOverview {
+  can_guess: boolean;
+  candidates: Array<{ user_id: number; display_id: string }>;
+  states: Array<{ chart_id: number; guessed_user_id?: number | null }>;
+}
+
+export interface BatchDeleteResponse {
+  deleted: number;
+  message: string;
+}
+
 export interface AuthorCandidateAdmin {
   user: UserRead;
   song_count: number;
@@ -255,6 +266,7 @@ export const api = {
   adminSongs: () => apiRequest<SongRead[]>("/admin/song-pool"),
   updateSong: (id: number, payload: SongPayload) => apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteAdminSong: (id: number) => apiRequest<{ message: string }>(`/admin/song-pool/${id}`, { method: "DELETE" }),
+  batchDeleteAdminSongs: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/song-pool/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   exportSongs: () => downloadDirect("/admin/song-pool/export.csv", "song-pool.csv"),
   importSongs: (file: File) => {
     const form = new FormData();
@@ -276,6 +288,7 @@ export const api = {
   adminSubmissions: (track?: Track | "all") => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`),
   replaceAdminSubmission: (id: number, file: File, track?: Track) => apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
+  batchDeleteAdminSubmissions: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/submissions/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   downloadAdminSubmission: (id: number) => downloadPrepared(`/admin/submissions/${id}/download-metadata`),
   downloadAdminSubmissions: (ids?: number[], track?: Track | "all") => {
     const params = new URLSearchParams();
@@ -295,6 +308,9 @@ export const api = {
   authorGuess: (chartId: number) => apiRequest<AuthorGuessState>(`/guess-game/charts/${chartId}/author-guess`),
   saveAuthorGuess: (chartId: number, guessed_user_id: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/author-guess`, { method: "PUT", body: JSON.stringify({ guessed_user_id }) }),
   clearAuthorGuess: (chartId: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/author-guess`, { method: "DELETE" }),
+  designerGuesses: () => apiRequest<DesignerGuessOverview>("/guess-game/designer-guesses"),
+  saveDesignerGuess: (chartId: number, guessed_user_id: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/designer-guess`, { method: "PUT", body: JSON.stringify({ guessed_user_id }) }),
+  clearDesignerGuess: (chartId: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/designer-guess`, { method: "DELETE" }),
 
   adminCharts: () => apiRequest<GuessChartRead[]>("/admin/guess-game/charts"),
   importCharts: (file: File) => {
@@ -304,6 +320,7 @@ export const api = {
   },
   updateChart: (id: number, payload: { title: string; author: string; designer: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) => apiRequest<GuessChartRead>(`/admin/guess-game/charts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteChart: (id: number) => apiRequest<{ message: string }>(`/admin/guess-game/charts/${id}`, { method: "DELETE" }),
+  batchDeleteAdminCharts: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/guess-game/charts/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   parseSubmissions: () => apiRequest<GuessImportSummary>("/admin/guess-game/parse-submissions", { method: "POST" }),
   importIssues: () => apiRequest<GuessImportIssueRead[]>("/admin/guess-game/import-issues"),
   authorCandidates: () => apiRequest<AuthorCandidateAdmin[]>("/admin/guess-game/author-candidates"),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
+import { Alert, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
 import { Pencil, Save, Trash2 } from "lucide-react";
 import type { SongPayload, SongRead } from "../api/v1";
 
@@ -7,11 +7,13 @@ import type { SongPayload, SongRead } from "../api/v1";
 const EMPTY_SONG: SongPayload = { song_name: "", artist: "", song_type: "A", remark: "" };
 
 
-export function SongTable({ songs, onEdit, onDelete, showSubmitter = false }: { songs: SongRead[]; onEdit: (song: SongRead) => void; onDelete: (song: SongRead) => void; showSubmitter?: boolean }) {
+export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, selectedIds, onToggleSelection, onToggleAll }: { songs: SongRead[]; onEdit: (song: SongRead) => void; onDelete: (song: SongRead) => void; showSubmitter?: boolean; selectedIds?: ReadonlySet<number>; onToggleSelection?: (songId: number) => void; onToggleAll?: (checked: boolean) => void }) {
+  const selectionEnabled = Boolean(onToggleSelection && onToggleAll);
+  const selectedCount = songs.reduce((count, song) => count + (selectedIds?.has(song.id) ? 1 : 0), 0);
   return (
     <TableContainer component={Paper} variant="outlined">
-      <Table size="small"><TableHead><TableRow><TableCell>曲目</TableCell><TableCell>曲师</TableCell><TableCell>分类</TableCell>{showSubmitter ? <TableCell>投稿人</TableCell> : null}<TableCell>备注</TableCell><TableCell align="right">操作</TableCell></TableRow></TableHead>
-        <TableBody>{songs.map((song) => <TableRow key={song.id} hover><TableCell><Typography sx={{ fontWeight: 650 }}>{song.song_name}</Typography><Typography variant="caption" color="text.secondary">#{song.id}</Typography></TableCell><TableCell>{song.artist}</TableCell><TableCell><Chip size="small" label={song.song_type} /></TableCell>{showSubmitter ? <TableCell>{song.submitter?.display_name || song.submitter?.user_code || "-"}</TableCell> : null}<TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{song.remark || "-"}</TableCell><TableCell align="right"><Tooltip title="编辑"><IconButton size="small" onClick={() => onEdit(song)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" color="error" onClick={() => onDelete(song)}><Trash2 size={16} /></IconButton></Tooltip></TableCell></TableRow>)}</TableBody>
+      <Table size="small"><TableHead><TableRow>{selectionEnabled ? <TableCell padding="checkbox"><Checkbox checked={selectedCount === songs.length} indeterminate={selectedCount > 0 && selectedCount < songs.length} onChange={(event) => onToggleAll?.(event.target.checked)} slotProps={{ input: { "aria-label": "选择全部曲目" } }} /></TableCell> : null}<TableCell>曲目</TableCell><TableCell>曲师</TableCell><TableCell>分类</TableCell>{showSubmitter ? <TableCell>投稿人</TableCell> : null}<TableCell>备注</TableCell><TableCell align="right">操作</TableCell></TableRow></TableHead>
+        <TableBody>{songs.map((song) => <TableRow key={song.id} hover selected={selectedIds?.has(song.id)}>{selectionEnabled ? <TableCell padding="checkbox"><Checkbox checked={selectedIds?.has(song.id) ?? false} onChange={() => onToggleSelection?.(song.id)} slotProps={{ input: { "aria-label": `选择 ${song.song_name}` } }} /></TableCell> : null}<TableCell><Typography sx={{ fontWeight: 650 }}>{song.song_name}</Typography><Typography variant="caption" color="text.secondary">#{song.id}</Typography></TableCell><TableCell>{song.artist}</TableCell><TableCell><Chip size="small" label={song.song_type} /></TableCell>{showSubmitter ? <TableCell>{song.submitter?.display_name || song.submitter?.user_code || "-"}</TableCell> : null}<TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{song.remark || "-"}</TableCell><TableCell align="right"><Tooltip title="编辑"><IconButton size="small" onClick={() => onEdit(song)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" color="error" onClick={() => onDelete(song)}><Trash2 size={16} /></IconButton></Tooltip></TableCell></TableRow>)}</TableBody>
       </Table>
     </TableContainer>
   );

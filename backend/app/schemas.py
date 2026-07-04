@@ -150,6 +150,15 @@ class DownloadPreparation(BaseModel):
     file_size: int
 
 
+class BatchDeleteRequest(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class BatchDeleteResponse(BaseModel):
+    deleted: int
+    message: str
+
+
 class GuessChartCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     author: str = Field(min_length=1, max_length=100)

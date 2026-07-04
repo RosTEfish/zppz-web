@@ -11,7 +11,7 @@ from sqlalchemy import select  # noqa: E402
 from app.db.bootstrap import seed_defaults  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import DrawAssignment, Song, User  # noqa: E402
+from app.models import DrawAssignment, Event, Song, User  # noqa: E402
 from app.modules.events.service import get_current_event  # noqa: E402
 
 
@@ -21,6 +21,10 @@ def reset_db():
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_defaults(db)
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.participant_song_limit = 0
+        event.settings.audience_song_limit = 0
+        db.commit()
 
 
 @pytest.fixture
@@ -134,6 +138,57 @@ def test_self_draw_requires_auth_and_participant(client: TestClient):
     register_user(client, "viewer1", "audience")
     response = client.post("/api/v1/draw/me")
     assert response.status_code == 403
+
+
+def test_draw_requires_every_active_account_including_admin_to_fill_song_pool(client: TestClient):
+    register_user(client, "player1")
+    register_user(client, "viewer1", "audience")
+    with SessionLocal() as db:
+        event = get_current_event(db)
+        event.settings.participant_song_limit = 2
+        event.settings.audience_song_limit = 1
+        db.commit()
+    add_song_for("admin", "admin-one")
+    add_song_for("player1", "player-one")
+    add_song_for("player1", "player-two")
+
+    login_user(client, "player1")
+    blocked = client.post("/api/v1/draw/me")
+    assert blocked.status_code == 409
+    assert "admin（1/2）" in blocked.json()["detail"]
+    assert "viewer1（0/1）" in blocked.json()["detail"]
+    assert "player1" not in blocked.json()["detail"]
+
+    add_song_for("admin", "admin-two")
+    add_song_for("viewer1", "viewer-one")
+    allowed = client.post("/api/v1/draw/me")
+    assert allowed.status_code == 200, allowed.text
+
+
+def test_opening_submissions_requires_every_active_account_to_fill_song_pool(client: TestClient):
+    register_user(client, "player1")
+    register_user(client, "viewer1", "audience")
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"user_code": "admin", "password": "change-me-please"},
+    )
+    assert response.status_code == 200, response.text
+
+    event = client.get("/api/v1/events/current").json()
+    payload = {
+        "name": event["name"],
+        **event["settings"],
+        "participant_song_limit": 1,
+        "audience_song_limit": 1,
+        "submissions_open": True,
+    }
+    blocked = client.put("/api/v1/admin/events/current", json=payload)
+
+    assert blocked.status_code == 409
+    detail = blocked.json()["detail"]
+    assert "admin" in detail
+    assert "player1" in detail
+    assert "viewer1" in detail
 
 
 def test_participant_self_draw_creates_assignment(client: TestClient):

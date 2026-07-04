@@ -37,4 +37,25 @@ describe("v1 API helpers", () => {
     expect(clickedHref).toBe("/api/v1/guess-game/charts/7/download");
     expect(clickedName).toBe("chart-7.zip");
   });
+
+  it("sends atomic batch delete requests to each admin resource", async () => {
+    const requests: Array<{ path: string; method?: string; body?: string }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ path: String(input), method: init?.method, body: String(init?.body) });
+      return new Response(JSON.stringify({ deleted: 2, message: "deleted" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+
+    await api.batchDeleteAdminSongs([1, 2]);
+    await api.batchDeleteAdminSubmissions([3, 4]);
+    await api.batchDeleteAdminCharts([5, 6]);
+
+    expect(requests).toEqual([
+      { path: "/api/v1/admin/song-pool/batch-delete", method: "POST", body: JSON.stringify({ ids: [1, 2] }) },
+      { path: "/api/v1/admin/submissions/batch-delete", method: "POST", body: JSON.stringify({ ids: [3, 4] }) },
+      { path: "/api/v1/admin/guess-game/charts/batch-delete", method: "POST", body: JSON.stringify({ ids: [5, 6] }) },
+    ]);
+  });
 });

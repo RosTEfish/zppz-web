@@ -40,6 +40,8 @@ from app.modules.submissions.service import absolute_storage_path, delete_stored
 from app.schemas import (
     AuthorCandidatesUpdate,
     AuthorGuessRequest,
+    BatchDeleteRequest,
+    BatchDeleteResponse,
     CommentCreate,
     DownloadPreparation,
     GuessChartCreate,
@@ -185,6 +187,52 @@ def create_comment(chart_id: int, payload: CommentCreate, user: User = Depends(g
     return {"id": item.id, "content": item.content, "user": user_payload(user), "created_at": item.created_at}
 
 
+@router.get("/designer-guesses")
+def designer_guess_overview(
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    charts = list(
+        db.scalars(
+            select(GuessChart)
+            .where(GuessChart.event_id == event.id)
+            .order_by(GuessChart.id.asc())
+        ).all()
+    )
+    can_view = bool(user and (user.identity == "participant" or user.has_role("admin") or user.has_role("pool_editor")))
+    candidates = _selected_author_candidates(db, event.id) if can_view else []
+    guessed_by_group: dict[str, int] = {}
+    if user and charts:
+        charts_by_id = {chart.id: chart for chart in charts}
+        rows = list(
+            db.scalars(
+                select(GuessAuthorGuess)
+                .where(
+                    GuessAuthorGuess.chart_id.in_(charts_by_id),
+                    GuessAuthorGuess.user_id == user.id,
+                )
+                .order_by(GuessAuthorGuess.updated_at.asc())
+            ).all()
+        )
+        for row in rows:
+            chart = charts_by_id.get(row.chart_id)
+            if chart:
+                guessed_by_group[_chart_group_identity(chart)] = row.guessed_user_id
+    return {
+        "can_guess": bool(user and user.identity == "participant"),
+        "candidates": [{"user_id": row[0], "display_id": row[1]} for row in candidates],
+        "states": [
+            {
+                "chart_id": chart.id,
+                "guessed_user_id": guessed_by_group.get(_chart_group_identity(chart)),
+            }
+            for chart in charts
+        ],
+    }
+
+
+@router.get("/charts/{chart_id}/designer-guess")
 @router.get("/charts/{chart_id}/author-guess")
 def author_guess_state(
     chart_id: int,
@@ -212,6 +260,7 @@ def author_guess_state(
     }
 
 
+@router.put("/charts/{chart_id}/designer-guess")
 @router.put("/charts/{chart_id}/author-guess")
 def put_author_guess(chart_id: int, payload: AuthorGuessRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     if user.identity != "participant":
@@ -240,9 +289,10 @@ def put_author_guess(chart_id: int, payload: AuthorGuessRequest, user: User = De
     else:
         db.add(GuessAuthorGuess(chart_id=anchor_id, user_id=user.id, guessed_user_id=payload.guessed_user_id))
     db.commit()
-    return {"message": "已保存作者猜测"}
+    return {"message": "已保存谱师猜测"}
 
 
+@router.delete("/charts/{chart_id}/designer-guess")
 @router.delete("/charts/{chart_id}/author-guess")
 def delete_author_guess(chart_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
@@ -257,7 +307,7 @@ def delete_author_guess(chart_id: int, user: User = Depends(get_current_user), d
         )
     )
     db.commit()
-    return {"message": "已清除作者猜测"}
+    return {"message": "已清除谱师猜测"}
 
 
 @admin_router.get("/charts", response_model=list[GuessChartRead])
@@ -322,6 +372,37 @@ def admin_import_charts(
     return {"archive_id": archive.id, "charts": serialize_charts(db, charts)}
 
 
+@admin_router.post("/charts/batch-delete", response_model=BatchDeleteResponse)
+def admin_batch_delete_charts(
+    payload: BatchDeleteRequest,
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    chart_ids = list(dict.fromkeys(payload.ids))
+    charts = list(
+        db.scalars(
+            select(GuessChart)
+            .where(GuessChart.event_id == event.id, GuessChart.id.in_(chart_ids))
+            .order_by(GuessChart.id.asc())
+        ).all()
+    )
+    found_ids = {chart.id for chart in charts}
+    missing_ids = [chart_id for chart_id in chart_ids if chart_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"谱面不存在：{', '.join(map(str, missing_ids))}")
+    try:
+        cover_paths, storage_paths = _stage_delete_admin_charts(db, event.id, charts)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    delete_cover_paths(cover_paths)
+    for storage_path in storage_paths:
+        delete_stored_file(storage_path)
+    return {"deleted": len(charts), "message": f"已删除 {len(charts)} 张谱面"}
+
+
 @admin_router.put("/charts/{chart_id}", response_model=GuessChartRead)
 def admin_update_chart(chart_id: int, payload: GuessChartCreate, _: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
@@ -341,43 +422,75 @@ def admin_delete_chart(chart_id: int, _: User = Depends(require_role("admin", "p
     chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
-    cover_path = chart.cover_path
-    storage_path = chart.storage_path
-    source_type = chart.source_submission_type
-    source_id = chart.source_submission_id
-    db.delete(chart)
+    try:
+        cover_paths, storage_paths = _stage_delete_admin_charts(db, event.id, [chart])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    delete_cover_paths(cover_paths)
+    for storage_path in storage_paths:
+        delete_stored_file(storage_path)
+    return {"message": "谱面已删除"}
+
+
+def _stage_delete_admin_charts(
+    db: Session,
+    event_id: int,
+    charts: list[GuessChart],
+) -> tuple[set[str], set[str]]:
+    candidate_covers = {chart.cover_path for chart in charts if chart.cover_path}
+    manual_storage_paths = {
+        chart.storage_path
+        for chart in charts
+        if chart.source_submission_id is None and chart.storage_path
+    }
+    admin_source_storage: dict[int, str] = {
+        int(chart.source_submission_id): chart.storage_path
+        for chart in charts
+        if chart.source_submission_type == "admin" and chart.source_submission_id is not None
+    }
+    for chart in charts:
+        db.delete(chart)
     db.flush()
-    remaining_cover = db.scalar(select(func.count()).select_from(GuessChart).where(GuessChart.cover_path == cover_path)) if cover_path else 0
-    remaining_storage = db.scalar(select(func.count()).select_from(GuessChart).where(GuessChart.storage_path == storage_path)) if storage_path else 0
-    delete_archive_file = False
-    if source_type == "admin" and source_id is not None:
+
+    cover_paths = {
+        cover_path
+        for cover_path in candidate_covers
+        if not db.scalar(
+            select(func.count()).select_from(GuessChart).where(GuessChart.cover_path == cover_path)
+        )
+    }
+    storage_paths = {
+        storage_path
+        for storage_path in manual_storage_paths
+        if not db.scalar(
+            select(func.count()).select_from(GuessChart).where(GuessChart.storage_path == storage_path)
+        )
+    }
+    for source_id, fallback_storage_path in admin_source_storage.items():
         remaining_source = db.scalar(
             select(func.count()).select_from(GuessChart).where(
                 GuessChart.source_submission_type == "admin",
                 GuessChart.source_submission_id == source_id,
             )
         ) or 0
-        if remaining_source == 0:
-            archive = db.get(AdminGuessArchive, source_id)
-            if archive:
-                storage_path = archive.storage_path
-                db.delete(archive)
-            db.execute(
-                delete(ImportIssue).where(
-                    ImportIssue.event_id == event.id,
-                    ImportIssue.source_type == "admin",
-                    ImportIssue.source_id == source_id,
-                )
+        if remaining_source:
+            continue
+        archive = db.get(AdminGuessArchive, source_id)
+        if archive:
+            storage_paths.add(archive.storage_path)
+            db.delete(archive)
+        elif fallback_storage_path:
+            storage_paths.add(fallback_storage_path)
+        db.execute(
+            delete(ImportIssue).where(
+                ImportIssue.event_id == event_id,
+                ImportIssue.source_type == "admin",
+                ImportIssue.source_id == source_id,
             )
-            delete_archive_file = True
-    elif source_id is None and storage_path and not remaining_storage:
-        delete_archive_file = True
-    db.commit()
-    if cover_path and not remaining_cover:
-        delete_cover_paths({cover_path})
-    if delete_archive_file and storage_path:
-        delete_stored_file(storage_path)
-    return {"message": "谱面已删除"}
+        )
+    return cover_paths, storage_paths
 
 
 @admin_router.post("/parse-submissions")
@@ -467,6 +580,10 @@ def _group_chart_ids(db: Session, chart: GuessChart) -> list[int]:
             )
         ).all()
     ) or [chart.id]
+
+
+def _chart_group_identity(chart: GuessChart) -> str:
+    return chart.guess_group_key or f"chart:{chart.id}"
 
 
 def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]:

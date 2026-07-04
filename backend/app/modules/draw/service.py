@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import DrawAssignment, JTrackSubmission, Song, Submission, User
-from app.modules.events.service import get_current_event
+from app.modules.events.service import assert_song_pool_complete, get_current_event
 
 
 SELF_DRAW_MAX_ATTEMPTS = 3
@@ -17,6 +17,12 @@ SELF_DRAW_RETRY_DELAY_SECONDS = 0.04
 def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
     event = get_current_event(db)
     _assert_draw_is_mutable(db, event.id, event.settings.submissions_open)
+    assert_song_pool_complete(
+        db,
+        event.id,
+        participant_limit=event.settings.participant_song_limit,
+        audience_limit=event.settings.audience_song_limit,
+    )
     existing = db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id)).first()
     if existing and not allow_redraw:
         raise HTTPException(status_code=400, detail="本赛事已经抽签，当前设置不允许重抽")
@@ -89,6 +95,12 @@ def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
     _begin_sqlite_immediate_transaction(db)
     event = get_current_event(db)
     _assert_draw_is_mutable(db, event.id, event.settings.submissions_open)
+    assert_song_pool_complete(
+        db,
+        event.id,
+        participant_limit=event.settings.participant_song_limit,
+        audience_limit=event.settings.audience_song_limit,
+    )
     locked_user_id = db.scalar(select(User.id).where(User.id == user_id, User.is_active.is_(True)).with_for_update())
     if not locked_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不可用")

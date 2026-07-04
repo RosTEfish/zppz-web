@@ -34,6 +34,7 @@ describe("Material application shell", () => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
       if (path.endsWith("/auth/me")) return json({ detail: "未登录" }, 401);
       if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [{ chart_id: 7, guessed_user_id: null }, { chart_id: 8, guessed_user_id: null }] });
       if (path.endsWith("/guess-game/charts")) return json([
         {
           id: 7,
@@ -163,6 +164,76 @@ describe("Material application shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "J 谱" }));
     expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
+  });
+
+  it("warns when the current user has not filled their song pool", async () => {
+    window.history.pushState({}, "", "/songs");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const songs = [1, 2].map((id) => ({ id, song_name: `曲目 ${id}`, artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" }));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/song-pool/me")) return json(songs);
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByRole("dialog", { name: "曲池尚未投递完成" })).toBeInTheDocument();
+    expect(screen.getAllByText(/还需提交 3 首/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "继续投曲" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "曲池尚未投递完成" })).not.toBeInTheDocument());
+    expect(screen.getByText(/曲池尚未投满/)).toBeInTheDocument();
+  });
+
+  it("saves a designer guess from a chart card and syncs its difficulty group", async () => {
+    window.history.pushState({}, "", "/guess");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const chart = (id: number, level: string, slot: string) => ({ id, title: "同曲", author: "曲师", designer: "", level, lane: "normal", guess_group_key: "same-song", source_submission_type: "normal", source_submission_id: 1, source_level_slot: slot, cover_path: "", storage_path: "", is_self_selected: true, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [] });
+    const savedBodies: Array<{ guessed_user_id: number }> = [];
+    let overviewCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/guess-game/charts")) return json([chart(21, "13", "4"), chart(22, "14", "5")]);
+      if (path.endsWith("/guess-game/designer-guesses")) {
+        overviewCalls += 1;
+        return json({ can_guess: true, candidates: [{ user_id: 5, display_id: "P01" }], states: [{ chart_id: 21, guessed_user_id: null }, { chart_id: 22, guessed_user_id: null }] });
+      }
+      if (path.endsWith("/guess-game/charts/21/designer-guess") && init?.method === "PUT") {
+        savedBodies.push(JSON.parse(String(init.body)) as { guessed_user_id: number });
+        return json({ message: "已保存谱师猜测" });
+      }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    const controls = await screen.findAllByRole("combobox", { name: "谱师猜测 同曲" });
+    expect(controls).toHaveLength(2);
+    fireEvent.mouseDown(controls[0]);
+    fireEvent.click(await screen.findByRole("option", { name: "P01" }));
+    await waitFor(() => expect(savedBodies).toEqual([{ guessed_user_id: 5 }]));
+    await waitFor(() => expect(screen.getAllByRole("combobox", { name: "谱师猜测 同曲" }).every((control) => control.textContent?.includes("P01"))).toBe(true));
+    expect(overviewCalls).toBe(1);
   });
 
   it("allows only one staged J track submission", async () => {

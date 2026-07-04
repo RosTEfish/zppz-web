@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessChart, Song, Submission, User
+from app.models import DrawAssignment, Event, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, Song, Submission, User
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 
 
@@ -231,7 +231,7 @@ def test_admin_open_validation_and_draw_lock(client: TestClient):
         db.commit()
     login_admin(client)
     event = client.get("/api/v1/events/current").json()
-    payload = {"name": event["name"], **event["settings"], "submissions_open": True}
+    payload = {"name": event["name"], **event["settings"], "participant_song_limit": 0, "audience_song_limit": 0, "submissions_open": True}
     rejected = client.put("/api/v1/admin/events/current", json=payload)
     assert rejected.status_code == 400
     with SessionLocal() as db:
@@ -297,6 +297,135 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
     assert int(admin_download.headers["content-length"]) == len(admin_download.content)
 
 
+def test_admin_song_batch_delete_is_atomic(client: TestClient):
+    register(client, "player")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        player = db.scalar(select(User).where(User.user_code == "player"))
+        free_song = Song(event_id=event.id, submitted_by_id=player.id, song_name="Free", artist="Artist", song_type="A")
+        linked_song = Song(event_id=event.id, submitted_by_id=player.id, song_name="Linked", artist="Artist", song_type="B")
+        db.add_all([free_song, linked_song])
+        db.flush()
+        db.add(Submission(event_id=event.id, user_id=player.id, source_song_id=linked_song.id, source_kind="self", track="normal", file_name="linked.zip", storage_path="uploads/linked.zip", file_size=1))
+        db.commit()
+        free_id, linked_id = free_song.id, linked_song.id
+
+    login_admin(client)
+    blocked = client.post("/api/v1/admin/song-pool/batch-delete", json={"ids": [free_id, linked_id]})
+    assert blocked.status_code == 409
+    with SessionLocal() as db:
+        assert db.get(Song, free_id) is not None
+        assert db.get(Song, linked_id) is not None
+
+    missing = client.post("/api/v1/admin/song-pool/batch-delete", json={"ids": [free_id, 99999]})
+    assert missing.status_code == 404
+    with SessionLocal() as db:
+        assert db.get(Song, free_id) is not None
+
+    deleted = client.post("/api/v1/admin/song-pool/batch-delete", json={"ids": [free_id, free_id]})
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] == 1
+    with SessionLocal() as db:
+        assert db.get(Song, free_id) is None
+        assert db.get(Song, linked_id) is not None
+
+
+def test_admin_submission_batch_delete_cleans_all_linked_resources(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, assigned_id = create_candidate_rows()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.submissions_open = True
+        db.commit()
+    first = client.post(
+        "/api/v1/submissions",
+        data={"song_id": own_id, "track": "normal"},
+        files={"file": ("first.zip", archive_bytes("First", "&lv_4=13"), "application/zip")},
+    )
+    second = client.post(
+        "/api/v1/submissions",
+        data={"song_id": assigned_id, "track": "j"},
+        files={"file": ("second.zip", archive_bytes("Second", "&lv_5=14"), "application/zip")},
+    )
+    assert first.status_code == second.status_code == 200
+    submission_ids = [first.json()["id"], second.json()["id"]]
+    charts = client.get("/api/v1/guess-game/charts").json()
+    assert client.post("/api/v1/guess-game/vote", json={"chart_id": charts[0]["id"], "vote_type": "love"}).status_code == 200
+    assert client.post(f"/api/v1/guess-game/charts/{charts[0]['id']}/comments", json={"content": "cleanup"}).status_code == 200
+    with SessionLocal() as db:
+        rows = [db.get(Submission, item) for item in submission_ids]
+        storage_files = [get_settings().data_dir / row.storage_path for row in rows]
+        cover_files = [get_settings().assets_dir / "guess-covers" / Path(chart["cover_path"]).name for chart in charts]
+    assert all(path.is_file() for path in storage_files)
+
+    login_admin(client)
+    missing = client.post("/api/v1/admin/submissions/batch-delete", json={"ids": [submission_ids[0], 99999]})
+    assert missing.status_code == 404
+    with SessionLocal() as db:
+        assert db.get(Submission, submission_ids[0]) is not None
+
+    deleted = client.post("/api/v1/admin/submissions/batch-delete", json={"ids": submission_ids})
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] == 2
+    with SessionLocal() as db:
+        assert not list(db.scalars(select(Submission).where(Submission.id.in_(submission_ids))).all())
+        assert not list(db.scalars(select(GuessChart).where(GuessChart.source_submission_id.in_(submission_ids))).all())
+        assert db.scalar(select(GuessVote.id).limit(1)) is None
+        assert db.scalar(select(GuessComment.id).limit(1)) is None
+    assert all(not path.exists() for path in storage_files)
+    assert all(not path.exists() for path in cover_files)
+
+
+def test_admin_chart_batch_delete_is_atomic_and_preserves_submission_archive(client: TestClient):
+    settings = get_settings()
+    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    retained_file = settings.uploads_dir / "retained-source.zip"
+    retained_file.write_bytes(b"source")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        admin = db.scalar(select(User).where(User.user_code == "admin"))
+        song = Song(event_id=event.id, submitted_by_id=admin.id, song_name="Retained", artist="Artist", song_type="A")
+        db.add(song)
+        db.flush()
+        storage_path = str(retained_file.relative_to(settings.data_dir)).replace("\\", "/")
+        submission = Submission(event_id=event.id, user_id=admin.id, source_song_id=song.id, source_kind="self", track="normal", file_name="retained-source.zip", storage_path=storage_path, file_size=retained_file.stat().st_size)
+        db.add(submission)
+        db.flush()
+        chart = GuessChart(event_id=event.id, title="Retained", author="Artist", designer="Designer", level="13", lane="normal", guess_group_key="retained", source_submission_type="normal", source_submission_id=submission.id, source_level_slot="4", cover_path="", storage_path=storage_path, is_self_selected=True, plays=0)
+        db.add(chart)
+        db.commit()
+        submission_id, retained_chart_id = submission.id, chart.id
+
+    login_admin(client)
+    retained_delete = client.post("/api/v1/admin/guess-game/charts/batch-delete", json={"ids": [retained_chart_id]})
+    assert retained_delete.status_code == 200, retained_delete.text
+    assert retained_file.is_file()
+    with SessionLocal() as db:
+        assert db.get(Submission, submission_id) is not None
+
+    imported = client.post(
+        "/api/v1/admin/guess-game/charts/import",
+        files={"file": ("manual.zip", archive_bytes("Manual"), "application/zip")},
+    )
+    assert imported.status_code == 200, imported.text
+    chart_ids = [chart["id"] for chart in imported.json()["charts"]]
+    archive_path = settings.data_dir / imported.json()["charts"][0]["storage_path"]
+    cover_path = settings.assets_dir / "guess-covers" / Path(imported.json()["charts"][0]["cover_path"]).name
+
+    missing = client.post("/api/v1/admin/guess-game/charts/batch-delete", json={"ids": [chart_ids[0], 99999]})
+    assert missing.status_code == 404
+    with SessionLocal() as db:
+        assert db.get(GuessChart, chart_ids[0]) is not None
+    assert archive_path.is_file()
+
+    deleted = client.post("/api/v1/admin/guess-game/charts/batch-delete", json={"ids": chart_ids})
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] == len(chart_ids)
+    assert not archive_path.exists()
+    assert not cover_path.exists()
+
+
 def test_song_pool_csv_updates_in_place_and_rolls_back(client: TestClient):
     register(client, "player")
     with SessionLocal() as db:
@@ -344,13 +473,28 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert uploaded.status_code == 200, uploaded.text
     chart_ids = [row["id"] for row in client.get("/api/v1/guess-game/charts").json()]
 
+    assert client.post("/api/v1/auth/logout").status_code == 200
+    public_overview = client.get("/api/v1/guess-game/designer-guesses").json()
+    assert public_overview["can_guess"] is False
+    assert public_overview["candidates"] == []
+
     login(client, "guesser")
-    state = client.get(f"/api/v1/guess-game/charts/{chart_ids[0]}/author-guess").json()
-    owner_id = next(item["user_id"] for item in state["candidates"] if item["display_id"] == "owner")
-    saved = client.put(f"/api/v1/guess-game/charts/{chart_ids[0]}/author-guess", json={"guessed_user_id": owner_id})
+    overview = client.get("/api/v1/guess-game/designer-guesses")
+    assert overview.status_code == 200, overview.text
+    assert overview.json()["can_guess"] is True
+    assert {item["chart_id"] for item in overview.json()["states"]} == set(chart_ids)
+    assert {item["guessed_user_id"] for item in overview.json()["states"]} == {None}
+    owner_id = next(item["user_id"] for item in overview.json()["candidates"] if item["display_id"] == "owner")
+    saved = client.put(f"/api/v1/guess-game/charts/{chart_ids[0]}/designer-guess", json={"guessed_user_id": owner_id})
     assert saved.status_code == 200
+    grouped = client.get("/api/v1/guess-game/designer-guesses").json()
+    assert {item["guessed_user_id"] for item in grouped["states"] if item["chart_id"] in chart_ids} == {owner_id}
     sibling_state = client.get(f"/api/v1/guess-game/charts/{chart_ids[1]}/author-guess").json()
     assert sibling_state["my_guess_user_id"] == owner_id
+    assert client.delete(f"/api/v1/guess-game/charts/{chart_ids[0]}/designer-guess").status_code == 200
+    cleared = client.get("/api/v1/guess-game/designer-guesses").json()
+    assert {item["guessed_user_id"] for item in cleared["states"] if item["chart_id"] in chart_ids} == {None}
+    assert client.put(f"/api/v1/guess-game/charts/{chart_ids[0]}/author-guess", json={"guessed_user_id": owner_id}).status_code == 200
 
     login_admin(client)
     stats = client.get("/api/v1/admin/guess-game/stats?scope=all")

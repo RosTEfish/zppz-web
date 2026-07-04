@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import DrawAssignment, Event, EventSetting, User
+from app.models import DrawAssignment, Event, EventSetting, Song, User
 from app.schemas import EventUpdate
 
 
@@ -24,6 +24,12 @@ def get_current_event(db: Session) -> Event:
 def update_current_event(db: Session, payload: EventUpdate) -> Event:
     event = get_current_event(db)
     if payload.submissions_open:
+        assert_song_pool_complete(
+            db,
+            event.id,
+            participant_limit=payload.participant_song_limit,
+            audience_limit=payload.audience_song_limit,
+        )
         participants = [
             user
             for user in
@@ -70,6 +76,59 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     db.commit()
     db.refresh(event)
     return event
+
+
+def incomplete_song_pool_users(
+    db: Session,
+    event_id: int,
+    *,
+    participant_limit: int,
+    audience_limit: int,
+) -> list[tuple[User, int, int]]:
+    users = list(
+        db.scalars(
+            select(User)
+            .where(User.is_active.is_(True))
+            .order_by(User.user_code.asc())
+        ).all()
+    )
+    song_counts = dict(
+        db.execute(
+            select(Song.submitted_by_id, func.count(Song.id))
+            .where(Song.event_id == event_id)
+            .group_by(Song.submitted_by_id)
+        ).all()
+    )
+    incomplete: list[tuple[User, int, int]] = []
+    for user in users:
+        limit = participant_limit if user.identity == "participant" else audience_limit
+        count = int(song_counts.get(user.id, 0))
+        if count < limit:
+            incomplete.append((user, count, limit))
+    return incomplete
+
+
+def assert_song_pool_complete(
+    db: Session,
+    event_id: int,
+    *,
+    participant_limit: int,
+    audience_limit: int,
+) -> None:
+    incomplete = incomplete_song_pool_users(
+        db,
+        event_id,
+        participant_limit=participant_limit,
+        audience_limit=audience_limit,
+    )
+    if not incomplete:
+        return
+    preview = "、".join(f"{user.user_code}（{count}/{limit}）" for user, count, limit in incomplete[:10])
+    suffix = f" 等 {len(incomplete)} 人" if len(incomplete) > 10 else ""
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"以下账号尚未投满曲池：{preview}{suffix}",
+    )
 
 
 def assert_song_limit(db: Session, user_id: int, identity: str) -> None:

@@ -25,7 +25,7 @@ from app.modules.guess_game.importer import (
     sync_parsed_source,
 )
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
-from app.schemas import DownloadPreparation, StoredFileRead, SubmissionTargetsResponse, SubmissionTrackUpdate
+from app.schemas import BatchDeleteRequest, BatchDeleteResponse, DownloadPreparation, StoredFileRead, SubmissionTargetsResponse, SubmissionTrackUpdate
 
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -246,12 +246,17 @@ def _replace_submission(
 
 
 def _delete_submission(db: Session, row: Submission) -> None:
-    storage_path = row.storage_path
-    _, cover_paths = delete_source_charts(db, row.event_id, row.track, row.id)
-    db.delete(row)
+    storage_path, cover_paths = _stage_delete_submission(db, row)
     db.commit()
     delete_stored_file(storage_path)
     delete_cover_paths(cover_paths)
+
+
+def _stage_delete_submission(db: Session, row: Submission) -> tuple[str, set[str]]:
+    _, cover_paths = delete_source_charts(db, row.event_id, row.track, row.id)
+    storage_path = row.storage_path
+    db.delete(row)
+    return storage_path, cover_paths
 
 
 def _submission_options():
@@ -460,6 +465,42 @@ def admin_list_submissions(
     if track:
         stmt = stmt.where(Submission.track == _normalize_track(track))
     return [serialize_submission(row) for row in db.scalars(stmt).all()]
+
+
+@admin_router.post("/batch-delete", response_model=BatchDeleteResponse)
+def admin_batch_delete_submissions(
+    payload: BatchDeleteRequest,
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    submission_ids = list(dict.fromkeys(payload.ids))
+    rows = list(
+        db.scalars(
+            select(Submission)
+            .where(Submission.event_id == event.id, Submission.id.in_(submission_ids))
+            .order_by(Submission.id.asc())
+        ).all()
+    )
+    found_ids = {row.id for row in rows}
+    missing_ids = [submission_id for submission_id in submission_ids if submission_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"投稿不存在：{', '.join(map(str, missing_ids))}")
+    storage_paths: set[str] = set()
+    cover_paths: set[str] = set()
+    try:
+        for row in rows:
+            storage_path, row_cover_paths = _stage_delete_submission(db, row)
+            storage_paths.add(storage_path)
+            cover_paths.update(row_cover_paths)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    for storage_path in storage_paths:
+        delete_stored_file(storage_path)
+    delete_cover_paths(cover_paths)
+    return {"deleted": len(rows), "message": f"已删除 {len(rows)} 份投稿"}
 
 
 @admin_router.post("/{submission_id}/replace", response_model=StoredFileRead)

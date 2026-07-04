@@ -1,5 +1,5 @@
-import { type FormEvent, useState } from "react";
-import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, TextField } from "@mui/material";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, TextField, Typography } from "@mui/material";
 import { Music2, Plus } from "lucide-react";
 import { api, type SongPayload, type SongRead } from "../api/v1";
 import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
@@ -14,9 +14,27 @@ export default function SongPoolPage() {
   const [editing, setEditing] = useState<SongRead | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [incompleteOpen, setIncompleteOpen] = useState(false);
+  const shownIncomplete = useRef(false);
+  const wasComplete = useRef(false);
   const { event } = useConfig();
   const { user } = useAuth();
   const limit = user?.identity === "participant" ? event?.settings.participant_song_limit : event?.settings.audience_song_limit;
+  const songCount = songs.data?.length ?? 0;
+  const incomplete = songs.data !== null && limit !== undefined && songCount < limit;
+
+  useEffect(() => {
+    if (songs.data === null || limit === undefined) return;
+    if (songCount >= limit) {
+      wasComplete.current = true;
+      return;
+    }
+    if (!shownIncomplete.current || wasComplete.current) {
+      setIncompleteOpen(true);
+      shownIncomplete.current = true;
+      wasComplete.current = false;
+    }
+  }, [limit, songCount, songs.data]);
 
   async function createSong(event: FormEvent) {
     event.preventDefault();
@@ -37,6 +55,7 @@ export default function SongPoolPage() {
   return (
     <Stack spacing={3}>
       <PageHeader icon={Music2} title="我的曲池" meta={`${songs.data?.length ?? 0} / ${limit ?? "-"} 首`} />
+      {incomplete ? <Alert severity="warning">曲池尚未投满，还需提交 {Math.max((limit ?? 0) - songCount, 0)} 首曲目后才能进入抽签阶段。</Alert> : null}
       <Paper component="form" onSubmit={createSong} variant="outlined" sx={{ p: 2 }}>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1.4fr 120px 2fr auto" }, gap: 1.5, alignItems: "center" }}>
           <TextField size="small" label="曲名" value={form.song_name} onChange={(e) => setForm({ ...form, song_name: e.target.value })} required />
@@ -51,6 +70,11 @@ export default function SongPoolPage() {
       {songs.data?.length ? <SongTable songs={songs.data} onEdit={setEditing} onDelete={remove} /> : null}
       <SongDialog song={editing} onClose={() => setEditing(null)} onSave={async (payload) => { if (!editing) return; await api.updateMySong(editing.id, payload); setEditing(null); await songs.reload(); }} />
       <Snackbar open={Boolean(message)} autoHideDuration={2500} onClose={() => setMessage("")} message={message} />
+      <Dialog open={incompleteOpen && incomplete} onClose={() => setIncompleteOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>曲池尚未投递完成</DialogTitle>
+        <DialogContent><Stack spacing={1.5}><Typography>当前已提交 {songCount} / {limit ?? 0} 首曲目。</Typography><Alert severity="info">还需提交 {Math.max((limit ?? 0) - songCount, 0)} 首，所有用户投满后才能开始抽签并开放投稿。</Alert></Stack></DialogContent>
+        <DialogActions><Button variant="contained" onClick={() => setIncompleteOpen(false)}>继续投曲</Button></DialogActions>
+      </Dialog>
     </Stack>
   );
 }
