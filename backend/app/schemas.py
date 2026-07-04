@@ -136,6 +136,7 @@ class SubmissionTargetsResponse(BaseModel):
 class GuessChartCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     author: str = Field(min_length=1, max_length=100)
+    designer: str = Field(default="", max_length=200)
     level: str = Field(min_length=1, max_length=20)
     lane: str = "normal"
     guess_group_key: str = ""
@@ -146,6 +147,7 @@ class GuessChartRead(BaseModel):
     id: int
     title: str
     author: str
+    designer: str
     level: str
     lane: str
     guess_group_key: str

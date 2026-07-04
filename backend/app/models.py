@@ -84,6 +84,7 @@ class EventSetting(Base, TimestampMixin):
     submission_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     guess_game_open_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     submissions_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    guess_chart_metadata_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     event: Mapped[Event] = relationship(back_populates="settings")
 
@@ -183,6 +184,7 @@ class GuessChart(Base, TimestampMixin):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     author: Mapped[str] = mapped_column(String(100), nullable=False)
+    designer: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     level: Mapped[str] = mapped_column(String(20), nullable=False)
     lane: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
     guess_group_key: Mapped[str] = mapped_column(String(300), default="", index=True, nullable=False)

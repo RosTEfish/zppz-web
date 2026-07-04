@@ -37,6 +37,7 @@ describe("Material application shell", () => {
           id: 7,
           title: "测试谱面",
           author: "曲师",
+          designer: "测试谱师",
           level: "13+",
           lane: "normal",
           guess_group_key: "test",
@@ -50,6 +51,26 @@ describe("Material application shell", () => {
           created_at: "2026-07-03T00:00:00",
           love_votes: 2,
           funny_votes: 1,
+          my_votes: [],
+        },
+        {
+          id: 8,
+          title: "J谱面",
+          author: "另一曲师",
+          designer: "J谱师",
+          level: "14",
+          lane: "j",
+          guess_group_key: "j-test",
+          source_submission_type: "j",
+          source_submission_id: 2,
+          source_level_slot: "5",
+          cover_path: "",
+          storage_path: "",
+          is_self_selected: false,
+          plays: 3,
+          created_at: "2026-07-03T00:00:00",
+          love_votes: 1,
+          funny_votes: 0,
           my_votes: [],
         },
       ]);
@@ -80,6 +101,53 @@ describe("Material application shell", () => {
     expect(await screen.findByText("测试谱面")).toBeInTheDocument();
     expect(screen.getByText("查看 7")).toBeInTheDocument();
     expect(screen.queryByText(/播放/)).not.toBeInTheDocument();
+  });
+
+  it("filters guess charts and clearly labels chart metadata", async () => {
+    window.history.pushState({}, "", "/guess");
+    render(<App />);
+
+    expect(await screen.findByText("测试谱面")).toBeInTheDocument();
+    expect(screen.getByText("J谱面")).toBeInTheDocument();
+    expect(screen.getByText(/测试谱师/)).toBeInTheDocument();
+    expect(screen.getByText(/J谱师/)).toBeInTheDocument();
+    expect(screen.getAllByText("自选").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("非自选").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("普通谱").length).toBeGreaterThan(0);
+    expect(screen.getByText("J谱面").closest("[data-lane='j']")).toBeInTheDocument();
+    const redLevelCard = screen.getByText("测试谱面").closest("[data-level-slot='lv_4']");
+    const purpleLevelCard = screen.getByText("J谱面").closest("[data-level-slot='lv_5']");
+    expect(redLevelCard?.querySelector(".MuiCardContent-root")).toHaveStyle({ backgroundColor: "#FFE9E7" });
+    expect(purpleLevelCard?.querySelector(".MuiCardContent-root")).toHaveStyle({ backgroundColor: "#F1E9FF" });
+
+    fireEvent.click(screen.getByRole("button", { name: "J 谱" }));
+    expect(screen.queryByText("测试谱面")).not.toBeInTheDocument();
+    expect(screen.getByText("J谱面")).toBeInTheDocument();
+    expect(screen.getByText("显示 1 / 共 2 张谱面")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "自选" }));
+    expect(screen.getByText("没有符合当前筛选条件的谱面")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" })[0]);
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "难度" }));
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["全部难度", "13+", "14"]);
+    fireEvent.click(screen.getByRole("option", { name: "13+" }));
+    expect(screen.getByText("测试谱面")).toBeInTheDocument();
+    expect(screen.queryByText("J谱面")).not.toBeInTheDocument();
+  });
+
+  it("clears batch selection when filters change", async () => {
+    window.history.pushState({}, "", "/guess");
+    render(<App />);
+
+    expect(await screen.findByText("测试谱面")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "批量选择" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择 测试谱面" }));
+    expect(screen.getByRole("button", { name: "下载 1 项" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "J 谱" }));
+    expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
   });
 
   it("submits the administrator role from user management", async () => {

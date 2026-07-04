@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from alembic import command
@@ -10,6 +11,10 @@ from app.core.config import get_settings
 from app.core.security import ensure_roles, hash_password
 from app.db.session import Base, engine
 from app.models import Event, EventSetting, User
+
+
+GUESS_CHART_METADATA_VERSION = 1
+logger = logging.getLogger(__name__)
 
 
 def sync_permissions_file(db: Session, roles: dict) -> None:
@@ -99,3 +104,29 @@ def seed_defaults(db: Session) -> None:
         db.commit()
 
     sync_permissions_file(db, roles)
+
+
+def backfill_guess_chart_metadata(db: Session) -> None:
+    from app.modules.guess_game.importer import rebuild_event_charts
+
+    setting_ids = list(
+        db.scalars(
+            select(EventSetting.id).where(
+                EventSetting.guess_chart_metadata_version < GUESS_CHART_METADATA_VERSION
+            )
+        ).all()
+    )
+    for setting_id in setting_ids:
+        setting = db.get(EventSetting, setting_id)
+        if not setting or setting.guess_chart_metadata_version >= GUESS_CHART_METADATA_VERSION:
+            continue
+        event_id = setting.event_id
+        try:
+            rebuild_event_charts(db, event_id)
+            setting = db.get(EventSetting, setting_id)
+            if setting:
+                setting.guess_chart_metadata_version = GUESS_CHART_METADATA_VERSION
+                db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("赛事 %s 的猜谱元数据自动回填失败，将在下次启动时重试", event_id)

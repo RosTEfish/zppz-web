@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
-from app.db.bootstrap import seed_defaults
+from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
@@ -90,6 +90,31 @@ def test_parser_supports_nested_files_multiple_levels_and_fallback_encodings(tmp
         assert parsed.cover_bytes == b"cover"
 
 
+def test_parser_resolves_global_and_per_level_designers(tmp_path: Path):
+    path = tmp_path / "designers.zip"
+    path.write_bytes(
+        archive_bytes(
+            "&title=Designer Test\n"
+            "&artist=Artist\n"
+            "&DeS=Global Designer\n"
+            "&des4=Specific Designer\n"
+            "&des5=\n"
+            "&lv_4=13\n"
+            "&lv_5=14\n"
+            "&lv_6=14+"
+        )
+    )
+
+    parsed = parse_archive(path)
+    designers = {level.slot: level.designer for level in parsed.levels}
+
+    assert designers == {"4": "Specific Designer", "5": "Global Designer", "6": "Global Designer"}
+
+    missing = tmp_path / "missing-designer.zip"
+    missing.write_bytes(archive_bytes("&title=No Designer\n&artist=Artist\n&lv_4=13"))
+    assert parse_archive(missing).levels[0].designer == ""
+
+
 def test_parser_rejects_missing_required_fields_and_allows_missing_cover(tmp_path: Path):
     missing_title = tmp_path / "invalid.zip"
     missing_title.write_bytes(archive_bytes("&artist=artist\n&lv_4=13"))
@@ -118,12 +143,13 @@ def test_parser_reads_only_required_7z_members(tmp_path: Path):
 
 def test_upload_creates_charts_and_serves_cover(client: TestClient):
     register(client)
-    response = upload(client, archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13+\n&lv_5=14"))
+    response = upload(client, archive_bytes("&title=Song\n&artist=Artist\n&des=Global\n&des5=Expert\n&lv_4=13+\n&lv_5=14"))
     assert response.status_code == 200, response.text
 
     charts = client.get("/api/v1/guess-game/charts")
     assert charts.status_code == 200
     assert {(row["source_level_slot"], row["level"]) for row in charts.json()} == {("4", "13+"), ("5", "14")}
+    assert {row["source_level_slot"]: row["designer"] for row in charts.json()} == {"4": "Global", "5": "Expert"}
     cover_path = charts.json()[0]["cover_path"]
     assert cover_path.startswith("/api/v1/assets/guess-covers/")
     assert client.get(cover_path).status_code == 200
@@ -155,7 +181,7 @@ def test_j_track_upload_and_delete_sync_charts(client: TestClient):
 
 def test_incremental_replace_preserves_matching_chart_interactions(client: TestClient):
     register(client)
-    first = upload(client, archive_bytes("&title=Old\n&artist=Artist\n&lv_4=13\n&lv_5=14"))
+    first = upload(client, archive_bytes("&title=Old\n&artist=Artist\n&des=Old Designer\n&lv_4=13\n&lv_5=14"))
     assert first.status_code == 200, first.text
     submission_id = first.json()["id"]
 
@@ -169,7 +195,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         db.add(GuessAuthorGuess(chart_id=slot_four.id, user_id=user.id, guessed_user_id=user.id))
         db.commit()
 
-    replacement = archive_bytes("&title=Updated\n&artist=Artist\n&lv_4=13+\n&lv_6=15")
+    replacement = archive_bytes("&title=Updated\n&artist=Artist\n&des=New Designer\n&des4=Slot Designer\n&lv_4=13+\n&lv_6=15")
     response = client.post(
         f"/api/v1/submissions/{submission_id}/replace",
         files={"file": ("replacement.zip", replacement, "application/zip")},
@@ -181,6 +207,8 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         assert set(charts) == {"4", "6"}
         assert charts["4"].id == original_chart_id
         assert charts["4"].title == "Updated"
+        assert charts["4"].designer == "Slot Designer"
+        assert charts["6"].designer == "New Designer"
         assert db.scalar(select(func.count()).select_from(GuessVote).where(GuessVote.chart_id == original_chart_id)) == 1
         assert db.scalar(select(func.count()).select_from(GuessComment).where(GuessComment.chart_id == original_chart_id)) == 1
         assert db.scalar(select(func.count()).select_from(GuessAuthorGuess).where(GuessAuthorGuess.chart_id == original_chart_id)) == 1
@@ -233,6 +261,85 @@ def test_admin_rebuild_reports_invalid_legacy_file_without_removing_charts(clien
     with SessionLocal() as db:
         assert db.scalar(select(GuessChart.id)) == chart_id
         assert db.scalar(select(func.count()).select_from(ImportIssue)) == 1
+
+
+def test_startup_backfill_updates_normal_j_and_admin_sources_once(client: TestClient):
+    register(client)
+    normal = upload(
+        client,
+        archive_bytes("&title=Normal Source\n&artist=Artist\n&des=Normal Designer\n&lv_4=13"),
+        "normal.zip",
+    )
+    assert normal.status_code == 200, normal.text
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        user = db.scalar(select(User).where(User.user_code == "player1"))
+        j_song = Song(event_id=event.id, submitted_by_id=user.id, song_name="J Candidate", artist="Artist", song_type="J")
+        db.add(j_song)
+        db.commit()
+        j_song_id = j_song.id
+
+    j_upload = client.post(
+        "/api/v1/submissions",
+        data={"song_id": j_song_id, "track": "j"},
+        files={"file": ("j.zip", archive_bytes("&title=J Source\n&artist=Artist\n&des5=J Designer\n&lv_5=14"), "application/zip")},
+    )
+    assert j_upload.status_code == 200, j_upload.text
+
+    login_admin(client)
+    admin_upload = client.post(
+        "/api/v1/admin/guess-game/charts/import",
+        files={"file": ("admin.zip", archive_bytes("&title=Admin Source\n&artist=Artist\n&des=Admin Designer\n&lv_6=15"), "application/zip")},
+    )
+    assert admin_upload.status_code == 200, admin_upload.text
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        original_ids = {chart.title: chart.id for chart in db.scalars(select(GuessChart)).all()}
+        for chart in db.scalars(select(GuessChart)).all():
+            chart.designer = ""
+        event.settings.guess_chart_metadata_version = 0
+        db.commit()
+
+    with SessionLocal() as db:
+        backfill_guess_chart_metadata(db)
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        charts = {chart.title: chart for chart in db.scalars(select(GuessChart)).all()}
+        assert {title: chart.designer for title, chart in charts.items()} == {
+            "Normal Source": "Normal Designer",
+            "J Source": "J Designer",
+            "Admin Source": "Admin Designer",
+        }
+        assert {title: chart.id for title, chart in charts.items()} == original_ids
+        assert event.settings.guess_chart_metadata_version == 1
+        charts["Normal Source"].designer = "Manual Override"
+        db.commit()
+
+    with SessionLocal() as db:
+        backfill_guess_chart_metadata(db)
+        normal_chart = db.scalar(select(GuessChart).where(GuessChart.title == "Normal Source"))
+        assert normal_chart.designer == "Manual Override"
+
+
+def test_startup_backfill_failure_keeps_version_for_retry(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    from app.modules.guess_game import importer
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.guess_chart_metadata_version = 0
+        db.commit()
+
+    def fail_rebuild(_db, _event_id):
+        raise RuntimeError("backfill failed")
+
+    monkeypatch.setattr(importer, "rebuild_event_charts", fail_rebuild)
+    with SessionLocal() as db:
+        backfill_guess_chart_metadata(db)
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event.settings.guess_chart_metadata_version == 0
 
 
 def test_delete_submission_removes_only_its_charts_and_cover(client: TestClient):

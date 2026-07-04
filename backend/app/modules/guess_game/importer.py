@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import GuessChart, ImportIssue, JTrackSubmission, Submission
+from app.models import AdminGuessArchive, GuessChart, ImportIssue, JTrackSubmission, Submission
 
 try:
     import py7zr
@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - exercised only in incomplete local ins
 SUPPORTED_ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar"}
 COVER_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 LEVEL_PATTERN = re.compile(r"^&lv_([1-7])=(.+)$", re.IGNORECASE)
+DESIGNER_PATTERN = re.compile(r"^&des([1-7])=(.*)$", re.IGNORECASE)
 MAX_ARCHIVE_ENTRIES = 2048
 MAX_MAIDATA_BYTES = 1024 * 1024
 MAX_COVER_BYTES = 20 * 1024 * 1024
@@ -39,6 +40,7 @@ class ArchiveParseError(ValueError):
 class ParsedLevel:
     slot: str
     level: str
+    designer: str = ""
 
 
 @dataclass(frozen=True)
@@ -109,7 +111,9 @@ def decode_maidata(raw: bytes) -> str:
 def parse_maidata(text: str) -> tuple[str, str, tuple[ParsedLevel, ...]]:
     title = ""
     author = ""
-    levels: list[ParsedLevel] = []
+    level_values: list[tuple[str, str]] = []
+    global_designer = ""
+    slot_designers: dict[str, str] = {}
     seen_slots: set[str] = set()
 
     for line in text.splitlines():
@@ -121,6 +125,14 @@ def parse_maidata(text: str) -> tuple[str, str, tuple[ParsedLevel, ...]]:
         if lowered.startswith("&artist="):
             author = stripped.split("=", 1)[1].strip()
             continue
+        if lowered.startswith("&des="):
+            global_designer = stripped.split("=", 1)[1].strip()
+            continue
+
+        designer_match = DESIGNER_PATTERN.match(stripped)
+        if designer_match:
+            slot_designers[designer_match.group(1)] = designer_match.group(2).strip()
+            continue
 
         match = LEVEL_PATTERN.match(stripped)
         if not match or match.group(1) in seen_slots:
@@ -129,15 +141,23 @@ def parse_maidata(text: str) -> tuple[str, str, tuple[ParsedLevel, ...]]:
         if not level:
             continue
         seen_slots.add(match.group(1))
-        levels.append(ParsedLevel(slot=match.group(1), level=level))
+        level_values.append((match.group(1), level))
 
     if not title:
         raise ArchiveParseError("maidata.txt 缺少 &title= 字段")
     if not author:
         raise ArchiveParseError("maidata.txt 缺少 &artist= 字段")
-    if not levels:
+    if not level_values:
         raise ArchiveParseError("maidata.txt 未找到有效的 &lv_1 至 &lv_7 字段")
-    return title, author, tuple(levels)
+    levels = tuple(
+        ParsedLevel(
+            slot=slot,
+            level=level,
+            designer=slot_designers.get(slot) or global_designer,
+        )
+        for slot, level in level_values
+    )
+    return title, author, levels
 
 
 def _normalized_member_name(name: str) -> str:
@@ -412,6 +432,7 @@ def sync_parsed_source(
         values = {
             "title": parsed.title,
             "author": parsed.author,
+            "designer": level.designer,
             "level": level.level,
             "lane": lane,
             "guess_group_key": group_key,
@@ -482,9 +503,16 @@ def delete_source_charts(db: Session, event_id: int, source_type: str, source_id
 def rebuild_event_charts(db: Session, event_id: int) -> RebuildResult:
     normal = list(db.scalars(select(Submission).where(Submission.event_id == event_id).order_by(Submission.id.asc())).all())
     j_track = list(db.scalars(select(JTrackSubmission).where(JTrackSubmission.event_id == event_id).order_by(JTrackSubmission.id.asc())).all())
+    admin_archives = list(
+        db.scalars(
+            select(AdminGuessArchive)
+            .where(AdminGuessArchive.event_id == event_id)
+            .order_by(AdminGuessArchive.id.asc())
+        ).all()
+    )
     sources = [(row.track if row.track in {"normal", "j"} else "normal", row) for row in normal] + [
         ("j", row) for row in j_track
-    ]
+    ] + [("admin", row) for row in admin_archives]
     active_keys = {(source_type, row.id) for source_type, row in sources}
     result = RebuildResult(scanned=len(sources))
     stale_covers: set[str] = set()
@@ -506,7 +534,7 @@ def rebuild_event_charts(db: Session, event_id: int) -> RebuildResult:
                 file_name=row.file_name,
                 storage_path=row.storage_path,
                 parsed=parsed,
-                is_self_selected=getattr(row, "source_kind", "") == "self",
+                is_self_selected=source_type != "admin" and getattr(row, "source_kind", "") == "self",
             )
             result.created += sync.created
             result.updated += sync.updated
@@ -522,7 +550,7 @@ def rebuild_event_charts(db: Session, event_id: int) -> RebuildResult:
                 select(GuessChart).where(
                     GuessChart.event_id == event_id,
                     GuessChart.source_submission_id.is_not(None),
-                    GuessChart.source_submission_type.in_(("normal", "j")),
+                    GuessChart.source_submission_type.in_(("normal", "j", "admin")),
                 )
             ).all()
         )

@@ -86,6 +86,7 @@ export interface GuessChartRead {
   id: number;
   title: string;
   author: string;
+  designer: string;
   level: string;
   lane: Track | string;
   guess_group_key: string;
@@ -290,7 +291,7 @@ export const api = {
     form.set("file", file);
     return apiRequest<{ archive_id: number; charts: GuessChartRead[] }>("/admin/guess-game/charts/import", { method: "POST", body: form });
   },
-  updateChart: (id: number, payload: { title: string; author: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) => apiRequest<GuessChartRead>(`/admin/guess-game/charts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  updateChart: (id: number, payload: { title: string; author: string; designer: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) => apiRequest<GuessChartRead>(`/admin/guess-game/charts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteChart: (id: number) => apiRequest<{ message: string }>(`/admin/guess-game/charts/${id}`, { method: "DELETE" }),
   parseSubmissions: () => apiRequest<GuessImportSummary>("/admin/guess-game/parse-submissions", { method: "POST" }),
   importIssues: () => apiRequest<GuessImportIssueRead[]>("/admin/guess-game/import-issues"),
