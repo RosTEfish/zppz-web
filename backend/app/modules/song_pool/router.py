@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.models import Song, Submission, User
 from app.modules.common import serialize_song
 from app.modules.events.service import assert_song_limit, get_current_event
-from app.schemas import SongCreate, SongRead
+from app.schemas import BatchDeleteRequest, BatchDeleteResponse, SongCreate, SongRead
 
 
 router = APIRouter(prefix="/song-pool", tags=["song-pool"])
@@ -79,6 +79,43 @@ def admin_list_songs(_: User = Depends(require_role("admin", "pool_editor")), db
         .order_by(Song.created_at.desc())
     ).all()
     return [serialize_song(song) for song in songs]
+
+
+@admin_router.post("/batch-delete", response_model=BatchDeleteResponse)
+def admin_batch_delete_songs(
+    payload: BatchDeleteRequest,
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    song_ids = list(dict.fromkeys(payload.ids))
+    songs = list(
+        db.scalars(
+            select(Song)
+            .where(Song.event_id == event.id, Song.id.in_(song_ids))
+            .order_by(Song.id.asc())
+        ).all()
+    )
+    found_ids = {song.id for song in songs}
+    missing_ids = [song_id for song_id in song_ids if song_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"曲目不存在：{', '.join(map(str, missing_ids))}")
+    linked_ids = set(
+        db.scalars(
+            select(Submission.source_song_id).where(Submission.source_song_id.in_(song_ids))
+        ).all()
+    )
+    if linked_ids:
+        blocked = [f"{song.song_name}（ID {song.id}）" for song in songs if song.id in linked_ids]
+        raise HTTPException(status_code=409, detail=f"以下曲目已有投稿，整批未删除：{'、'.join(blocked)}")
+    try:
+        for song in songs:
+            db.delete(song)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted": len(songs), "message": f"已删除 {len(songs)} 首曲目"}
 
 
 @admin_router.put("/{song_id}", response_model=SongRead)
