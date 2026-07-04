@@ -45,3 +45,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 更多说明见 `REFACTOR_V2.md`。
+
+### 反向代理下载配置
+
+批量投稿下载使用流式 ZIP，并通过 `X-Accel-Buffering: no` 禁止 Nginx 等待完整响应。生产环境的外部反向代理需要保留该响应头，且不能为下载接口强制开启响应缓冲；仓库内的 Docker Nginx 配置已经关闭 `/api/` 代理缓冲。

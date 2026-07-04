@@ -31,8 +31,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshUser().finally(() => setLoading(false));
-  }, [refreshUser]);
+    api.bootstrap()
+      .then((data) => setUser(data.user))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
+  }, []);
 
   const login = useCallback(async (id: string, password: string) => {
     const data = await api.login(id, password);
@@ -86,4 +89,3 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
-

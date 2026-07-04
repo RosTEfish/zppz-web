@@ -12,6 +12,7 @@ from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import DrawAssignment, Event, GuessChart, Song, Submission, User
+from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +40,25 @@ def archive_bytes(title: str = "Song", levels: str = "&lv_4=13\n&lv_5=14") -> by
         archive.writestr("nested/maidata.txt", f"&title={title}\n&artist=Artist\n{levels}")
         archive.writestr("nested/bg.png", b"cover")
     return buffer.getvalue()
+
+
+def test_streaming_zip_yields_before_the_source_is_fully_read(tmp_path: Path):
+    source = tmp_path / "large-source.zip"
+    source.write_bytes(b"x" * (2 * 1024 * 1024))
+    prepared = prepare_streaming_zip(
+        [DownloadEntry(path=source, archive_name="source.zip")],
+        file_name="submissions.zip",
+    )
+
+    chunks = iter(prepared.stream)
+    first_chunk = next(chunks)
+    assert first_chunk.startswith(b"PK")
+    assert len(first_chunk) < prepared.file_size
+
+    payload = first_chunk + b"".join(chunks)
+    assert len(payload) == prepared.file_size
+    with ZipFile(BytesIO(payload)) as archive:
+        assert archive.read("source.zip") == source.read_bytes()
 
 
 def register(client: TestClient, code: str, identity: str = "participant") -> None:
@@ -100,12 +120,40 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
         files={"file": ("j.zip", archive_bytes("J Song", "&lv_6=15"), "application/zip")},
     )
     assert first.status_code == 200, first.text
+    first_chart = next(
+        row for row in client.get("/api/v1/guess-game/charts").json()
+        if row["source_submission_id"] == first.json()["id"]
+    )
+    assert client.post("/api/v1/guess-game/vote", json={"chart_id": first_chart["id"], "vote_type": "love"}).status_code == 200
+    assert client.post(
+        f"/api/v1/guess-game/charts/{first_chart['id']}/comments",
+        json={"content": "保留这条评论"},
+    ).status_code == 200
+
+    invalid = client.post(
+        "/api/v1/submissions",
+        data={"song_id": own_id, "track": "j"},
+        files={"file": ("invalid.zip", b"not-a-zip", "application/zip")},
+    )
+    assert invalid.status_code == 400
+    assert client.get("/api/v1/submissions/j-track").json()["submission"]["id"] == first.json()["id"]
+
     second = client.post(
         "/api/v1/submissions",
         data={"song_id": own_id, "track": "j"},
         files={"file": ("j2.zip", archive_bytes("Other J", "&lv_4=13"), "application/zip")},
     )
-    assert second.status_code == 409
+    assert second.status_code == 200, second.text
+
+    targets_after = client.get("/api/v1/submissions/targets").json()["targets"]
+    tracks = {row["song"]["id"]: row["submission"]["track"] for row in targets_after}
+    assert tracks == {assigned_id: "normal", own_id: "j"}
+    old_chart = next(row for row in client.get("/api/v1/guess-game/charts").json() if row["id"] == first_chart["id"])
+    assert old_chart["lane"] == "normal"
+    assert old_chart["source_submission_type"] == "normal"
+    assert old_chart["love_votes"] == 1
+    comments = client.get(f"/api/v1/guess-game/charts/{first_chart['id']}/comments").json()
+    assert [row["content"] for row in comments] == ["保留这条评论"]
 
 
 def test_admin_open_validation_and_draw_lock(client: TestClient):
@@ -153,12 +201,31 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
     )
     assert uploaded.status_code == 200
     chart_ids = [row["id"] for row in client.get("/api/v1/guess-game/charts").json()]
+    metadata = client.get(f"/api/v1/guess-game/charts/download-metadata?ids={','.join(map(str, chart_ids))}")
+    assert metadata.status_code == 200, metadata.text
+    assert metadata.json()["download_url"].endswith(f"ids={'%2C'.join(map(str, chart_ids))}")
+    assert metadata.json()["file_size"] > 0
     response = client.get(f"/api/v1/guess-game/charts/download.zip?ids={','.join(map(str, chart_ids))}")
     assert response.status_code == 200
+    assert response.headers["content-encoding"] == "identity"
+    assert response.headers["x-accel-buffering"] == "no"
+    assert int(response.headers["content-length"]) == len(response.content)
     with ZipFile(BytesIO(response.content)) as archive:
         archive_names = archive.namelist()
         assert len([name for name in archive_names if name.endswith("source.zip")]) == 1
         assert "_下载报告.txt" in archive_names
+
+    login_admin(client)
+    submission_id = uploaded.json()["id"]
+    single_metadata = client.get(f"/api/v1/admin/submissions/{submission_id}/download-metadata")
+    assert single_metadata.status_code == 200
+    assert single_metadata.json()["file_size"] == uploaded.json()["file_size"]
+    batch_metadata = client.get(f"/api/v1/admin/submissions/download-metadata?ids={submission_id}")
+    assert batch_metadata.status_code == 200
+    admin_download = client.get(batch_metadata.json()["download_url"])
+    assert admin_download.status_code == 200
+    assert admin_download.headers["content-encoding"] == "identity"
+    assert int(admin_download.headers["content-length"]) == len(admin_download.content)
 
 
 def test_song_pool_csv_updates_in_place_and_rolls_back(client: TestClient):

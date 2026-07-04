@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import re
-import tempfile
 from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.background import BackgroundTasks
-from fastapi.responses import FileResponse
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.core.security import get_current_user, require_role
 from app.db.session import get_db
 from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission, User
 from app.modules.common import serialize_song, serialize_submission
+from app.modules.downloads import DownloadEntry, PreparedZip, file_download_response, prepare_streaming_zip
 from app.modules.events.service import get_current_event
 from app.modules.guess_game.importer import (
     ArchiveParseError,
@@ -25,7 +25,7 @@ from app.modules.guess_game.importer import (
     sync_parsed_source,
 )
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
-from app.schemas import StoredFileRead, SubmissionTargetsResponse
+from app.schemas import DownloadPreparation, StoredFileRead, SubmissionTargetsResponse
 
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -85,7 +85,32 @@ def _eligible_song(db: Session, event_id: int, user: User, song_id: int) -> tupl
     return song, "assigned"
 
 
-def _ensure_j_track_available(db: Session, event_id: int, user_id: int, exclude_id: int | None = None) -> None:
+def _move_submission_track(db: Session, row: Submission, next_track: str) -> None:
+    previous_track = row.track
+    if previous_track == next_track:
+        return
+    row.track = next_track
+    for chart in db.scalars(
+        select(GuessChart).where(
+            GuessChart.event_id == row.event_id,
+            GuessChart.source_submission_type == previous_track,
+            GuessChart.source_submission_id == row.id,
+        )
+    ).all():
+        chart.source_submission_type = next_track
+        chart.lane = next_track
+    for issue in db.scalars(
+        select(ImportIssue).where(
+            ImportIssue.event_id == row.event_id,
+            ImportIssue.source_type == previous_track,
+            ImportIssue.source_id == row.id,
+        )
+    ).all():
+        issue.source_type = next_track
+
+
+def _demote_existing_j_track(db: Session, event_id: int, user_id: int, exclude_id: int | None = None) -> None:
+    db.scalar(select(User.id).where(User.id == user_id).with_for_update())
     stmt = select(Submission).where(
         Submission.event_id == event_id,
         Submission.user_id == user_id,
@@ -93,34 +118,15 @@ def _ensure_j_track_available(db: Session, event_id: int, user_id: int, exclude_
     )
     if exclude_id is not None:
         stmt = stmt.where(Submission.id != exclude_id)
-    existing = db.scalar(stmt)
+    existing = db.scalar(stmt.with_for_update())
     if existing:
-        song_name = existing.source_song.song_name if existing.source_song else existing.file_name
-        raise HTTPException(status_code=409, detail=f"每位参赛者最多一份 J 稿，当前 J 稿为：{song_name}")
+        _move_submission_track(db, existing, "normal")
+        db.flush()
 
 
-def _sync_and_commit(db: Session, row: Submission, parsed: ParsedArchive, old_track: str | None = None) -> None:
+def _sync_and_commit(db: Session, row: Submission, parsed: ParsedArchive) -> None:
     result = None
-    previous_track = old_track or row.track
     try:
-        if previous_track != row.track:
-            for chart in db.scalars(
-                select(GuessChart).where(
-                    GuessChart.event_id == row.event_id,
-                    GuessChart.source_submission_type == previous_track,
-                    GuessChart.source_submission_id == row.id,
-                )
-            ).all():
-                chart.source_submission_type = row.track
-            for issue in db.scalars(
-                select(ImportIssue).where(
-                    ImportIssue.event_id == row.event_id,
-                    ImportIssue.source_type == previous_track,
-                    ImportIssue.source_id == row.id,
-                )
-            ).all():
-                issue.source_type = row.track
-
         result = sync_parsed_source(
             db,
             event_id=row.event_id,
@@ -160,9 +166,6 @@ def _create_submission(
     )
     if existing:
         raise HTTPException(status_code=409, detail="该候选已有投稿，请使用替换功能")
-    if track == "j":
-        _ensure_j_track_available(db, event_id, user.id)
-
     storage_path, size = save_upload(file, f"events/{event_id}/submissions/{user.id}")
     parsed = _validated_upload(storage_path)
     row = Submission(
@@ -176,9 +179,17 @@ def _create_submission(
         file_size=size,
     )
     try:
+        if track == "j":
+            _demote_existing_j_track(db, event_id, user.id)
         db.add(row)
         db.flush()
         _sync_and_commit(db, row, parsed)
+    except IntegrityError as exc:
+        db.rollback()
+        delete_stored_file(storage_path)
+        if track == "j":
+            raise HTTPException(status_code=409, detail="J 赛道切换冲突，请刷新页面后重试") from exc
+        raise
     except Exception:
         db.rollback()
         delete_stored_file(storage_path)
@@ -198,21 +209,27 @@ def _replace_submission(
     source_kind: str | None = None,
 ) -> Submission:
     next_track = _normalize_track(track, row.track)
-    if next_track == "j":
-        _ensure_j_track_available(db, row.event_id, row.user_id, row.id)
     new_storage_path, size = save_upload(file, f"events/{row.event_id}/submissions/{row.user_id}")
     parsed = _validated_upload(new_storage_path)
     old_storage_path = row.storage_path
-    old_track = row.track
-    row.file_name = file.filename or "upload"
-    row.storage_path = new_storage_path
-    row.file_size = size
-    row.track = next_track
-    if source_kind:
-        row.source_kind = source_kind
     try:
-        _sync_and_commit(db, row, parsed, old_track=old_track)
+        if next_track == "j":
+            _demote_existing_j_track(db, row.event_id, row.user_id, row.id)
+        _move_submission_track(db, row, next_track)
+        row.file_name = file.filename or "upload"
+        row.storage_path = new_storage_path
+        row.file_size = size
+        if source_kind:
+            row.source_kind = source_kind
+        _sync_and_commit(db, row, parsed)
+    except IntegrityError as exc:
+        db.rollback()
+        delete_stored_file(new_storage_path)
+        if next_track == "j":
+            raise HTTPException(status_code=409, detail="J 赛道切换冲突，请刷新页面后重试") from exc
+        raise
     except Exception:
+        db.rollback()
         delete_stored_file(new_storage_path)
         raise
     delete_stored_file(old_storage_path)
@@ -428,23 +445,57 @@ def admin_delete_submission(
 
 @admin_router.get("/download.zip")
 def admin_download_zip(
-    background_tasks: BackgroundTasks,
     ids: str | None = Query(None),
     track: str | None = Query(None),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ):
     event = get_current_event(db)
-    stmt = select(Submission).options(*_submission_options()).where(Submission.event_id == event.id)
+    rows, _, _ = _select_admin_downloads(db, event.id, ids, track)
+    return _prepare_submission_zip(rows, "submissions.zip").response()
+
+
+@admin_router.get("/download-metadata", response_model=DownloadPreparation)
+def admin_download_metadata(
+    ids: str | None = Query(None),
+    track: str | None = Query(None),
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    rows, selected_ids, selected_track = _select_admin_downloads(db, event.id, ids, track)
+    prepared = _prepare_submission_zip(rows, "submissions.zip")
+    params: dict[str, str] = {}
+    if selected_ids is not None:
+        params["ids"] = ",".join(str(item) for item in selected_ids)
+    if selected_track:
+        params["track"] = selected_track
+    query = urlencode(params)
+    base_url = f"{get_settings().api_prefix}/admin/submissions/download.zip"
+    return {
+        "download_url": f"{base_url}?{query}" if query else base_url,
+        "file_name": prepared.file_name,
+        "file_size": prepared.file_size,
+    }
+
+
+def _select_admin_downloads(
+    db: Session,
+    event_id: int,
+    ids: str | None,
+    track: str | None,
+) -> tuple[list[Submission], list[int] | None, str | None]:
+    stmt = select(Submission).options(*_submission_options()).where(Submission.event_id == event_id)
     selected_ids = _parse_ids(ids)
     if selected_ids is not None:
         stmt = stmt.where(Submission.id.in_(selected_ids))
-    if track:
-        stmt = stmt.where(Submission.track == _normalize_track(track))
+    selected_track = _normalize_track(track) if track else None
+    if selected_track:
+        stmt = stmt.where(Submission.track == selected_track)
     rows = list(db.scalars(stmt.order_by(Submission.id.asc())).all())
     if not rows:
         raise HTTPException(status_code=404, detail="没有可下载的投稿")
-    return _build_submission_zip(rows, background_tasks, "submissions.zip")
+    return rows, selected_ids, selected_track
 
 
 @admin_router.get("/{submission_id}/download")
@@ -460,7 +511,27 @@ def admin_download_submission(
     path = absolute_storage_path(row.storage_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="投稿文件不存在")
-    return FileResponse(path, filename=row.file_name)
+    return file_download_response(path, row.file_name)
+
+
+@admin_router.get("/{submission_id}/download-metadata", response_model=DownloadPreparation)
+def admin_download_submission_metadata(
+    submission_id: int,
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    row = db.get(Submission, submission_id)
+    if not row or row.event_id != event.id:
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    path = absolute_storage_path(row.storage_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="投稿文件不存在")
+    return {
+        "download_url": f"{get_settings().api_prefix}/admin/submissions/{submission_id}/download",
+        "file_name": row.file_name,
+        "file_size": path.stat().st_size,
+    }
 
 
 def _parse_ids(value: str | None) -> list[int] | None:
@@ -482,7 +553,7 @@ def _safe_zip_name(value: str, fallback: str) -> str:
     return cleaned[:180] or fallback
 
 
-def _build_submission_zip(rows: list[Submission], background_tasks: BackgroundTasks, filename: str):
+def _prepare_submission_zip(rows: list[Submission], filename: str) -> PreparedZip:
     if len(rows) > MAX_BATCH_FILES:
         raise HTTPException(status_code=413, detail=f"一次最多下载 {MAX_BATCH_FILES} 份投稿")
     existing: list[tuple[Submission, Path]] = []
@@ -500,34 +571,24 @@ def _build_submission_zip(rows: list[Submission], background_tasks: BackgroundTa
     if not existing:
         raise HTTPException(status_code=404, detail="所选投稿文件均不存在")
 
-    temporary = tempfile.NamedTemporaryFile(prefix="zppz-submissions-", suffix=".zip", delete=False)
-    temporary_path = Path(temporary.name)
-    temporary.close()
+    entries: list[DownloadEntry] = []
     used_names: set[str] = set()
-    try:
-        with ZipFile(temporary_path, "w", ZIP_DEFLATED) as archive:
-            for row, path in existing:
-                user_code = row.user.user_code if row.user else str(row.user_id)
-                song_name = row.source_song.song_name if row.source_song else "未关联曲目"
-                base = _safe_zip_name(
-                    f"{row.track}_{user_code}_{song_name}_{row.id}_{row.file_name}",
-                    f"submission_{row.id}{path.suffix}",
-                )
-                name = base
-                counter = 2
-                while name.casefold() in used_names:
-                    stem, suffix = Path(base).stem, Path(base).suffix
-                    name = f"{stem}_{counter}{suffix}"
-                    counter += 1
-                used_names.add(name.casefold())
-                archive.write(path, arcname=name)
-            if missing:
-                archive.writestr(
-                    "_下载报告.txt",
-                    "以下投稿文件不存在：\n" + "\n".join(f"- ID {row.id}: {row.file_name}" for row in missing),
-                )
-    except Exception:
-        temporary_path.unlink(missing_ok=True)
-        raise
-    background_tasks.add_task(temporary_path.unlink, missing_ok=True)
-    return FileResponse(temporary_path, media_type="application/zip", filename=filename)
+    for row, path in existing:
+        user_code = row.user.user_code if row.user else str(row.user_id)
+        song_name = row.source_song.song_name if row.source_song else "未关联曲目"
+        base = _safe_zip_name(
+            f"{row.track}_{user_code}_{song_name}_{row.id}_{row.file_name}",
+            f"submission_{row.id}{path.suffix}",
+        )
+        name = base
+        counter = 2
+        while name.casefold() in used_names:
+            stem, suffix = Path(base).stem, Path(base).suffix
+            name = f"{stem}_{counter}{suffix}"
+            counter += 1
+        used_names.add(name.casefold())
+        entries.append(DownloadEntry(path=path, archive_name=name))
+    report = ""
+    if missing:
+        report = "以下投稿文件不存在：\n" + "\n".join(f"- ID {row.id}: {row.file_name}" for row in missing)
+    return prepare_streaming_zip(entries, file_name=filename, report=report)

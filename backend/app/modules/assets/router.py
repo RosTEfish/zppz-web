@@ -7,9 +7,9 @@ from app.core.config import get_settings
 
 
 router = APIRouter(prefix="/assets", tags=["assets"])
-DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
-BACKGROUND_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400"}
-IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
+DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300", "Content-Encoding": "identity"}
+BACKGROUND_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400", "Content-Encoding": "identity"}
+IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"}
 
 
 def latest_file(folder: str, suffixes: set[str]) -> Path | None:

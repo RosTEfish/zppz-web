@@ -3,14 +3,13 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 import re
-import tempfile
-from zipfile import ZIP_DEFLATED, ZipFile
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.core.security import get_current_user, get_optional_user, require_role, user_payload
 from app.db.session import get_db
 from app.models import (
@@ -26,6 +25,7 @@ from app.models import (
     User,
 )
 from app.modules.common import serialize_chart, serialize_charts
+from app.modules.downloads import DownloadEntry, PreparedZip, file_download_response, prepare_streaming_zip
 from app.modules.events.service import get_current_event
 from app.modules.guess_game.importer import (
     ArchiveParseError,
@@ -41,6 +41,7 @@ from app.schemas import (
     AuthorCandidatesUpdate,
     AuthorGuessRequest,
     CommentCreate,
+    DownloadPreparation,
     GuessChartCreate,
     GuessChartRead,
     GuessCommentRead,
@@ -57,21 +58,45 @@ MAX_BATCH_SOURCE_BYTES = 10 * 1024 * 1024 * 1024
 
 @router.get("/charts/download.zip")
 def download_charts_zip(
-    background_tasks: BackgroundTasks,
     ids: str = Query(...),
     db: Session = Depends(get_db),
 ):
     event = get_current_event(db)
+    charts, missing_ids, _ = _select_chart_downloads(db, event.id, ids)
+    return _prepare_chart_zip(db, charts, missing_ids).response()
+
+
+@router.get("/charts/download-metadata", response_model=DownloadPreparation)
+def download_charts_metadata(
+    ids: str = Query(...),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    charts, missing_ids, chart_ids = _select_chart_downloads(db, event.id, ids)
+    prepared = _prepare_chart_zip(db, charts, missing_ids)
+    query = urlencode({"ids": ",".join(str(item) for item in chart_ids)})
+    return {
+        "download_url": f"{get_settings().api_prefix}/guess-game/charts/download.zip?{query}",
+        "file_name": prepared.file_name,
+        "file_size": prepared.file_size,
+    }
+
+
+def _select_chart_downloads(
+    db: Session,
+    event_id: int,
+    ids: str,
+) -> tuple[list[GuessChart], list[int], list[int]]:
     chart_ids = _parse_ids(ids)
     rows = list(
         db.scalars(
-            select(GuessChart).where(GuessChart.event_id == event.id, GuessChart.id.in_(chart_ids))
+            select(GuessChart).where(GuessChart.event_id == event_id, GuessChart.id.in_(chart_ids))
         ).all()
     )
     by_id = {row.id: row for row in rows}
     ordered = [by_id[chart_id] for chart_id in chart_ids if chart_id in by_id]
     missing_ids = [chart_id for chart_id in chart_ids if chart_id not in by_id]
-    return _build_chart_zip(db, ordered, missing_ids, background_tasks)
+    return ordered, missing_ids, chart_ids
 
 
 @router.get("/charts/{chart_id}/download")
@@ -86,7 +111,27 @@ def download_chart(chart_id: int, db: Session = Depends(get_db)):
     path, file_name, _ = source
     if not path.is_file():
         raise HTTPException(status_code=404, detail="投稿文件不存在")
-    return FileResponse(path, filename=_safe_zip_name(f"{chart.title}_{chart.level}_{file_name}", file_name))
+    return file_download_response(path, _safe_zip_name(f"{chart.title}_{chart.level}_{file_name}", file_name))
+
+
+@router.get("/charts/{chart_id}/download-metadata", response_model=DownloadPreparation)
+def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dict:
+    event = get_current_event(db)
+    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    if not chart:
+        raise HTTPException(status_code=404, detail="谱面不存在")
+    source = _resolve_archive(db, chart)
+    if not source:
+        raise HTTPException(status_code=404, detail="该谱面没有可下载的投稿文件")
+    path, file_name, _ = source
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="投稿文件不存在")
+    download_name = _safe_zip_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
+    return {
+        "download_url": f"{get_settings().api_prefix}/guess-game/charts/{chart_id}/download",
+        "file_name": download_name,
+        "file_size": path.stat().st_size,
+    }
 
 
 @router.get("/charts", response_model=list[GuessChartRead])
@@ -506,12 +551,11 @@ def _safe_zip_name(value: str, fallback: str) -> str:
     return cleaned[:180] or fallback
 
 
-def _build_chart_zip(
+def _prepare_chart_zip(
     db: Session,
     charts: list[GuessChart],
     missing_ids: list[int],
-    background_tasks: BackgroundTasks,
-):
+) -> PreparedZip:
     selected: list[tuple[GuessChart, Path, str]] = []
     seen_sources: set[tuple[str, int | str]] = set()
     skipped: list[str] = [f"谱面 ID {chart_id} 不存在" for chart_id in missing_ids]
@@ -536,28 +580,22 @@ def _build_chart_zip(
     if not selected:
         raise HTTPException(status_code=404, detail="所选谱面均无可下载文件")
 
-    temporary = tempfile.NamedTemporaryFile(prefix="zppz-charts-", suffix=".zip", delete=False)
-    temporary_path = Path(temporary.name)
-    temporary.close()
+    entries: list[DownloadEntry] = []
     used_names: set[str] = set()
-    try:
-        with ZipFile(temporary_path, "w", ZIP_DEFLATED) as archive:
-            for chart, path, file_name in selected:
-                base = _safe_zip_name(
-                    f"{chart.id}_{chart.title}_{chart.level}_{file_name}",
-                    f"chart_{chart.id}{path.suffix}",
-                )
-                name = base
-                counter = 2
-                while name.casefold() in used_names:
-                    name = f"{Path(base).stem}_{counter}{Path(base).suffix}"
-                    counter += 1
-                used_names.add(name.casefold())
-                archive.write(path, arcname=name)
-            if skipped:
-                archive.writestr("_下载报告.txt", "\n".join(skipped))
-    except Exception:
-        temporary_path.unlink(missing_ok=True)
-        raise
-    background_tasks.add_task(temporary_path.unlink, missing_ok=True)
-    return FileResponse(temporary_path, media_type="application/zip", filename="guess-charts.zip")
+    for chart, path, file_name in selected:
+        base = _safe_zip_name(
+            f"{chart.id}_{chart.title}_{chart.level}_{file_name}",
+            f"chart_{chart.id}{path.suffix}",
+        )
+        name = base
+        counter = 2
+        while name.casefold() in used_names:
+            name = f"{Path(base).stem}_{counter}{Path(base).suffix}"
+            counter += 1
+        used_names.add(name.casefold())
+        entries.append(DownloadEntry(path=path, archive_name=name))
+    return prepare_streaming_zip(
+        entries,
+        file_name="guess-charts.zip",
+        report="\n".join(skipped),
+    )

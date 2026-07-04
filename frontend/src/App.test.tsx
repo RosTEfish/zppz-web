@@ -30,6 +30,7 @@ describe("Material application shell", () => {
     window.history.pushState({}, "", "/");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
       if (path.endsWith("/auth/me")) return json({ detail: "未登录" }, 401);
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/guess-game/charts")) return json([
@@ -86,7 +87,7 @@ describe("Material application shell", () => {
   it("renders the current event and workflow", async () => {
     render(<App />);
     expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
-    expect(screen.getByText("公告内容")).toBeInTheDocument();
+    expect(await screen.findByText("公告内容")).toBeInTheDocument();
     expect(screen.getByText("等待开放")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
     expect(screen.getByRole("link", { name: "往期 Ban 曲列表" })).toHaveAttribute("href", "/api/v1/assets/banlist/download");
@@ -150,6 +151,69 @@ describe("Material application shell", () => {
     expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
   });
 
+  it("allows only one staged J track submission", async () => {
+    window.history.pushState({}, "", "/submissions");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const song = (id: number, name: string) => ({
+      id,
+      song_name: name,
+      artist: "曲师",
+      song_type: "A",
+      remark: "",
+      submitter: participant,
+      created_at: "2026-07-04T00:00:00",
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/submissions/targets")) return json({
+        is_open: true,
+        targets: [
+          {
+            song: song(1, "第一首"),
+            source_kind: "self",
+            submission: {
+              id: 11,
+              file_name: "first.zip",
+              file_size: 100,
+              review_status: "approved",
+              review_note: "",
+              source_kind: "self",
+              track: "j",
+              source_song: song(1, "第一首"),
+              user: participant,
+              created_at: "2026-07-04T00:00:00",
+            },
+          },
+          { song: song(2, "第二首"), source_kind: "assigned", submission: null },
+        ],
+      });
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("候选投稿")).toBeInTheDocument();
+    const switches = await screen.findAllByRole("switch", { name: "J 赛道" });
+    expect(switches[0]).toBeChecked();
+    expect(switches[1]).not.toBeChecked();
+    fireEvent.click(switches[1]);
+    expect(switches[0]).not.toBeChecked();
+    expect(switches[1]).toBeChecked();
+    fireEvent.click(switches[1]);
+    expect(switches[0]).not.toBeChecked();
+    expect(switches[1]).not.toBeChecked();
+  });
+
   it("submits the administrator role from user management", async () => {
     window.history.pushState({}, "", "/admin/users");
     const admin = {
@@ -177,6 +241,7 @@ describe("Material application shell", () => {
     const updateBodies: Array<{ roles: string[] }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
       if (path.endsWith("/auth/me")) return json({ user: admin });
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/admin/users") && (init?.method || "GET") === "GET") return json([member]);

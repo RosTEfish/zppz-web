@@ -12,6 +12,7 @@ from app.db.session import SessionLocal
 from app.modules.admin.router import router as admin_router
 from app.modules.assets.router import router as assets_router
 from app.modules.auth.router import router as auth_router
+from app.modules.bootstrap_api.router import router as bootstrap_router
 from app.modules.draw.router import admin_router as admin_draw_router
 from app.modules.draw.router import router as draw_router
 from app.modules.events.router import admin_router as admin_events_router
@@ -29,7 +30,7 @@ from app.modules.users.router import router as users_router
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="2.0.0", openapi_url=f"{settings.api_prefix}/openapi.json")
 
-app.add_middleware(GZipMiddleware, minimum_size=512)
+app.add_middleware(GZipMiddleware, minimum_size=512, compresslevel=5)
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +46,8 @@ class CachedStaticFiles(StaticFiles):
         response = await super().get_response(path, scope)
         if response.status_code < 400:
             response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+            if Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".pdf", ".zip", ".7z", ".rar"}:
+                response.headers.setdefault("Content-Encoding", "identity")
         return response
 
 
@@ -71,6 +74,7 @@ def health() -> dict:
 
 for router in (
     auth_router,
+    bootstrap_router,
     events_router,
     assets_router,
     song_pool_router,

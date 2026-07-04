@@ -34,6 +34,17 @@ export interface EventUpdatePayload {
   submissions_open: boolean;
 }
 
+export interface BootstrapRead {
+  event: EventRead;
+  user: UserRead | null;
+}
+
+export interface DownloadPreparation {
+  download_url: string;
+  file_name: string;
+  file_size: number;
+}
+
 export interface SongRead {
   id: number;
   song_name: string;
@@ -200,25 +211,22 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   return task;
 }
 
-async function download(path: string, fallbackName: string): Promise<void> {
-  const response = await fetch(`${API_PREFIX}${path}`, { credentials: "include" });
-  if (!response.ok) {
-    await parseResponse(response);
-    return;
-  }
-  const blob = await response.blob();
-  const disposition = response.headers.get("content-disposition") || "";
-  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-  const filename = encoded ? decodeURIComponent(encoded) : plain || fallbackName;
-  const url = URL.createObjectURL(blob);
+function triggerBrowserDownload(preparation: DownloadPreparation): void {
   const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
+  anchor.href = preparation.download_url;
+  anchor.download = preparation.file_name;
+  anchor.rel = "noopener";
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+}
+
+async function downloadDirect(path: string, fileName: string): Promise<void> {
+  triggerBrowserDownload({ download_url: `${API_PREFIX}${path}`, file_name: fileName, file_size: 0 });
+}
+
+async function downloadPrepared(metadataPath: string): Promise<void> {
+  triggerBrowserDownload(await apiRequest<DownloadPreparation>(metadataPath));
 }
 
 function submissionForm(file: File, songId?: number, track?: Track): FormData {
@@ -230,6 +238,7 @@ function submissionForm(file: File, songId?: number, track?: Track): FormData {
 }
 
 export const api = {
+  bootstrap: () => apiRequest<BootstrapRead>("/bootstrap"),
   me: () => apiRequest<{ user: UserRead }>("/auth/me"),
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
   register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
@@ -245,7 +254,7 @@ export const api = {
   adminSongs: () => apiRequest<SongRead[]>("/admin/song-pool"),
   updateSong: (id: number, payload: SongPayload) => apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteAdminSong: (id: number) => apiRequest<{ message: string }>(`/admin/song-pool/${id}`, { method: "DELETE" }),
-  exportSongs: () => download("/admin/song-pool/export.csv", "song-pool.csv"),
+  exportSongs: () => downloadDirect("/admin/song-pool/export.csv", "song-pool.csv"),
   importSongs: (file: File) => {
     const form = new FormData();
     form.set("file", file);
@@ -265,18 +274,18 @@ export const api = {
   adminSubmissions: (track?: Track | "all") => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`),
   replaceAdminSubmission: (id: number, file: File, track?: Track) => apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
-  downloadAdminSubmission: (id: number) => download(`/admin/submissions/${id}/download`, `submission-${id}.zip`),
+  downloadAdminSubmission: (id: number) => downloadPrepared(`/admin/submissions/${id}/download-metadata`),
   downloadAdminSubmissions: (ids?: number[], track?: Track | "all") => {
     const params = new URLSearchParams();
     if (ids?.length) params.set("ids", ids.join(","));
     if (track && track !== "all") params.set("track", track);
-    return download(`/admin/submissions/download.zip${params.size ? `?${params}` : ""}`, "submissions.zip");
+    return downloadPrepared(`/admin/submissions/download-metadata${params.size ? `?${params}` : ""}`);
   },
 
   guessCharts: () => apiRequest<GuessChartRead[]>("/guess-game/charts"),
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
-  downloadChart: (id: number) => download(`/guess-game/charts/${id}/download`, `chart-${id}.zip`),
-  downloadCharts: (ids: number[]) => download(`/guess-game/charts/download.zip?ids=${ids.join(",")}`, "guess-charts.zip"),
+  downloadChart: (id: number) => downloadPrepared(`/guess-game/charts/${id}/download-metadata`),
+  downloadCharts: (ids: number[]) => downloadPrepared(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`),
   vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
   unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),
   comments: (chartId: number) => apiRequest<GuessCommentRead[]>(`/guess-game/charts/${chartId}/comments`),

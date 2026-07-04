@@ -5,7 +5,7 @@ import secrets
 from fastapi import Depends, HTTPException, Request, Response, status
 from passlib.context import CryptContext
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -68,10 +68,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = _extract_token(request)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
-    session = db.scalar(select(UserSession).where(UserSession.token_hash == hash_token(token)))
+    session = db.scalar(
+        select(UserSession)
+        .options(joinedload(UserSession.user).selectinload(User.roles))
+        .where(UserSession.token_hash == hash_token(token))
+    )
     if not session or session.expires_at < datetime.utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已过期")
-    user = db.scalar(select(User).options(selectinload(User.roles)).where(User.id == session.user_id))
+    user = session.user
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不可用")
     return user
@@ -81,10 +85,14 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
     token = _extract_token(request)
     if not token:
         return None
-    session = db.scalar(select(UserSession).where(UserSession.token_hash == hash_token(token)))
+    session = db.scalar(
+        select(UserSession)
+        .options(joinedload(UserSession.user).selectinload(User.roles))
+        .where(UserSession.token_hash == hash_token(token))
+    )
     if not session or session.expires_at < datetime.utcnow():
         return None
-    return db.scalar(select(User).options(selectinload(User.roles)).where(User.id == session.user_id))
+    return session.user if session.user.is_active else None
 
 
 def require_role(*roles: str):

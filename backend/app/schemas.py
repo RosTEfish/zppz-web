@@ -65,6 +65,11 @@ class EventRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BootstrapRead(BaseModel):
+    event: EventRead
+    user: UserRead | None = None
+
+
 class EventUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     participant_song_limit: int = Field(ge=0, le=50)
@@ -131,6 +136,12 @@ class SubmissionTargetRead(BaseModel):
 class SubmissionTargetsResponse(BaseModel):
     is_open: bool
     targets: list[SubmissionTargetRead]
+
+
+class DownloadPreparation(BaseModel):
+    download_url: str
+    file_name: str
+    file_size: int
 
 
 class GuessChartCreate(BaseModel):

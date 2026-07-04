@@ -68,8 +68,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refreshConfig();
-  }, [refreshConfig]);
+    setLoading(true);
+    void api.bootstrap()
+      .then((data) => setEvent(data.event))
+      .finally(() => setLoading(false));
+  }, []);
 
   const value = useMemo(() => ({ event, config: toConfig(event), refreshConfig, loading }), [event, loading, refreshConfig]);
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;

@@ -67,6 +67,10 @@ def test_register_login_and_me(client: TestClient):
     me = client.get("/api/v1/auth/me")
     assert me.status_code == 200
     assert me.json()["user"]["identity"] == "participant"
+    bootstrap = client.get("/api/v1/bootstrap")
+    assert bootstrap.status_code == 200
+    assert bootstrap.json()["event"]["is_current"] is True
+    assert bootstrap.json()["user"]["user_code"] == "player1"
 
 
 def test_song_pool_requires_auth(client: TestClient):
