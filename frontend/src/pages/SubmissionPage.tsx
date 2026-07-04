@@ -24,6 +24,20 @@ export default function SubmissionPage() {
       );
     });
   }
+  async function changeTrack(target: SubmissionTargetRead, nextTrack: Track) {
+    if (!target.submission || target.submission.track === nextTrack) return;
+    setBusyId(target.song.id); setError("");
+    try {
+      await api.updateSubmissionTrack(target.submission.id, nextTrack);
+      setMessage(nextTrack === "j" ? "已切换为 J 赛道" : "已切换为普通赛道");
+      await targets.reload();
+      setTrackChoices({});
+    } catch (err) {
+      setTrackChoices({});
+      await targets.reload();
+      setError(err instanceof Error ? err.message : "赛道切换失败");
+    } finally { setBusyId(null); }
+  }
   async function upload(target: SubmissionTargetRead, file?: File) {
     if (!file) return;
     setBusyId(target.song.id); setError("");
@@ -67,7 +81,7 @@ export default function SubmissionPage() {
                   </Stack>
                   {submitted ? <Paper variant="outlined" sx={{ p: 1.5, mt: 2, bgcolor: "background.default" }}><Typography variant="body2" noWrap title={submitted.file_name} sx={{ fontWeight: 650 }}>{submitted.file_name}</Typography><Typography variant="caption" color="text.secondary">{formatMB(submitted.file_size)} · {formatTime(submitted.created_at)}</Typography></Paper> : null}
                   <Stack direction={{ xs: "column", sm: "row" }} sx={{ mt: 2, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between", gap: 1.5 }}>
-                    <FormControlLabel control={<Switch checked={selectedTrack === "j"} onChange={(e) => chooseTrack(target.song.id, e.target.checked ? "j" : "normal")} disabled={!targets.data?.is_open || busyId !== null} />} label="J 赛道" />
+                    <FormControlLabel control={<Switch checked={selectedTrack === "j"} onChange={(e) => { const nextTrack = e.target.checked ? "j" : "normal"; chooseTrack(target.song.id, nextTrack); if (submitted) void changeTrack(target, nextTrack); }} disabled={!targets.data?.is_open || busyId !== null} />} label="J 赛道" />
                     <Stack direction="row" spacing={1}>
                       <Button component="label" variant={submitted ? "outlined" : "contained"} startIcon={submitted ? <RefreshCw size={16} /> : <Upload size={16} />} disabled={!targets.data?.is_open || busyId === target.song.id}>{submitted ? "替换" : "上传"}<input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { void upload(target, event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button>
                       {submitted ? <Tooltip title="删除"><IconButton color="error" disabled={!targets.data?.is_open || busyId === target.song.id} onClick={() => void remove(target)}><Trash2 size={18} /></IconButton></Tooltip> : null}

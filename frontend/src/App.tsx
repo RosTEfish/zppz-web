@@ -45,6 +45,7 @@ function AppShell() {
   const { user, isLoggedIn, isAdmin, isPoolEditor, logout } = useAuth();
   const { event } = useConfig();
   const navigate = useNavigate();
+  const showGuessEntry = isAdmin || isPoolEditor || event?.settings.guess_game_visible === true;
 
   useEffect(() => setDrawerOpen(false), [location.pathname]);
 
@@ -54,7 +55,7 @@ function AppShell() {
     { label: "抽签", to: "/draw", icon: Sparkles, preload: loadDrawPage },
     { label: "投稿", to: "/submissions", icon: Upload, preload: loadSubmissionPage },
     { label: "猜谱", to: "/guess", icon: Vote, preload: loadGuessPage },
-  ];
+  ].filter(({ to }) => to !== "/guess" || showGuessEntry);
 
   const drawer = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>

@@ -25,7 +25,7 @@ from app.modules.guess_game.importer import (
     sync_parsed_source,
 )
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
-from app.schemas import DownloadPreparation, StoredFileRead, SubmissionTargetsResponse
+from app.schemas import DownloadPreparation, StoredFileRead, SubmissionTargetsResponse, SubmissionTrackUpdate
 
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -124,7 +124,13 @@ def _demote_existing_j_track(db: Session, event_id: int, user_id: int, exclude_i
         db.flush()
 
 
-def _sync_and_commit(db: Session, row: Submission, parsed: ParsedArchive) -> None:
+def _sync_and_commit(
+    db: Session,
+    row: Submission,
+    parsed: ParsedArchive,
+    *,
+    match_source_type: str | None = None,
+) -> None:
     result = None
     try:
         result = sync_parsed_source(
@@ -136,6 +142,7 @@ def _sync_and_commit(db: Session, row: Submission, parsed: ParsedArchive) -> Non
             storage_path=row.storage_path,
             parsed=parsed,
             is_self_selected=row.source_kind == "self",
+            match_source_type=match_source_type,
         )
         db.commit()
     except Exception:
@@ -212,16 +219,17 @@ def _replace_submission(
     new_storage_path, size = save_upload(file, f"events/{row.event_id}/submissions/{row.user_id}")
     parsed = _validated_upload(new_storage_path)
     old_storage_path = row.storage_path
+    old_track = row.track
     try:
         if next_track == "j":
             _demote_existing_j_track(db, row.event_id, row.user_id, row.id)
-        _move_submission_track(db, row, next_track)
+        row.track = next_track
         row.file_name = file.filename or "upload"
         row.storage_path = new_storage_path
         row.file_size = size
         if source_kind:
             row.source_kind = source_kind
-        _sync_and_commit(db, row, parsed)
+        _sync_and_commit(db, row, parsed, match_source_type=old_track)
     except IntegrityError as exc:
         db.rollback()
         delete_stored_file(new_storage_path)
@@ -346,6 +354,48 @@ def replace_submission(
         raise HTTPException(status_code=404, detail="投稿不存在")
     song, source_kind = _eligible_song(db, event.id, user, row.source_song_id)
     row = _replace_submission(db, row, file, track=track, source_kind=source_kind)
+    row.user = user
+    row.source_song = song
+    return serialize_submission(row)
+
+
+@router.patch("/{submission_id}/track", response_model=StoredFileRead)
+def update_submission_track(
+    submission_id: int,
+    payload: SubmissionTrackUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _require_participant(user)
+    event = get_current_event(db)
+    _require_submissions_open(event)
+    row = db.scalar(
+        select(Submission)
+        .options(*_submission_options())
+        .where(Submission.id == submission_id)
+    )
+    if not row or row.user_id != user.id or row.event_id != event.id or row.source_song_id is None:
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    song, source_kind = _eligible_song(db, event.id, user, row.source_song_id)
+    next_track = _normalize_track(payload.track)
+    try:
+        if next_track == "j":
+            _demote_existing_j_track(db, event.id, user.id, row.id)
+        _move_submission_track(db, row, next_track)
+        row.source_kind = source_kind
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="J 赛道切换冲突，请刷新页面后重试") from exc
+    except Exception:
+        db.rollback()
+        raise
+    row = db.scalar(
+        select(Submission)
+        .options(*_submission_options())
+        .where(Submission.id == submission_id)
+    )
+    assert row is not None
     row.user = user
     row.source_song = song
     return serialize_submission(row)

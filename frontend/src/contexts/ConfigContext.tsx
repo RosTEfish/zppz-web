@@ -17,6 +17,7 @@ interface AppConfig {
   registration_deadline?: string | null;
   submission_deadline?: string | null;
   submissions_open: boolean;
+  guess_game_visible: boolean;
 }
 
 interface ConfigContextType {
@@ -44,6 +45,7 @@ function toConfig(event: EventRead | null): AppConfig | null {
     registration_deadline: event.settings.registration_deadline,
     submission_deadline: event.settings.submission_deadline,
     submissions_open: event.settings.submissions_open,
+    guess_game_visible: event.settings.guess_game_visible,
   };
 }
 

@@ -156,6 +156,71 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
     assert [row["content"] for row in comments] == ["保留这条评论"]
 
 
+def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, assigned_id = create_candidate_rows()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.submissions_open = True
+        db.commit()
+
+    own = client.post(
+        "/api/v1/submissions",
+        data={"song_id": own_id, "track": "normal"},
+        files={"file": ("test1.zip", archive_bytes("test1", "&lv_4=13"), "application/zip")},
+    )
+    assigned = client.post(
+        "/api/v1/submissions",
+        data={"song_id": assigned_id, "track": "j"},
+        files={"file": ("test2.zip", archive_bytes("test2", "&lv_5=14"), "application/zip")},
+    )
+    assert own.status_code == assigned.status_code == 200
+    own_id_submission = own.json()["id"]
+    assigned_id_submission = assigned.json()["id"]
+    charts = client.get("/api/v1/guess-game/charts").json()
+    assert len(charts) == 2
+    own_chart = next(row for row in charts if row["source_submission_id"] == own_id_submission)
+    assert client.post(
+        "/api/v1/guess-game/vote",
+        json={"chart_id": own_chart["id"], "vote_type": "love"},
+    ).status_code == 200
+    with SessionLocal() as db:
+        original_storage = db.get(Submission, own_id_submission).storage_path
+
+    switched = client.patch(f"/api/v1/submissions/{own_id_submission}/track", json={"track": "j"})
+    assert switched.status_code == 200, switched.text
+    with SessionLocal() as db:
+        assert db.get(Submission, own_id_submission).storage_path == original_storage
+    targets = client.get("/api/v1/submissions/targets").json()["targets"]
+    assert {row["song"]["id"]: row["submission"]["track"] for row in targets} == {
+        own_id: "j",
+        assigned_id: "normal",
+    }
+    switched_charts = client.get("/api/v1/guess-game/charts").json()
+    assert len(switched_charts) == 2
+    assert next(row for row in switched_charts if row["id"] == own_chart["id"])["lane"] == "j"
+
+    assert client.patch(f"/api/v1/submissions/{own_id_submission}/track", json={"track": "normal"}).status_code == 200
+    assert client.patch(f"/api/v1/submissions/{assigned_id_submission}/track", json={"track": "j"}).status_code == 200
+    replaced = client.post(
+        f"/api/v1/submissions/{own_id_submission}/replace",
+        data={"track": "j"},
+        files={"file": ("test1-new.zip", archive_bytes("test1-new", "&lv_4=13+"), "application/zip")},
+    )
+    assert replaced.status_code == 200, replaced.text
+    final_charts = client.get("/api/v1/guess-game/charts").json()
+    assert len(final_charts) == 2
+    final_own = [row for row in final_charts if row["source_submission_id"] == own_id_submission]
+    final_assigned = [row for row in final_charts if row["source_submission_id"] == assigned_id_submission]
+    assert len(final_own) == len(final_assigned) == 1
+    assert final_own[0]["id"] == own_chart["id"]
+    assert final_own[0]["title"] == "test1-new"
+    assert final_own[0]["lane"] == "j"
+    assert final_own[0]["love_votes"] == 1
+    assert final_assigned[0]["lane"] == "normal"
+
+
 def test_admin_open_validation_and_draw_lock(client: TestClient):
     register(client, "owner")
     register(client, "player")
@@ -180,6 +245,10 @@ def test_admin_open_validation_and_draw_lock(client: TestClient):
         db.commit()
     opened = client.put("/api/v1/admin/events/current", json=payload)
     assert opened.status_code == 200, opened.text
+    visibility_payload = {"name": opened.json()["name"], **opened.json()["settings"], "guess_game_visible": False}
+    hidden = client.put("/api/v1/admin/events/current", json=visibility_payload)
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json()["settings"]["guess_game_visible"] is False
     blocked = client.post("/api/v1/admin/draw")
     assert blocked.status_code == 409
 

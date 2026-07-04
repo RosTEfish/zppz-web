@@ -32,6 +32,7 @@ export interface EventUpdatePayload {
   submission_deadline?: string | null;
   guess_game_open_at?: string | null;
   submissions_open: boolean;
+  guess_game_visible: boolean;
 }
 
 export interface BootstrapRead {
@@ -270,6 +271,7 @@ export const api = {
   mySubmissions: () => apiRequest<StoredFileRead[]>("/submissions"),
   uploadSubmission: (songId: number, track: Track, file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track) }),
   replaceSubmission: (id: number, track: Track, file: File) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
+  updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   adminSubmissions: (track?: Track | "all") => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`),
   replaceAdminSubmission: (id: number, file: File, track?: Track) => apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),

@@ -51,6 +51,7 @@ class EventSettingsRead(BaseModel):
     submission_deadline: datetime | None = None
     guess_game_open_at: datetime | None = None
     submissions_open: bool = False
+    guess_game_visible: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -82,6 +83,7 @@ class EventUpdate(BaseModel):
     submission_deadline: datetime | None = None
     guess_game_open_at: datetime | None = None
     submissions_open: bool = False
+    guess_game_visible: bool = True
 
 
 class SongCreate(BaseModel):
@@ -136,6 +138,10 @@ class SubmissionTargetRead(BaseModel):
 class SubmissionTargetsResponse(BaseModel):
     is_open: bool
     targets: list[SubmissionTargetRead]
+
+
+class SubmissionTrackUpdate(BaseModel):
+    track: str = Field(pattern="^(normal|j)$")
 
 
 class DownloadPreparation(BaseModel):

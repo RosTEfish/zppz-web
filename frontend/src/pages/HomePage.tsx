@@ -7,13 +7,13 @@ import { useConfig } from "../contexts/ConfigContext";
 
 export default function HomePage() {
   const { event } = useConfig();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, isAdmin, isPoolEditor } = useAuth();
   const stages = [
     { label: "曲池", value: `${event?.settings.participant_song_limit ?? "-"} 首上限`, icon: Music2, to: "/songs" },
     { label: "抽签", value: `每人 ${event?.settings.draw_songs_per_participant ?? "-"} 首`, icon: Sparkles, to: "/draw" },
     { label: "投稿", value: event?.settings.submissions_open ? "开放中" : "等待开放", icon: Upload, to: "/submissions" },
     { label: "猜谱", value: "查看与投票", icon: Vote, to: "/guess" },
-  ];
+  ].filter(({ to }) => to !== "/guess" || isAdmin || isPoolEditor || event?.settings.guess_game_visible === true);
   return (
     <Stack spacing={3}>
       <Paper sx={{ p: { xs: 2.5, md: 4 }, borderLeft: 5, borderColor: "primary.main" }}>
@@ -26,7 +26,7 @@ export default function HomePage() {
           <Button component="a" href="/api/v1/assets/banlist/download" variant="outlined" startIcon={<FileDown size={18} />}>往期 Ban 曲列表</Button>
         </Stack>
       </Paper>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: `repeat(${stages.length}, minmax(0, 1fr))` }, gap: 2 }}>
         {stages.map(({ label, value, icon: Icon, to }) => (
           <Card key={label} variant="outlined">
             <CardActionArea component={Link} to={to} sx={{ p: 2.5, minHeight: 132 }}>

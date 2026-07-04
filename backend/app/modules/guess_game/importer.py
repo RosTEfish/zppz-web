@@ -348,11 +348,13 @@ def _replace_source_issues(
     source_id: int,
     file_name: str,
     issues: tuple[ImportWarning, ...],
+    match_source_type: str | None = None,
 ) -> None:
+    issue_source_type = match_source_type or source_type
     db.execute(
         delete(ImportIssue).where(
             ImportIssue.event_id == event_id,
-            ImportIssue.source_type == source_type,
+            ImportIssue.source_type == issue_source_type,
             ImportIssue.source_id == source_id,
         )
     )
@@ -397,20 +399,30 @@ def sync_parsed_source(
     storage_path: str,
     parsed: ParsedArchive,
     is_self_selected: bool | None = None,
+    match_source_type: str | None = None,
 ) -> SyncResult:
+    chart_source_type = match_source_type or source_type
     charts = list(
         db.scalars(
             select(GuessChart)
             .where(
                 GuessChart.event_id == event_id,
-                GuessChart.source_submission_type == source_type,
+                GuessChart.source_submission_type == chart_source_type,
                 GuessChart.source_submission_id == source_id,
             )
             .order_by(GuessChart.id.asc())
         ).all()
     )
     result = SyncResult(previous_cover_paths={chart.cover_path for chart in charts if chart.cover_path})
-    _replace_source_issues(db, event_id, source_type, source_id, file_name, parsed.warnings)
+    _replace_source_issues(
+        db,
+        event_id,
+        source_type,
+        source_id,
+        file_name,
+        parsed.warnings,
+        match_source_type=chart_source_type,
+    )
     result.new_cover_path = _write_cover(event_id, source_type, source_id, parsed)
     resolved_self_selected = (
         any(chart.is_self_selected for chart in charts) if is_self_selected is None else is_self_selected

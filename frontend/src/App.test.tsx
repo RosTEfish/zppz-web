@@ -18,6 +18,7 @@ const eventPayload = {
     submission_deadline: null,
     guess_game_open_at: null,
     submissions_open: false,
+    guess_game_visible: true,
   },
 };
 
@@ -94,6 +95,19 @@ describe("Material application shell", () => {
     expect(screen.getByRole("link", { name: "京ICP备2026012070号-1" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     expect(screen.getByRole("link", { name: /京公网安备11010802047846号/ })).toHaveAttribute("href", "https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846");
     expect(screen.getByAltText("公安备案图标").getAttribute("src")).toContain("beian");
+  });
+
+  it("hides the guess entry from regular users when disabled", async () => {
+    const hiddenEvent = { ...eventPayload, settings: { ...eventPayload.settings, guess_game_visible: false } };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: hiddenEvent, user: null });
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("公告内容")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "猜谱" })).not.toBeInTheDocument();
   });
 
   it("labels chart activity as views instead of plays", async () => {
@@ -212,6 +226,107 @@ describe("Material application shell", () => {
     fireEvent.click(switches[1]);
     expect(switches[0]).not.toBeChecked();
     expect(switches[1]).not.toBeChecked();
+  });
+
+  it("persists a submitted J track switch without replacing the file", async () => {
+    window.history.pushState({}, "", "/submissions");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const song = (id: number, name: string) => ({
+      id,
+      song_name: name,
+      artist: "曲师",
+      song_type: "A",
+      remark: "",
+      submitter: participant,
+      created_at: "2026-07-04T00:00:00",
+    });
+    let tracks: Array<"normal" | "j"> = ["j", "normal"];
+    const patchBodies: Array<{ track: string }> = [];
+    const submission = (id: number, songId: number, track: "normal" | "j") => ({
+      id,
+      file_name: `${songId}.zip`,
+      file_size: 100,
+      review_status: "approved",
+      review_note: "",
+      source_kind: songId === 1 ? "self" : "assigned",
+      track,
+      source_song: song(songId, `第${songId}首`),
+      user: participant,
+      created_at: "2026-07-04T00:00:00",
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: { ...eventPayload, settings: { ...eventPayload.settings, submissions_open: true } }, user: participant });
+      if (path.endsWith("/submissions/targets")) return json({
+        is_open: true,
+        targets: [
+          { song: song(1, "第一首"), source_kind: "self", submission: submission(11, 1, tracks[0]) },
+          { song: song(2, "第二首"), source_kind: "assigned", submission: submission(12, 2, tracks[1]) },
+        ],
+      });
+      if (path.endsWith("/submissions/12/track") && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { track: "normal" | "j" };
+        patchBodies.push(body);
+        tracks = ["normal", body.track];
+        return json(submission(12, 2, body.track));
+      }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    const switches = await screen.findAllByRole("switch", { name: "J 赛道" });
+    fireEvent.click(switches[1]);
+    expect(switches[0]).not.toBeChecked();
+    expect(switches[1]).toBeChecked();
+    await waitFor(() => expect(patchBodies).toEqual([{ track: "j" }]));
+    await waitFor(() => expect(screen.getAllByRole("switch", { name: "J 赛道" })[1]).toBeChecked());
+  });
+
+  it("lets administrators control guess entry visibility", async () => {
+    window.history.pushState({}, "", "/admin/settings");
+    const admin = {
+      id: 1,
+      user_code: "admin",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "赛事管理员",
+      roles: ["admin", "pool_editor", "participant"],
+      is_admin: true,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    let currentEvent = { ...eventPayload, settings: { ...eventPayload.settings, guess_game_visible: false } };
+    const updates: Array<{ guess_game_visible: boolean }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: admin });
+      if (path.endsWith("/admin/events/current") && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as typeof eventPayload.settings & { name: string };
+        updates.push({ guess_game_visible: body.guess_game_visible });
+        currentEvent = { ...currentEvent, name: body.name, settings: { ...currentEvent.settings, ...body } };
+        return json(currentEvent);
+      }
+      if (path.endsWith("/events/current")) return json(currentEvent);
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByRole("link", { name: "猜谱" })).toBeInTheDocument();
+    const visibility = await screen.findByRole("switch", { name: "向用户显示猜谱入口" });
+    expect(visibility).not.toBeChecked();
+    fireEvent.click(visibility);
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    await waitFor(() => expect(updates).toEqual([{ guess_game_visible: true }]));
   });
 
   it("submits the administrator role from user management", async () => {

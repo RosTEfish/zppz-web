@@ -66,6 +66,7 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     settings.submission_deadline = payload.submission_deadline
     settings.guess_game_open_at = payload.guess_game_open_at
     settings.submissions_open = payload.submissions_open
+    settings.guess_game_visible = payload.guess_game_visible
     db.commit()
     db.refresh(event)
     return event
