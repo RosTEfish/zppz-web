@@ -453,16 +453,21 @@ def test_song_pool_csv_updates_in_place_and_rolls_back(client: TestClient):
 def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     register(client, "owner")
     register(client, "guesser")
+    register(client, "viewer", "audience")
+    register(client, "disabled")
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         owner = db.scalar(select(User).where(User.user_code == "owner"))
         guesser = db.scalar(select(User).where(User.user_code == "guesser"))
+        disabled = db.scalar(select(User).where(User.user_code == "disabled"))
+        disabled.is_active = False
         owner_song = Song(event_id=event.id, submitted_by_id=owner.id, song_name="Owner Song", artist="Artist", song_type="A")
         guesser_song = Song(event_id=event.id, submitted_by_id=guesser.id, song_name="Guesser Song", artist="Artist", song_type="B")
         db.add_all([owner_song, guesser_song])
         event.settings.submissions_open = True
         db.commit()
         owner_song_id = owner_song.id
+        owner_user_id = owner.id
 
     login(client, "owner")
     uploaded = client.post(
@@ -478,13 +483,28 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert public_overview["can_guess"] is False
     assert public_overview["candidates"] == []
 
+    login_admin(client)
+    admin_candidates = client.get("/api/v1/admin/guess-game/author-candidates")
+    assert admin_candidates.status_code == 200, admin_candidates.text
+    candidates_by_code = {row["user"]["user_code"]: row for row in admin_candidates.json()}
+    assert set(candidates_by_code) == {"admin", "owner", "guesser", "viewer"}
+    assert all(row["selected"] for row in candidates_by_code.values())
+    assert candidates_by_code["viewer"]["song_count"] == 0
+    configured = client.put(
+        "/api/v1/admin/guess-game/author-candidates",
+        json={"rows": [{"user_id": owner_user_id, "display_id": "P01"}]},
+    )
+    assert configured.status_code == 200, configured.text
+
     login(client, "guesser")
     overview = client.get("/api/v1/guess-game/designer-guesses")
     assert overview.status_code == 200, overview.text
     assert overview.json()["can_guess"] is True
+    display_ids = {item["display_id"] for item in overview.json()["candidates"]}
+    assert display_ids == {"admin", "P01", "guesser", "viewer"}
     assert {item["chart_id"] for item in overview.json()["states"]} == set(chart_ids)
     assert {item["guessed_user_id"] for item in overview.json()["states"]} == {None}
-    owner_id = next(item["user_id"] for item in overview.json()["candidates"] if item["display_id"] == "owner")
+    owner_id = next(item["user_id"] for item in overview.json()["candidates"] if item["display_id"] == "P01")
     saved = client.put(f"/api/v1/guess-game/charts/{chart_ids[0]}/designer-guess", json={"guessed_user_id": owner_id})
     assert saved.status_code == 200
     grouped = client.get("/api/v1/guess-game/designer-guesses").json()

@@ -524,13 +524,14 @@ def admin_author_candidates(_: User = Depends(require_role("admin", "pool_editor
         row.user_id: row
         for row in db.scalars(select(GuessAuthorCandidate).where(GuessAuthorCandidate.event_id == event.id)).all()
     }
-    default_all = not selected
     return [
         {
             "user": user_payload(user),
             "song_count": song_count,
-            "selected": default_all or user.id in selected,
-            "display_id": selected[user.id].display_id if user.id in selected else user.user_code,
+            "selected": True,
+            "display_id": (selected[user.id].display_id.strip() or user.user_code)
+            if user.id in selected
+            else user.user_code,
         }
         for user, song_count in eligible
     ]
@@ -543,21 +544,26 @@ def admin_update_author_candidates(
     db: Session = Depends(get_db),
 ) -> dict:
     event = get_current_event(db)
-    eligible_ids = {user.id for user, _ in _eligible_author_users(db, event.id)}
+    eligible = _eligible_author_users(db, event.id)
+    eligible_ids = {user.id for user, _ in eligible}
     rows = [row.model_dump() for row in payload.rows]
     user_ids = [row["user_id"] for row in rows]
-    if not rows:
-        raise HTTPException(status_code=400, detail="请至少保留一位作者候选")
     if len(user_ids) != len(set(user_ids)):
-        raise HTTPException(status_code=400, detail="作者候选不能重复")
+        raise HTTPException(status_code=400, detail="谱师展示 ID 配置不能重复")
     if not set(user_ids).issubset(eligible_ids):
-        raise HTTPException(status_code=400, detail="候选账号不在当前赛事参赛者中")
-    display_ids = [str(row.get("display_id") or "").strip() for row in rows]
-    non_empty = [value for value in display_ids if value]
-    if len(non_empty) != len(set(non_empty)):
-        raise HTTPException(status_code=400, detail="作者展示 ID 不能重复")
+        raise HTTPException(status_code=400, detail="账号不在当前启用的观众或参赛者中")
+    display_by_user_id = {
+        int(row["user_id"]): str(row.get("display_id") or "").strip()
+        for row in rows
+    }
+    resolved_display_ids = [
+        display_by_user_id.get(user.id) or user.user_code
+        for user, _ in eligible
+    ]
+    if len(resolved_display_ids) != len(set(resolved_display_ids)):
+        raise HTTPException(status_code=400, detail="谱师展示 ID 不能重复")
     count = set_author_candidates(db, rows)
-    return {"message": f"已保存 {count} 位作者候选", "count": count}
+    return {"message": f"已保存 {count} 位谱师的展示 ID", "count": count}
 
 
 @admin_router.get("/stats")
@@ -591,7 +597,10 @@ def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]
         db.scalars(
             select(User)
             .options(selectinload(User.roles))
-            .where(User.identity == "participant", User.is_active.is_(True))
+            .where(
+                User.identity.in_(("participant", "audience")),
+                User.is_active.is_(True),
+            )
             .order_by(User.user_code.asc())
         ).all()
     )
@@ -604,31 +613,20 @@ def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]
             ).all()
         )
     )
-    submission_user_ids = set(
-        db.scalars(select(Submission.user_id).where(Submission.event_id == event_id)).all()
-    )
-    return [
-        (user, int(song_counts[user.id]))
-        for user in users
-        if not user.has_role("admin") and (song_counts[user.id] or user.id in submission_user_ids)
-    ]
+    return [(user, int(song_counts[user.id])) for user in users]
 
 
 def _selected_author_candidates(db: Session, event_id: int) -> list[tuple[int, str]]:
     eligible = _eligible_author_users(db, event_id)
-    selected = list(
-        db.scalars(
+    display_overrides = {
+        row.user_id: row.display_id.strip()
+        for row in db.scalars(
             select(GuessAuthorCandidate).where(GuessAuthorCandidate.event_id == event_id)
         ).all()
-    )
-    if not selected:
-        return [(user.id, user.user_code) for user, _ in eligible]
-    eligible_ids = {user.id for user, _ in eligible}
-    users = {user.id: user for user, _ in eligible}
+    }
     return [
-        (row.user_id, row.display_id.strip() or users[row.user_id].user_code)
-        for row in selected
-        if row.user_id in eligible_ids
+        (user.id, display_overrides.get(user.id) or user.user_code)
+        for user, _ in eligible
     ]
 
 
