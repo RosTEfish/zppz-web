@@ -1,6 +1,7 @@
 import { Box, Button, Card, CardActionArea, Paper, Stack, Typography } from "@mui/material";
 import { BookOpenText, ChevronRight, FileDown, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AnnouncementMarkdown } from "../components/AnnouncementMarkdown";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
@@ -19,7 +20,7 @@ export default function HomePage() {
       <Paper sx={{ p: { xs: 2.5, md: 4 }, borderLeft: 5, borderColor: "primary.main" }}>
         <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
         <Typography variant="h1" sx={{ mt: 0.5 }}>{event?.name || "赛事进行中"}</Typography>
-        {event?.settings.announcement_text ? <Typography color="text.secondary" sx={{ mt: 1.5, maxWidth: 760, whiteSpace: "pre-wrap" }}>{event.settings.announcement_text}</Typography> : null}
+        {event?.settings.announcement_text ? <Box sx={{ mt: 1.5, maxWidth: 760, color: "text.secondary", "& .announcement-markdown": { color: "inherit" } }}><AnnouncementMarkdown>{event.settings.announcement_text}</AnnouncementMarkdown></Box> : null}
         <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2.5, flexWrap: "wrap" }}>
           {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />}>进入赛事</Button> : null}
           <Button component="a" href="/api/v1/assets/rule/view" target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<BookOpenText size={18} />}>查看规则</Button>

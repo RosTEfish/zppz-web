@@ -16,6 +16,7 @@ const loadDrawPage = () => import("./pages/DrawPage");
 const loadSubmissionPage = () => import("./pages/SubmissionPage");
 const loadGuessPage = () => import("./pages/GuessPage");
 const loadAdminPage = () => import("./pages/AdminPage");
+const loadAnnouncementDialog = () => import("./components/AnnouncementDialog");
 
 const HomePage = lazy(loadHomePage);
 const AuthPage = lazy(loadAuthPage);
@@ -24,6 +25,7 @@ const DrawPage = lazy(loadDrawPage);
 const SubmissionPage = lazy(loadSubmissionPage);
 const GuessPage = lazy(loadGuessPage);
 const AdminPage = lazy(loadAdminPage);
+const AnnouncementDialog = lazy(loadAnnouncementDialog);
 
 function App() {
   return (
@@ -102,6 +104,7 @@ function AppShell() {
         </Container>
         <SiteFooter />
       </Box>
+      {event?.settings.announcement_text.trim() ? <Suspense fallback={null}><AnnouncementDialog eventId={event.id} markdown={event.settings.announcement_text} /></Suspense> : null}
     </Box>
   );
 }

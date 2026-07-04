@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -13,7 +13,7 @@ const eventPayload = {
     draw_songs_per_participant: 1,
     true_love_vote_limit: 3,
     funny_vote_limit: 3,
-    announcement_text: "公告内容",
+    announcement_text: "",
     registration_deadline: null,
     submission_deadline: null,
     guess_game_open_at: null,
@@ -29,6 +29,7 @@ function json(body: unknown, status = 200): Response {
 describe("Material application shell", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
+    window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
@@ -89,8 +90,7 @@ describe("Material application shell", () => {
   it("renders the current event and workflow", async () => {
     render(<App />);
     expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
-    expect(await screen.findByText("公告内容")).toBeInTheDocument();
-    expect(screen.getByText("等待开放")).toBeInTheDocument();
+    expect(await screen.findByText("等待开放")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
     expect(screen.getByRole("link", { name: "往期 Ban 曲列表" })).toHaveAttribute("href", "/api/v1/assets/banlist/download");
     expect(screen.getByRole("link", { name: "京ICP备2026012070号-1" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
@@ -107,8 +107,45 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
-    expect(await screen.findByText("公告内容")).toBeInTheDocument();
+    expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
     expect(screen.queryByRole("link", { name: "猜谱" })).not.toBeInTheDocument();
+  });
+
+  it("renders markdown announcements and reopens after content changes", async () => {
+    let currentEvent = {
+      ...eventPayload,
+      settings: {
+        ...eventPayload.settings,
+        announcement_text: "## 重要公告\n\n- 第一项\n- 第二项\n\n[查看规则](https://example.com/rules)",
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: null });
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    const firstDialog = await screen.findByRole("dialog", { name: "赛事公告" });
+    expect(within(firstDialog).getByRole("heading", { name: "重要公告" })).toBeInTheDocument();
+    expect(within(firstDialog).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(firstDialog).getByRole("link", { name: "查看规则" })).toHaveAttribute("target", "_blank");
+    fireEvent.click(within(firstDialog).getByRole("button", { name: "我知道了" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "赛事公告" })).not.toBeInTheDocument());
+
+    cleanup();
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "重要公告" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "赛事公告" })).not.toBeInTheDocument();
+
+    cleanup();
+    currentEvent = {
+      ...currentEvent,
+      settings: { ...currentEvent.settings, announcement_text: "## 重要公告\n\n公告已更新。" },
+    };
+    render(<App />);
+    const updatedDialog = await screen.findByRole("dialog", { name: "赛事公告" });
+    expect(within(updatedDialog).getByText("公告已更新。")).toBeInTheDocument();
   });
 
   it("labels chart activity as views instead of plays", async () => {
