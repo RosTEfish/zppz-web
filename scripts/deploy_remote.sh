@@ -50,6 +50,21 @@ SLOW_REQUEST_MS=500
 EOF
 fi
 
+# The production .env is persistent and may have been edited or uploaded from
+# Windows. Bash treats the trailing carriage return in CRLF files as part of
+# the command/value when sourcing the file, which can fail with exit code 127
+# or silently contaminate environment variables. Normalize line endings before
+# this script reads the file and before systemd consumes it.
+if LC_ALL=C grep -q $'\r' "$env_file"; then
+  echo "Normalizing CRLF line endings in $env_file"
+  sed -i 's/\r$//' "$env_file"
+fi
+
+if LC_ALL=C grep -q $'\r' "$env_file"; then
+  echo "Environment file contains unsupported carriage-return characters: $env_file" >&2
+  exit 1
+fi
+
 configured_workers="$(sed -n 's/^WEB_CONCURRENCY=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
 if [[ "$configured_workers" =~ ^[1-9][0-9]*$ ]]; then
   WEB_CONCURRENCY="$configured_workers"
