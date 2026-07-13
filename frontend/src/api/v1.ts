@@ -153,7 +153,42 @@ export interface SwapValidationRead {
   pool_size?: number;
 }
 
-export interface SwapAuditRead { round: Record<string, unknown> | null; requests: Array<Record<string, unknown>>; message?: string }
+export interface SwapAuditAssignmentRead {
+  id: number;
+  song: SongRead;
+  status: "active" | "returned" | "replaced" | string;
+  draw_kind: "initial" | "swap" | string;
+  created_at: string;
+}
+
+export interface SwapAuditItemRead {
+  position: number;
+  original: SwapAuditAssignmentRead;
+  replacement?: SwapAuditAssignmentRead | null;
+}
+
+export interface SwapAuditRequestRead {
+  id: number;
+  user: UserRead;
+  status: string;
+  error_message: string;
+  items: SwapAuditItemRead[];
+}
+
+export interface SwapAuditRoundRead {
+  id: number;
+  status: string;
+  starts_at: string;
+  ends_at: string;
+  random_seed?: string;
+  finalized_at?: string | null;
+}
+
+export interface SwapAuditRead {
+  round: SwapAuditRoundRead | null;
+  requests: SwapAuditRequestRead[];
+  message?: string;
+}
 
 export interface GuessChartRead {
   id: number;

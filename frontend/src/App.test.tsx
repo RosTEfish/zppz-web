@@ -322,7 +322,7 @@ describe("Material application shell", () => {
 
     render(<App />);
     expect(await screen.findByText("第一首")).toBeInTheDocument();
-    const jButtons = await screen.findAllByRole("button", { name: "J" });
+    const jButtons = await screen.findAllByRole("button", { name: "J赛道" });
     expect(jButtons[0]).toHaveAttribute("aria-pressed", "true");
     expect(jButtons[1]).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(jButtons[1]);
@@ -386,12 +386,12 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
-    const jButtons = await screen.findAllByRole("button", { name: "J" });
+    const jButtons = await screen.findAllByRole("button", { name: "J赛道" });
     fireEvent.click(jButtons[1]);
     expect(jButtons[0]).toHaveAttribute("aria-pressed", "false");
     expect(jButtons[1]).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(patchBodies).toEqual([{ track: "j" }]));
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "J" })[1]).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "J赛道" })[1]).toHaveAttribute("aria-pressed", "true"));
   });
 
   it("lets administrators control guess entry visibility", async () => {
