@@ -13,8 +13,10 @@ from app.modules.events.service import get_current_event
 from app.modules.swap.service import (
     MAX_SWAP_SELECTIONS,
     active_assignments_for_user,
+    cancel_swap_request,
     finalize_swap_round,
     get_swap_round,
+    reject_swap_request,
     save_swap_request,
     validate_swap_round,
 )
@@ -45,10 +47,11 @@ def _my_payload(db: Session, user: User, round_row: SwapRound | None = None) -> 
     phase = get_phase_status(db, event)
     round_row = round_row or get_swap_round(db, event.id)
     request = next((row for row in (round_row.requests if round_row else []) if row.user_id == user.id), None)
-    selected = {item.original_assignment_id for item in request.items} if request else set()
+    actionable = request is not None and request.status in {"pending", "processing"}
+    selected = {item.original_assignment_id for item in request.items} if actionable and request else set()
     active = active_assignments_for_user(db, event.id, user.id) if user.identity == "participant" else []
     results = []
-    if request:
+    if request and request.status == "completed":
         results = [
             {
                 "original": _assignment_payload(item.original_assignment),
@@ -70,7 +73,7 @@ def _my_payload(db: Session, user: User, round_row: SwapRound | None = None) -> 
         "request": {
             "id": request.id,
             "status": request.status,
-            "assignment_ids": [item.original_assignment_id for item in request.items],
+            "assignment_ids": [item.original_assignment_id for item in request.items] if actionable else [],
         } if request else None,
         "assignments": [
             {**_assignment_payload(row), "selected": row.id in selected}
@@ -128,6 +131,12 @@ def update_my_swap(
     return _my_payload(db, user, round_row)
 
 
+@router.delete("/me")
+def cancel_my_swap(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    round_row = cancel_swap_request(db, user)
+    return _my_payload(db, user, round_row)
+
+
 @admin_router.post("/validate")
 def admin_validate_swap(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     return validate_swap_round(db)
@@ -136,6 +145,15 @@ def admin_validate_swap(_: User = Depends(require_role("admin")), db: Session = 
 @admin_router.post("/finalize")
 def admin_finalize_swap(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     return _audit_payload(finalize_swap_round(db))
+
+
+@admin_router.post("/requests/{request_id}/reject")
+def admin_reject_swap_request(
+    request_id: int,
+    _: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    return _audit_payload(reject_swap_request(db, request_id))
 
 
 @admin_router.get("/audit")

@@ -384,8 +384,10 @@ export const api = {
   adminDrawResults: () => apiRequest<DrawAssignmentRead[]>("/admin/draw/results"),
   mySwap: () => apiRequest<SwapMeRead>("/swap/me"),
   updateMySwap: (assignment_ids: number[]) => apiRequest<SwapMeRead>("/swap/me", { method: "PUT", body: JSON.stringify({ assignment_ids }) }),
+  cancelMySwap: () => apiRequest<SwapMeRead>("/swap/me", { method: "DELETE" }),
   validateSwaps: () => apiRequest<SwapValidationRead>("/admin/swap/validate", { method: "POST" }),
   finalizeSwaps: () => apiRequest<SwapAuditRead>("/admin/swap/finalize", { method: "POST" }),
+  rejectSwapRequest: (requestId: number) => apiRequest<SwapAuditRead>(`/admin/swap/requests/${requestId}/reject`, { method: "POST" }),
   swapAudit: () => apiRequest<SwapAuditRead>("/admin/swap/audit"),
 
   submissionTargets: () => apiRequest<SubmissionTargetsResponse>("/submissions/targets"),

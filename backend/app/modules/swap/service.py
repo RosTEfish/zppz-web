@@ -24,6 +24,7 @@ from app.modules.events.service import get_current_event
 
 
 MAX_SWAP_SELECTIONS = 3
+ACTIONABLE_SWAP_REQUEST_STATUSES = {"pending", "processing"}
 
 
 @dataclass(frozen=True)
@@ -172,11 +173,79 @@ def save_swap_request(db: Session, user: User, assignment_ids: list[int]) -> Swa
     return get_swap_round(db, event.id)  # type: ignore[return-value]
 
 
+def cancel_swap_request(db: Session, user: User) -> SwapRound:
+    if user.identity != "participant":
+        raise HTTPException(status_code=403, detail="只有参赛者可以取消换曲申请")
+
+    event = get_current_event(db)
+    phase = get_phase_status(db, event)
+    if not phase.can("swap"):
+        raise HTTPException(status_code=409, detail="当前不在换曲阶段")
+
+    _begin_write_transaction(db)
+    event = get_current_event(db)
+    db.scalar(
+        select(SwapRound.id)
+        .where(SwapRound.event_id == event.id, SwapRound.round_number == 1)
+        .with_for_update()
+    )
+    round_row = get_swap_round(db, event.id)
+    if not round_row:
+        raise HTTPException(status_code=404, detail="当前没有换曲申请")
+    if round_row.status != "open":
+        raise HTTPException(status_code=409, detail="换曲结果已经生成，不能再取消申请")
+
+    request = next((row for row in round_row.requests if row.user_id == user.id), None)
+    if not request:
+        raise HTTPException(status_code=404, detail="当前没有换曲申请")
+    if request.status not in ACTIONABLE_SWAP_REQUEST_STATUSES:
+        raise HTTPException(status_code=409, detail="当前申请不可取消")
+
+    request.status = "cancelled"
+    request.error_message = "用户取消申请"
+    db.commit()
+    return get_swap_round(db, event.id)  # type: ignore[return-value]
+
+
+def reject_swap_request(db: Session, request_id: int) -> SwapRound:
+    _begin_write_transaction(db)
+    event = get_current_event(db)
+    db.scalar(
+        select(SwapRound.id)
+        .where(SwapRound.event_id == event.id, SwapRound.round_number == 1)
+        .with_for_update()
+    )
+    round_row = get_swap_round(db, event.id)
+    if not round_row:
+        raise HTTPException(status_code=404, detail="当前没有换曲批次")
+    if round_row.status != "open":
+        raise HTTPException(status_code=409, detail="换曲结果已经生成，不能再驳回申请")
+
+    request = next((row for row in round_row.requests if row.id == request_id), None)
+    if not request:
+        raise HTTPException(status_code=404, detail="换曲申请不存在")
+    if request.status not in ACTIONABLE_SWAP_REQUEST_STATUSES:
+        raise HTTPException(status_code=409, detail="当前申请不可驳回")
+
+    request.status = "rejected"
+    request.error_message = "管理员驳回申请"
+    db.commit()
+    return get_swap_round(db, event.id)  # type: ignore[return-value]
+
+
+def _actionable_requests(round_row: SwapRound) -> list[SwapRequest]:
+    return [
+        request
+        for request in round_row.requests
+        if request.status in ACTIONABLE_SWAP_REQUEST_STATUSES and request.items
+    ]
+
+
 def _build_plan(db: Session, round_row: SwapRound) -> SwapPlan:
-    requests = [request for request in round_row.requests if request.items]
+    requests = _actionable_requests(round_row)
     slot_items = [item for request in requests for item in request.items]
     if not slot_items:
-        raise HTTPException(status_code=400, detail="当前没有换曲申请")
+        return SwapPlan(slot_items=[], song_by_slot={}, pool_size=0)
 
     event_id = round_row.event_id
     requested_assignment_ids = {item.original_assignment_id for item in slot_items}
@@ -265,21 +334,31 @@ def validate_swap_round(db: Session) -> dict:
     round_row = get_swap_round(db, event.id)
     if not round_row:
         return {"ok": False, "valid": False, "request_count": 0, "item_count": 0, "pool_size": 0, "message": "当前没有换曲申请"}
+    requests = _actionable_requests(round_row)
+    if not requests:
+        return {
+            "ok": True,
+            "valid": True,
+            "request_count": 0,
+            "item_count": 0,
+            "pool_size": 0,
+            "message": "没有待处理的换曲申请，可以结束本轮",
+        }
     try:
         plan = _build_plan(db, round_row)
     except HTTPException as exc:
         return {
             "ok": False,
             "valid": False,
-            "request_count": len([row for row in round_row.requests if row.items]),
-            "item_count": sum(len(row.items) for row in round_row.requests),
+            "request_count": len(requests),
+            "item_count": sum(len(row.items) for row in requests),
             "pool_size": 0,
             "message": str(exc.detail),
         }
     return {
         "ok": True,
         "valid": True,
-        "request_count": len([row for row in round_row.requests if row.items]),
+        "request_count": len(requests),
         "item_count": len(plan.slot_items),
         "pool_size": plan.pool_size,
         "message": "全部换曲申请均可完成",

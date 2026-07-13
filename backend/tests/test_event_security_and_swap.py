@@ -15,6 +15,7 @@ from app.models import (
     GuessAuthorGuess,
     GuessChart,
     Song,
+    SwapRequest,
     User,
 )
 from app.modules.events.phase_policy import get_phase_status
@@ -54,6 +55,27 @@ def set_manual_phase(phase: str) -> None:
         event.settings.phase_mode = "manual"
         event.settings.manual_phase = phase
         db.commit()
+
+
+def create_single_swap_case(client: TestClient, player_code: str) -> int:
+    register(client, player_code)
+    register(client, f"{player_code}-owner")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        player = db.scalar(select(User).where(User.user_code == player_code))
+        owner = db.scalar(select(User).where(User.user_code == f"{player_code}-owner"))
+        assert event and player and owner and event.settings
+        original = Song(event_id=event.id, submitted_by_id=owner.id, song_name="Original", artist="Artist", song_type="A")
+        db.add(original)
+        db.flush()
+        assignment = DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=original.id)
+        db.add(assignment)
+        now = datetime.utcnow()
+        db.add(EventPhase(event_id=event.id, phase="swap", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "swap"
+        db.commit()
+        return assignment.id
 
 
 def create_chart_pair() -> tuple[int, int]:
@@ -232,3 +254,53 @@ def test_swap_finalize_is_idempotent_and_never_returns_same_or_self_submitted_so
         replacement_song_ids = {row.song_id for row in replacements}
         assert replacement_song_ids.isdisjoint(returned_song_ids | {own_id})
         assert replacement_song_ids == eligible_ids
+
+
+def test_participant_can_cancel_swap_request_and_finish_empty_round(client: TestClient):
+    assignment_id = create_single_swap_case(client, "cancel-player")
+    login(client, "cancel-player")
+    saved = client.put("/api/v1/swap/me", json={"assignment_ids": [assignment_id]})
+    assert saved.status_code == 200, saved.text
+
+    cancelled = client.delete("/api/v1/swap/me")
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["request"]["status"] == "cancelled"
+    assert cancelled.json()["request"]["assignment_ids"] == []
+
+    login(client, "admin", "change-me-please")
+    validation = client.post("/api/v1/admin/swap/validate")
+    assert validation.status_code == 200
+    assert validation.json()["valid"] is True
+    finalized = client.post("/api/v1/admin/swap/finalize")
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["round"]["status"] == "finalized"
+
+
+def test_admin_can_reject_blocking_swap_request_and_finalize_round(client: TestClient):
+    assignment_id = create_single_swap_case(client, "reject-player")
+    login(client, "reject-player")
+    saved = client.put("/api/v1/swap/me", json={"assignment_ids": [assignment_id]})
+    assert saved.status_code == 200, saved.text
+    request_id = saved.json()["request"]["id"]
+
+    login(client, "admin", "change-me-please")
+    validation = client.post("/api/v1/admin/swap/validate")
+    assert validation.status_code == 200
+    assert validation.json()["valid"] is False
+
+    rejected = client.post(f"/api/v1/admin/swap/requests/{request_id}/reject")
+    assert rejected.status_code == 200, rejected.text
+    row = next(item for item in rejected.json()["requests"] if item["id"] == request_id)
+    assert row["status"] == "rejected"
+    assert row["error_message"] == "管理员驳回申请"
+
+    validation_after_reject = client.post("/api/v1/admin/swap/validate")
+    assert validation_after_reject.status_code == 200
+    assert validation_after_reject.json()["valid"] is True
+    finalized = client.post("/api/v1/admin/swap/finalize")
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["round"]["status"] == "finalized"
+
+    with SessionLocal() as db:
+        request = db.scalar(select(SwapRequest).where(SwapRequest.id == request_id))
+        assert request and request.status == "rejected"
