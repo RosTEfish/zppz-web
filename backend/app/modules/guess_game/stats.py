@@ -35,11 +35,14 @@ def build_guess_stats(db: Session, scope: str) -> dict:
         chart_id: group_key for group_key, ids in group_chart_ids.items() for chart_id in ids
     }
 
+    votable_chart_ids = [
+        chart.id for chart in charts if chart.source_submission_type != "exhibition"
+    ]
     vote_counts: dict[int, Counter[str]] = defaultdict(Counter)
-    if chart_ids:
+    if votable_chart_ids:
         for chart_id, vote_type, count in db.execute(
             select(GuessVote.chart_id, GuessVote.vote_type, func.count(GuessVote.id))
-            .where(GuessVote.chart_id.in_(chart_ids))
+            .where(GuessVote.chart_id.in_(votable_chart_ids))
             .group_by(GuessVote.chart_id, GuessVote.vote_type)
         ):
             vote_counts[int(chart_id)][str(vote_type)] = int(count)
@@ -66,6 +69,9 @@ def build_guess_stats(db: Session, scope: str) -> dict:
 
     guesses_by_group: dict[str, list[GuessAuthorGuess]] = defaultdict(list)
     user_aggregate: dict[int, dict[str, int]] = defaultdict(lambda: {"guesses": 0, "counted": 0, "correct": 0})
+    author_aggregate: dict[int, dict[str, int]] = defaultdict(
+        lambda: {"received_guesses": 0, "received_correct": 0}
+    )
     candidate_counts: Counter[int] = Counter()
     details: list[dict] = []
     counted_guesses = 0
@@ -89,6 +95,10 @@ def build_guess_stats(db: Session, scope: str) -> dict:
             if is_correct:
                 correct_guesses += 1
                 user_aggregate[guess.user_id]["correct"] += 1
+            if anchor_chart.source_submission_type == "normal" and owner_id is not None:
+                author_aggregate[owner_id]["received_guesses"] += 1
+                if is_correct:
+                    author_aggregate[owner_id]["received_correct"] += 1
         details.append(
             {
                 "chart_id": anchor_chart.id,
@@ -157,6 +167,31 @@ def build_guess_stats(db: Session, scope: str) -> dict:
         for user_id, count in candidate_counts.most_common()
     ]
 
+    normal_author_ids = sorted({
+        owner_id
+        for chart_id, owner_id in owner_by_chart.items()
+        if chart_by_id[chart_id].source_submission_type == "normal"
+    })
+    author_stats = [
+        {
+            "user": _user_summary(users.get(user_id)),
+            "received_guesses": author_aggregate[user_id]["received_guesses"],
+            "received_correct": author_aggregate[user_id]["received_correct"],
+            "being_guessed_probability": _accuracy(
+                author_aggregate[user_id]["received_correct"],
+                author_aggregate[user_id]["received_guesses"],
+            ),
+        }
+        for user_id in normal_author_ids
+    ]
+    author_stats.sort(
+        key=lambda row: (
+            -row["received_correct"],
+            -row["received_guesses"],
+            row["user"]["user_code"] if row["user"] else "",
+        )
+    )
+
     return {
         "scope": scope,
         "overview": {
@@ -174,6 +209,7 @@ def build_guess_stats(db: Session, scope: str) -> dict:
         "chart_stats": chart_stats,
         "user_stats": user_stats,
         "candidate_stats": candidate_stats,
+        "author_stats": author_stats,
         "guess_details": details,
     }
 

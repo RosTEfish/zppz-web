@@ -197,7 +197,7 @@ export interface GuessChartRead {
   id: number;
   title: string;
   author: string;
-  designer?: string;
+  designer: string;
   level: string;
   lane: Track | string;
   guess_group_key: string;
@@ -295,6 +295,7 @@ export interface GuessStats {
   chart_stats: Array<Record<string, unknown>>;
   user_stats: Array<Record<string, unknown>>;
   candidate_stats: Array<Record<string, unknown>>;
+  author_stats: Array<Record<string, unknown>>;
   guess_details: Array<Record<string, unknown>>;
 }
 

@@ -552,6 +552,10 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert stats.status_code == 200, stats.text
     assert stats.json()["overview"]["counted_guesses"] == 1
     assert stats.json()["overview"]["correct_guesses"] == 1
+    owner_stats = next(row for row in stats.json()["author_stats"] if row["user"]["user_code"] == "owner")
+    assert owner_stats["received_guesses"] == 1
+    assert owner_stats["received_correct"] == 1
+    assert owner_stats["being_guessed_probability"] == 100.0
 
     imported = client.post(
         "/api/v1/admin/guess-game/charts/import",

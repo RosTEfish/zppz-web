@@ -166,7 +166,7 @@ def test_upload_creates_charts_and_serves_cover(client: TestClient):
     charts = client.get("/api/v1/guess-game/charts")
     assert charts.status_code == 200
     assert {row["level"] for row in charts.json()} == {"13+", "14"}
-    assert all("designer" not in row for row in charts.json())
+    assert {row["source_level_slot"]: row["designer"] for row in charts.json()} == {"4": "Global", "5": "Expert"}
     assert {row["source_level_slot"] for row in charts.json()} == {"4", "5"}
     cover_path = charts.json()[0]["cover_path"]
     assert cover_path.startswith("/api/v1/guess-game/charts/")
@@ -399,7 +399,7 @@ def test_public_visibility_neutral_package_and_audience_author_guess(client: Tes
     before_guess = client.get("/api/v1/guess-game/charts").json()
     assert [row["source_submission_type"] for row in before_guess] == ["j"]
     assert client.get("/api/v1/guess-game/availability").json() == {"available": True}
-    assert "designer" not in before_guess[0]
+    assert before_guess[0]["designer"] == "J Designer"
     assert "source_submission_id" not in before_guess[0]
     assert "storage_path" not in before_guess[0]
 
@@ -412,7 +412,7 @@ def test_public_visibility_neutral_package_and_audience_author_guess(client: Tes
         db.commit()
     all_charts = client.get("/api/v1/guess-game/charts").json()
     normal_chart = next(row for row in all_charts if row["source_submission_type"] == "normal")
-    assert "designer" not in normal_chart
+    assert normal_chart["designer"] == "Visible In Package"
 
     downloaded = client.get(f"/api/v1/guess-game/charts/{normal_chart['id']}/download")
     assert downloaded.status_code == 200

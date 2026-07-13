@@ -14,6 +14,7 @@ from app.models import (
     GuessAuthorCandidate,
     GuessAuthorGuess,
     GuessChart,
+    GuessVote,
     Song,
     SwapRequest,
     User,
@@ -158,10 +159,51 @@ def test_hidden_normal_chart_cannot_be_enumerated_or_accessed_anonymously(client
     public_j = client.get(f"/api/v1/guess-game/charts/{j_id}")
     assert public_j.status_code == 200
     assert {
-        "designer",
         "source_submission_id",
         "storage_path",
     }.isdisjoint(public_j.json())
+    assert public_j.json()["designer"] == "J designer"
+
+
+def test_exhibition_chart_cannot_receive_quality_votes(client: TestClient):
+    register(client, "viewer")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        viewer = db.scalar(select(User).where(User.user_code == "viewer"))
+        assert event and viewer
+        chart = GuessChart(
+            event_id=event.id,
+            title="Exhibition",
+            author="Artist",
+            designer="Exhibition designer",
+            level="13",
+            lane="exhibition",
+            guess_group_key="exhibition",
+            source_submission_type="exhibition",
+            source_submission_id=103,
+            source_level_slot="4",
+            cover_path="",
+            storage_path="uploads/private/exhibition.zip",
+            is_self_selected=False,
+        )
+        db.add(chart)
+        db.commit()
+        chart_id = chart.id
+        db.add(GuessVote(chart_id=chart_id, user_id=viewer.id, vote_type="love"))
+        db.commit()
+    set_manual_phase("guess")
+    login(client, "viewer")
+
+    listed = client.get("/api/v1/guess-game/charts")
+    assert listed.status_code == 200, listed.text
+    exhibition = next(row for row in listed.json() if row["id"] == chart_id)
+    assert exhibition["designer"] == "Exhibition designer"
+    assert exhibition["can_vote"] is False
+    assert exhibition["love_votes"] == 0
+    assert exhibition["my_votes"] == []
+    payload = {"chart_id": chart_id, "vote_type": "love"}
+    assert client.post("/api/v1/guess-game/vote", json=payload).status_code == 403
+    assert client.request("DELETE", "/api/v1/guess-game/vote", json=payload).status_code == 403
 
 
 def test_audience_can_guess_normal_but_not_j_and_anonymous_cannot_write(client: TestClient):

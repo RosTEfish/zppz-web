@@ -80,6 +80,11 @@ def _require_quality_vote_phase(db: Session, event) -> None:
         raise HTTPException(status_code=409, detail="当前阶段不能投票或评论")
 
 
+def _require_quality_voteable_chart(chart: GuessChart) -> None:
+    if chart.source_submission_type == "exhibition":
+        raise HTTPException(status_code=403, detail="场外谱面不支持质量投票")
+
+
 def _require_author_guess(db: Session, event, chart: GuessChart) -> None:
     if chart.source_submission_type != "normal":
         raise HTTPException(status_code=403, detail="J 和场外投稿不参与作者竞猜")
@@ -97,13 +102,13 @@ def _public_chart_payloads(
         db,
         rows,
         user_id,
-        include_designer=phase_status.can("answers_visible"),
+        include_designer=True,
     )
     for payload, chart in zip(payloads, rows):
         payload.update(
             {
                 "can_download": True,
-                "can_vote": phase_status.can("quality_vote"),
+                "can_vote": phase_status.can("quality_vote") and chart.source_submission_type != "exhibition",
                 "can_comment": phase_status.can("quality_vote"),
                 "can_author_guess": (
                     chart.source_submission_type == "normal"
@@ -249,7 +254,8 @@ def chart_detail(chart_id: int, user: User | None = Depends(get_optional_user), 
 def vote(payload: VoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     _require_quality_vote_phase(db, event)
-    _visible_chart(db, event, payload.chart_id)
+    chart = _visible_chart(db, event, payload.chart_id)
+    _require_quality_voteable_chart(chart)
     put_vote(db, user.id, payload.chart_id, payload.vote_type)
     return {"message": "已投票"}
 
@@ -258,7 +264,8 @@ def vote(payload: VoteRequest, user: User = Depends(get_current_user), db: Sessi
 def unvote(payload: VoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     _require_quality_vote_phase(db, event)
-    _visible_chart(db, event, payload.chart_id)
+    chart = _visible_chart(db, event, payload.chart_id)
+    _require_quality_voteable_chart(chart)
     remove_vote(db, user.id, payload.chart_id, payload.vote_type)
     return {"message": "已取消投票"}
 

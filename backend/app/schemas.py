@@ -330,6 +330,7 @@ class PublicGuessChartRead(BaseModel):
     id: int
     title: str
     author: str
+    designer: str
     level: str
     lane: str
     guess_group_key: str

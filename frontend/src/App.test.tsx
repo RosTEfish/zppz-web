@@ -263,6 +263,7 @@ describe("Material application shell", () => {
     render(<App />);
     const controls = await screen.findAllByRole("combobox", { name: "谱师猜测 同曲" });
     expect(controls).toHaveLength(2);
+    expect(screen.getAllByText(/请填写做谱人/)).toHaveLength(2);
     fireEvent.mouseDown(controls[0]);
     fireEvent.click(await screen.findByRole("option", { name: "P01" }));
     await waitFor(() => expect(savedBodies).toEqual([{ guessed_user_id: 5 }]));

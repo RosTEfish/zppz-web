@@ -126,19 +126,23 @@ def serialize_charts(
             select(Submission.id, Submission.track_duration_seconds).where(Submission.id.in_(submission_ids))
         ).all()
     ) if submission_ids else {}
+    votable_chart_ids = [
+        chart.id for chart in charts if chart.source_submission_type != "exhibition"
+    ]
     vote_counts: dict[int, dict[str, int]] = {chart_id: {"love": 0, "funny": 0} for chart_id in chart_ids}
-    for chart_id, vote_type, count in db.execute(
-        select(GuessVote.chart_id, GuessVote.vote_type, func.count())
-        .where(GuessVote.chart_id.in_(chart_ids))
-        .group_by(GuessVote.chart_id, GuessVote.vote_type)
-    ):
-        vote_counts.setdefault(chart_id, {})[vote_type] = int(count)
+    if votable_chart_ids:
+        for chart_id, vote_type, count in db.execute(
+            select(GuessVote.chart_id, GuessVote.vote_type, func.count())
+            .where(GuessVote.chart_id.in_(votable_chart_ids))
+            .group_by(GuessVote.chart_id, GuessVote.vote_type)
+        ):
+            vote_counts.setdefault(chart_id, {})[vote_type] = int(count)
 
     my_votes_by_chart: dict[int, list[str]] = {chart_id: [] for chart_id in chart_ids}
-    if current_user_id:
+    if current_user_id and votable_chart_ids:
         for chart_id, vote_type in db.execute(
             select(GuessVote.chart_id, GuessVote.vote_type).where(
-                GuessVote.chart_id.in_(chart_ids),
+                GuessVote.chart_id.in_(votable_chart_ids),
                 GuessVote.user_id == current_user_id,
             )
         ):
