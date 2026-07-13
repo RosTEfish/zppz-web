@@ -280,6 +280,19 @@ class BatchDeleteResponse(BaseModel):
     message: str
 
 
+class AdminResetRequest(BaseModel):
+    confirmation: str = Field(min_length=1, max_length=100)
+
+
+class AdminResetResponse(BaseModel):
+    message: str
+    event_id: int
+    event_name: str
+    event_slug: str
+    deleted: dict[str, int] = Field(default_factory=dict)
+    file_cleanup_warnings: list[str] = Field(default_factory=list)
+
+
 class GuessChartCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     author: str = Field(min_length=1, max_length=100)

@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, Switch, Tab, Tabs, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
 import { Archive, ArrowLeftRight, ArrowRight, BarChart3, CalendarClock, Check, Download, FileArchive, FileDown, FileUp, Gauge, Music2, Pencil, RefreshCw, Save, Settings, Sparkles, Trash2, Users, Vote } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, formatDuration, formatMB, formatTime, type AuthorCandidateAdmin, type EventPhaseName, type EventPhasesUpdate, type EventUpdatePayload, type GuessChartRead, type GuessStats, type SongRead, type StoredFileRead, type SwapAuditAssignmentRead, type SwapAuditRequestRead, type Track, type UserRead } from "../api/v1";
+import { api, formatDuration, formatMB, formatTime, type AdminResetResponse, type AuthorCandidateAdmin, type EventPhaseName, type EventPhasesUpdate, type EventUpdatePayload, type GuessChartRead, type GuessStats, type SongRead, type StoredFileRead, type SwapAuditAssignmentRead, type SwapAuditRequestRead, type Track, type UserRead } from "../api/v1";
 import { DrawList } from "../components/DrawList";
 import { LoadingBlock, PageHeader, type Resource, ResourceState, useResource } from "../components/PagePrimitives";
 import { SongDialog, SongTable } from "../components/SongComponents";
@@ -114,14 +115,41 @@ function SwapAuditSong({ label, assignment }: { label: string; assignment?: Swap
 
 function AdminSettings() {
   const { event, refreshConfig } = useConfig();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [form, setForm] = useState<EventUpdatePayload | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetResult, setResetResult] = useState<AdminResetResponse | null>(null);
   useEffect(() => { if (event) setForm({ ...event.settings, name: event.name }); }, [event]);
   if (!form) return <LoadingBlock />;
   const numberField = (key: keyof EventUpdatePayload, label: string) => <TextField type="number" label={label} value={String(form[key] ?? "")} onChange={(e) => setForm({ ...form, [key]: Number(e.target.value) })} />;
   async function save() { try { await api.updateEvent(form); await refreshConfig(); setMessage("赛事设置已保存"); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); } }
-  return <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}><Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" }, gap: 2 }}><TextField label="赛事名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />{numberField("participant_song_limit", "参赛者曲目上限")}{numberField("audience_song_limit", "观众曲目上限")}{numberField("draw_songs_per_participant", "每人抽取曲目数")}{numberField("true_love_vote_limit", "真爱票上限")}{numberField("funny_vote_limit", "欢乐票上限")}<TextField type="datetime-local" label="投稿截止" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(form.submission_deadline)} onChange={(e) => setForm({ ...form, submission_deadline: e.target.value || null })} /><TextField type="datetime-local" label="猜谱开放" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(form.guess_game_open_at)} onChange={(e) => setForm({ ...form, guess_game_open_at: e.target.value || null })} /><TextField label="公告（Markdown）" multiline minRows={5} value={form.announcement_text} onChange={(e) => setForm({ ...form, announcement_text: e.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /><Paper variant="outlined" sx={{ p: 1.5, gridColumn: { md: "1 / -1" } }}><FormControlLabel control={<Switch checked={form.submissions_open} onChange={(e) => setForm({ ...form, submissions_open: e.target.checked })} />} label="开放投稿" /></Paper></Box>{error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}<Button variant="contained" startIcon={<Save size={17} />} onClick={() => void save()} sx={{ mt: 2 }}>保存设置</Button><Snackbar open={Boolean(message)} autoHideDuration={2500} onClose={() => setMessage("")} message={message} /></Paper>;
+  async function resetAll() {
+    setResetBusy(true);
+    setResetError("");
+    try {
+      const result = await api.resetAllData(resetConfirmation);
+      setResetResult(result);
+      setResetConfirmation("");
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "清除失败");
+    } finally {
+      setResetBusy(false);
+    }
+  }
+  async function finishReset() {
+    flushSync(() => {
+      void logout();
+    });
+    navigate("/login", { replace: true });
+  }
+  const resetReady = resetConfirmation === "清除全部数据";
+  return <><Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}><Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" }, gap: 2 }}><TextField label="赛事名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />{numberField("participant_song_limit", "参赛者曲目上限")}{numberField("audience_song_limit", "观众曲目上限")}{numberField("draw_songs_per_participant", "每人抽取曲目数")}{numberField("true_love_vote_limit", "真爱票上限")}{numberField("funny_vote_limit", "欢乐票上限")}<TextField type="datetime-local" label="投稿截止" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(form.submission_deadline)} onChange={(e) => setForm({ ...form, submission_deadline: e.target.value || null })} /><TextField type="datetime-local" label="猜谱开放" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(form.guess_game_open_at)} onChange={(e) => setForm({ ...form, guess_game_open_at: e.target.value || null })} /><TextField label="公告（Markdown）" multiline minRows={5} value={form.announcement_text} onChange={(e) => setForm({ ...form, announcement_text: e.target.value })} sx={{ gridColumn: { md: "1 / -1" } }} /><Paper variant="outlined" sx={{ p: 1.5, gridColumn: { md: "1 / -1" } }}><FormControlLabel control={<Switch checked={form.submissions_open} onChange={(e) => setForm({ ...form, submissions_open: e.target.checked })} />} label="开放投稿" /></Paper></Box>{error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}<Button variant="contained" startIcon={<Save size={17} />} onClick={() => void save()} sx={{ mt: 2 }}>保存设置</Button><Snackbar open={Boolean(message)} autoHideDuration={2500} onClose={() => setMessage("")} message={message} /></Paper><Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, mt: 2, borderColor: "error.main", borderTopWidth: 3 }}><Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}><Box><Typography variant="h3" color="error.main">危险操作</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>清除全部赛事和普通用户数据，保留管理员与公共资源。操作不可撤销，完成后所有账号都需要重新登录。</Typography></Box><Button color="error" variant="contained" startIcon={<Trash2 size={17} />} onClick={() => { setResetError(""); setResetResult(null); setResetOpen(true); }}>清除全部数据</Button></Stack></Paper><Dialog open={resetOpen} onClose={resetBusy || resetResult ? undefined : () => setResetOpen(false)} fullWidth maxWidth="sm"><DialogTitle>{resetResult ? "清除完成" : "确认清除全部数据"}</DialogTitle><DialogContent>{resetResult ? <Stack spacing={2}><Alert severity="success">{resetResult.message}</Alert><Typography variant="body2">当前赛事“{resetResult.event_name}”已保留，赛事 ID 为 {resetResult.event_id}。</Typography>{resetResult.file_cleanup_warnings.length ? <Alert severity="warning">{resetResult.file_cleanup_warnings.join("；")}</Alert> : <Alert severity="info">赛事上传文件和猜谱文件已清理，公共资源已保留。</Alert>}</Stack> : <Stack spacing={2}><Alert severity="error">这会删除所有赛事数据、投稿、抽签、换曲、猜谱、投票、评论和普通用户账号，并注销所有登录会话。此操作无法撤销。</Alert><TextField autoFocus fullWidth label="输入确认词" helperText="请输入：清除全部数据" value={resetConfirmation} onChange={(event) => setResetConfirmation(event.target.value)} disabled={resetBusy} error={Boolean(resetError)} />{resetError ? <Alert severity="error">{resetError}</Alert> : null}</Stack>}</DialogContent><DialogActions>{resetResult ? <Button variant="contained" onClick={() => void finishReset()}>重新登录</Button> : <><Button disabled={resetBusy} onClick={() => setResetOpen(false)}>取消</Button><Button color="error" variant="contained" disabled={!resetReady || resetBusy} onClick={() => void resetAll()}>{resetBusy ? "清除中…" : "确认清除"}</Button></>}</DialogActions></Dialog></>;
 }
 
 function updateRole(roles: string[], role: string, enabled: boolean): string[] { if (enabled) return roles.includes(role) ? roles : [...roles, role]; return roles.filter((item) => item !== role); }

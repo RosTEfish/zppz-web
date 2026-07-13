@@ -543,6 +543,53 @@ describe("Material application shell", () => {
     expect(updates[0]).not.toHaveProperty("guess_game_visible");
   });
 
+  it("requires an exact confirmation before resetting all data and then logs out", async () => {
+    window.history.pushState({}, "", "/admin/settings");
+    const admin = {
+      id: 1,
+      user_code: "admin",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "赛事管理员",
+      roles: ["admin", "pool_editor", "participant"],
+      is_admin: true,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    let resetCalls = 0;
+    let logoutCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
+      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/admin/reset") && init?.method === "POST") {
+        resetCalls += 1;
+        expect(JSON.parse(String(init.body))).toEqual({ confirmation: "清除全部数据" });
+        return json({ message: "全部数据已清除，当前赛事已重置为报名阶段", event_id: 1, event_name: "测试赛事", event_slug: "test", deleted: {}, file_cleanup_warnings: [] });
+      }
+      if (path.endsWith("/auth/logout") && init?.method === "POST") {
+        logoutCalls += 1;
+        return json({ message: "已退出登录" });
+      }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "清除全部数据" }));
+    const dialog = await screen.findByRole("dialog", { name: "确认清除全部数据" });
+    const confirmButton = within(dialog).getByRole("button", { name: "确认清除" });
+    expect(confirmButton).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "输入确认词" }), { target: { value: "清除全部数据" } });
+    expect(confirmButton).toBeEnabled();
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(resetCalls).toBe(1));
+    expect(await within(dialog).findByText("全部数据已清除，当前赛事已重置为报名阶段")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "重新登录" }));
+    await waitFor(() => expect(logoutCalls).toBe(1));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+  });
+
   it("submits the administrator role from user management", async () => {
     window.history.pushState({}, "", "/admin/users");
     const admin = {

@@ -65,4 +65,25 @@ describe("v1 API helpers", () => {
       { path: "/api/v1/admin/guess-game/charts/batch-delete", method: "POST", body: JSON.stringify({ ids: [5, 6] }) },
     ]);
   });
+
+  it("sends the exact confirmation for the destructive admin reset", async () => {
+    const requests: Array<{ path: string; method?: string; body?: string }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ path: String(input), method: init?.method, body: String(init?.body) });
+      return new Response(JSON.stringify({
+        message: "reset",
+        event_id: 1,
+        event_name: "Current",
+        event_slug: "current",
+        deleted: {},
+        file_cleanup_warnings: [],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    await api.resetAllData("清除全部数据");
+
+    expect(requests).toEqual([
+      { path: "/api/v1/admin/reset", method: "POST", body: JSON.stringify({ confirmation: "清除全部数据" }) },
+    ]);
+  });
 });

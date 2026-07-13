@@ -244,6 +244,15 @@ export interface BatchDeleteResponse {
   message: string;
 }
 
+export interface AdminResetResponse {
+  message: string;
+  event_id: number;
+  event_name: string;
+  event_slug: string;
+  deleted: Record<string, number>;
+  file_cleanup_warnings: string[];
+}
+
 export interface AuthorCandidateAdmin {
   user: UserRead;
   song_count: number;
@@ -363,6 +372,7 @@ export const api = {
   changePassword: (old_password: string, new_password: string) => apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
   currentEvent: () => apiRequest<EventRead>("/events/current"),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
+  resetAllData: (confirmation: string) => apiRequest<AdminResetResponse>("/admin/reset", { method: "POST", body: JSON.stringify({ confirmation }) }),
   eventPhases: () => apiRequest<EventPhasesRead>("/event/phases"),
   updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),
   guessAvailability: () => apiRequest<GuessAvailabilityRead>("/guess-game/availability"),
