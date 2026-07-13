@@ -88,9 +88,8 @@ def get_phase_status(
     """Return the authoritative phase and capabilities for an event.
 
     Scheduled timestamps and the default clock are compared as naive UTC values so
-    the policy behaves consistently on SQLite and PostgreSQL.  Events created before
-    the phase migration keep the legacy ``submissions_open`` behavior until a schedule
-    is saved.
+    the policy behaves consistently on SQLite and PostgreSQL. An automatic event with
+    no schedule is always in registration.
     """
 
     event = event or _load_current_event(db)
@@ -112,10 +111,6 @@ def get_phase_status(
         return PhaseStatus(active_phase, CAPABILITIES[active_phase])
 
     if not rows:
-        if settings.submissions_open:
-            return PhaseStatus("submission_1", CAPABILITIES["submission_1"])
-        if settings.guess_game_open_at and _utc_naive(settings.guess_game_open_at) <= current_time:
-            return PhaseStatus("guess", CAPABILITIES["guess"])
         return PhaseStatus("registration", CAPABILITIES["registration"])
 
     active_phase = "closed"

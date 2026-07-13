@@ -198,7 +198,6 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
     db.add(
         EventSetting(
             event_id=current_event_id,
-            submissions_open=False,
             phase_mode="manual",
             manual_phase="registration",
         )

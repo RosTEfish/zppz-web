@@ -52,7 +52,17 @@ export interface EventRead {
   name: string;
   slug: string;
   is_current: boolean;
-  settings: EventUpdatePayload;
+  settings: EventSettingsRead;
+}
+
+export interface EventSettingsRead {
+  participant_song_limit: number;
+  audience_song_limit: number;
+  draw_songs_per_participant: number;
+  true_love_vote_limit_below_14: number;
+  true_love_vote_limit_at_least_14: number;
+  funny_vote_limit: number;
+  announcement_text: string;
 }
 
 export interface EventUpdatePayload {
@@ -64,10 +74,6 @@ export interface EventUpdatePayload {
   true_love_vote_limit_at_least_14: number;
   funny_vote_limit: number;
   announcement_text: string;
-  registration_deadline?: string | null;
-  submission_deadline?: string | null;
-  guess_game_open_at?: string | null;
-  submissions_open: boolean;
 }
 
 export interface BootstrapRead {

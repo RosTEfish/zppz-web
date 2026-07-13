@@ -54,7 +54,7 @@ function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
   const { user, isLoggedIn, isAdmin, isPoolEditor, logout } = useAuth();
-  const { event, guessGameAvailable } = useConfig();
+  const { event, phases, guessGameAvailable } = useConfig();
   const navigate = useNavigate();
   const showGuessEntry = isAdmin || isPoolEditor || guessGameAvailable;
   const managerPath = isAdmin ? "/admin/overview" : "/admin/songs";
@@ -99,7 +99,7 @@ function AppShell() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="fixed" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider", zIndex: theme.zIndex.drawer + 1 }}><Toolbar sx={{ gap: 1.5 }}>{mobile ? <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)}><MenuIcon size={21} /></IconButton> : null}<Typography variant="h6" sx={{ flex: 1, fontWeight: 750 }}>{event?.name || "ZPPZ Arena"}</Typography>{event?.settings.submissions_open ? <Chip size="small" color="success" label="投稿开放" /> : <Chip size="small" variant="outlined" label="投稿未开放" />}</Toolbar></AppBar>
+      <AppBar position="fixed" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider", zIndex: theme.zIndex.drawer + 1 }}><Toolbar sx={{ gap: 1.5 }}>{mobile ? <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)}><MenuIcon size={21} /></IconButton> : null}<Typography variant="h6" sx={{ flex: 1, fontWeight: 750 }}>{event?.name || "ZPPZ Arena"}</Typography>{phases?.capabilities.submission ? <Chip size="small" color="success" label="投稿开放" /> : <Chip size="small" variant="outlined" label="投稿未开放" />}</Toolbar></AppBar>
       <Drawer variant={mobile ? "temporary" : "permanent"} open={mobile ? drawerOpen : true} onClose={() => setDrawerOpen(false)} ModalProps={{ keepMounted: true }} sx={{ width: DRAWER_WIDTH, flexShrink: 0, "& .MuiDrawer-paper": { width: DRAWER_WIDTH, boxSizing: "border-box" } }}>{drawer}</Drawer>
       <Box component="main" sx={{ ml: mobile ? 0 : `${DRAWER_WIDTH}px`, pt: 8, minWidth: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
         <Container maxWidth="xl" sx={{ py: { xs: 2, md: 3 }, width: "100%", flex: 1 }}>

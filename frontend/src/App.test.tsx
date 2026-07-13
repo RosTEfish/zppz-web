@@ -15,10 +15,6 @@ const eventPayload = {
     true_love_vote_limit_at_least_14: 2,
     funny_vote_limit: 3,
     announcement_text: "",
-    registration_deadline: null,
-    submission_deadline: null,
-    guess_game_open_at: null,
-    submissions_open: false,
   },
 };
 
@@ -95,6 +91,39 @@ describe("Material application shell", () => {
     expect(screen.getByRole("link", { name: "京ICP备2026012070号-1" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     expect(screen.getByRole("link", { name: /京公网安备11010802047846号/ })).toHaveAttribute("href", "https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846");
     expect(screen.getByAltText("公安备案图标").getAttribute("src")).toContain("beian");
+  });
+
+  it("uses phase capabilities for submission status and draw availability", async () => {
+    window.history.pushState({}, "", "/draw");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const phases = {
+      phase_mode: "manual",
+      manual_phase: "submission_1",
+      active_phase: "submission_1",
+      phases: [],
+      capabilities: { song_pool_edit: false, draw: false, submission: true, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false, answers_visible: false },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/event/phases")) return json(phases);
+      if (path.endsWith("/draw/results")) return json([]);
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect((await screen.findAllByText("投稿开放")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: "开始抽签" })).toBeDisabled();
   });
 
   it("hides the guess entry from regular users when no public charts exist", async () => {
@@ -426,7 +455,7 @@ describe("Material application shell", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path.endsWith("/bootstrap")) return json({ event: { ...eventPayload, settings: { ...eventPayload.settings, submissions_open: true } }, user: participant });
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/submissions/targets")) return json({
         is_open: true,
         targets: [
@@ -564,7 +593,7 @@ describe("Material application shell", () => {
     expect(await screen.findByText("曲池曲目")).toBeInTheDocument();
   });
 
-  it("does not expose a manual guess entry visibility switch", async () => {
+  it("does not expose legacy phase controls or submit legacy event fields", async () => {
     window.history.pushState({}, "", "/admin/settings");
     const admin = {
       id: 1,
@@ -596,11 +625,16 @@ describe("Material application shell", () => {
     render(<App />);
     expect(await screen.findByRole("link", { name: "猜谱" })).toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "向用户显示猜谱入口" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "开放投稿" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "投稿截止" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "猜谱开放" })).not.toBeInTheDocument();
     expect(await screen.findByRole("spinbutton", { name: "14 以下真爱票上限" })).toHaveValue(3);
     expect(screen.getByRole("spinbutton", { name: "14 及以上真爱票上限" })).toHaveValue(2);
     fireEvent.click(await screen.findByRole("button", { name: "保存设置" }));
     await waitFor(() => expect(updates).toHaveLength(1));
-    expect(updates[0]).not.toHaveProperty("guess_game_visible");
+    for (const legacyField of ["registration_deadline", "submission_deadline", "guess_game_open_at", "submissions_open", "guess_game_visible"]) {
+      expect(updates[0]).not.toHaveProperty(legacyField);
+    }
     expect(updates[0]).not.toHaveProperty("true_love_vote_limit");
     expect(updates[0]).toMatchObject({ true_love_vote_limit_below_14: 3, true_love_vote_limit_at_least_14: 2 });
   });

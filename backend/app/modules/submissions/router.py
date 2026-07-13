@@ -59,7 +59,7 @@ def _require_participant(user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅参赛者可以上传投稿")
 
 
-def _require_submissions_open(db: Session, event) -> None:
+def _require_submission_phase(db: Session, event) -> None:
     if not get_phase_status(db, event).can("submission"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="投稿尚未开放")
 
@@ -359,7 +359,7 @@ def upload_submission(
 ) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(db, event)
+    _require_submission_phase(db, event)
     normalized_track = _normalize_track(track)
     if normalized_track == "exhibition":
         song, source_kind = (None, "exhibition") if song_id is None else _eligible_song(db, event.id, user, song_id)
@@ -389,7 +389,7 @@ def replace_submission(
 ) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(db, event)
+    _require_submission_phase(db, event)
     row = db.scalar(select(Submission).options(*_submission_options()).where(Submission.id == submission_id))
     if not row or row.user_id != user.id or row.event_id != event.id:
         raise HTTPException(status_code=404, detail="投稿不存在")
@@ -416,7 +416,7 @@ def update_submission_track(
 ) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(db, event)
+    _require_submission_phase(db, event)
     row = db.scalar(
         select(Submission)
         .options(*_submission_options())
@@ -468,7 +468,7 @@ def my_j_track(user: User = Depends(get_current_user), db: Session = Depends(get
 def delete_j_track(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(db, event)
+    _require_submission_phase(db, event)
     row = db.scalar(
         select(Submission).where(
             Submission.event_id == event.id,
@@ -486,7 +486,7 @@ def delete_j_track(user: User = Depends(get_current_user), db: Session = Depends
 def delete_submission(submission_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(db, event)
+    _require_submission_phase(db, event)
     row = db.get(Submission, submission_id)
     if not row or row.user_id != user.id or row.event_id != event.id:
         raise HTTPException(status_code=404, detail="投稿不存在")

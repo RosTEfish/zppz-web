@@ -61,10 +61,6 @@ class EventSettingsRead(BaseModel):
     true_love_vote_limit_at_least_14: int
     funny_vote_limit: int
     announcement_text: str
-    registration_deadline: datetime | None = None
-    submission_deadline: datetime | None = None
-    guess_game_open_at: datetime | None = None
-    submissions_open: bool = False
     phase_mode: Literal["auto", "manual"] = "auto"
     manual_phase: EventPhaseName | None = None
 
@@ -95,10 +91,7 @@ class EventUpdate(BaseModel):
     true_love_vote_limit_at_least_14: int = Field(ge=0, le=50)
     funny_vote_limit: int = Field(ge=0, le=50)
     announcement_text: str = ""
-    registration_deadline: datetime | None = None
-    submission_deadline: datetime | None = None
-    guess_game_open_at: datetime | None = None
-    submissions_open: bool = False
+    model_config = {"extra": "forbid"}
 
 
 class GuessAvailabilityRead(BaseModel):

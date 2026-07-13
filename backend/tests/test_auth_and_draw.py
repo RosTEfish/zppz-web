@@ -184,14 +184,21 @@ def test_opening_submissions_requires_every_active_account_to_fill_song_pool(cli
     )
     assert response.status_code == 200, response.text
 
+    with SessionLocal() as db:
+        current = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        current.settings.phase_mode = "manual"
+        current.settings.manual_phase = "submission_1"
+        db.commit()
+
     event = client.get("/api/v1/events/current").json()
     payload = {
         "name": event["name"],
         **event["settings"],
         "participant_song_limit": 1,
         "audience_song_limit": 1,
-        "submissions_open": True,
     }
+    payload.pop("phase_mode")
+    payload.pop("manual_phase")
     blocked = client.put("/api/v1/admin/events/current", json=payload)
 
     assert blocked.status_code == 409

@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models import DrawAssignment, Event, EventPhase, EventSetting, Song, SwapRound, User
 from app.modules.events.phase_policy import PHASES, get_phase_status, phase_status_payload
@@ -29,58 +28,20 @@ def get_current_event(db: Session) -> Event:
         event.settings = EventSetting(event_id=event.id)
         db.commit()
         db.refresh(event)
-    if event.phases or event.settings.phase_mode == "manual":
-        phase_status = get_phase_status(db, event)
-        # Compatibility flags are presentation-only once phase policy is active.
-        # Mark the derived values as loaded so an unrelated commit (vote/comment,
-        # for example) cannot accidentally persist and clobber the legacy state.
-        set_committed_value(event.settings, "submissions_open", phase_status.can("submission"))
     return event
 
 
 def update_current_event(db: Session, payload: EventUpdate) -> Event:
     event = get_current_event(db)
-    phase_managed = bool(event.phases) or event.settings.phase_mode == "manual"
-    submissions_will_be_open = (
-        get_phase_status(db, event).can("submission") if phase_managed else payload.submissions_open
-    )
+    submissions_will_be_open = get_phase_status(db, event).can("submission")
     if submissions_will_be_open:
-        assert_song_pool_complete(
+        assert_submission_ready(
             db,
             event.id,
             participant_limit=payload.participant_song_limit,
             audience_limit=payload.audience_song_limit,
+            draw_songs_per_participant=payload.draw_songs_per_participant,
         )
-        participants = [
-            user
-            for user in
-            db.scalars(
-                select(User)
-                .options(selectinload(User.roles))
-                .where(User.identity == "participant", User.is_active.is_(True))
-                .order_by(User.user_code)
-            ).all()
-            if not user.has_role("admin")
-        ]
-        assignment_counts = dict(
-            db.execute(
-                select(DrawAssignment.assigned_to_id, func.count(DrawAssignment.id))
-                .where(DrawAssignment.event_id == event.id, DrawAssignment.status == "active")
-                .group_by(DrawAssignment.assigned_to_id)
-            ).all()
-        )
-        missing = [
-            participant.user_code
-            for participant in participants
-            if assignment_counts.get(participant.id, 0) < payload.draw_songs_per_participant
-        ]
-        if missing:
-            preview = "、".join(missing[:8])
-            suffix = "等" if len(missing) > 8 else ""
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"以下参赛者尚未完成抽签：{preview}{suffix}",
-            )
     event.name = payload.name
     settings = event.settings
     settings.participant_song_limit = payload.participant_song_limit
@@ -90,14 +51,6 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     settings.true_love_vote_limit_at_least_14 = payload.true_love_vote_limit_at_least_14
     settings.funny_vote_limit = payload.funny_vote_limit
     settings.announcement_text = payload.announcement_text
-    settings.registration_deadline = payload.registration_deadline
-    settings.submission_deadline = payload.submission_deadline
-    settings.guess_game_open_at = payload.guess_game_open_at
-    if not phase_managed:
-        settings.submissions_open = payload.submissions_open
-    else:
-        phase_status = get_phase_status(db, event)
-        settings.submissions_open = phase_status.can("submission")
     db.commit()
     db.refresh(event)
     return event
@@ -185,8 +138,14 @@ def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
     if open_swap_round and swap_window:
         open_swap_round.starts_at = swap_window[1]
         open_swap_round.ends_at = swap_window[2]
-    phase_status = get_phase_status(db, event)
-    event.settings.submissions_open = phase_status.can("submission")
+    if get_phase_status(db, event).can("submission"):
+        assert_submission_ready(
+            db,
+            event.id,
+            participant_limit=event.settings.participant_song_limit,
+            audience_limit=event.settings.audience_song_limit,
+            draw_songs_per_participant=event.settings.draw_songs_per_participant,
+        )
     db.commit()
     event = get_current_event(db)
     return get_phase_schedule(db, event)
@@ -243,6 +202,51 @@ def assert_song_pool_complete(
         status_code=status.HTTP_409_CONFLICT,
         detail=f"以下账号尚未投满曲池：{preview}{suffix}",
     )
+
+
+def assert_submission_ready(
+    db: Session,
+    event_id: int,
+    *,
+    participant_limit: int,
+    audience_limit: int,
+    draw_songs_per_participant: int,
+) -> None:
+    assert_song_pool_complete(
+        db,
+        event_id,
+        participant_limit=participant_limit,
+        audience_limit=audience_limit,
+    )
+    participants = [
+        user
+        for user in db.scalars(
+            select(User)
+            .options(selectinload(User.roles))
+            .where(User.identity == "participant", User.is_active.is_(True))
+            .order_by(User.user_code)
+        ).all()
+        if not user.has_role("admin")
+    ]
+    assignment_counts = dict(
+        db.execute(
+            select(DrawAssignment.assigned_to_id, func.count(DrawAssignment.id))
+            .where(DrawAssignment.event_id == event_id, DrawAssignment.status == "active")
+            .group_by(DrawAssignment.assigned_to_id)
+        ).all()
+    )
+    missing = [
+        participant.user_code
+        for participant in participants
+        if assignment_counts.get(participant.id, 0) < draw_songs_per_participant
+    ]
+    if missing:
+        preview = "、".join(missing[:8])
+        suffix = "等" if len(missing) > 8 else ""
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"以下参赛者尚未完成抽签：{preview}{suffix}",
+        )
 
 
 def assert_song_limit(db: Session, user_id: int, identity: str) -> None:

@@ -71,9 +71,8 @@ def create_reset_fixture() -> tuple[int, int, int, int]:
         assert event and event.settings
         event.name = "保留名称"
         event.slug = "keep-slug"
-        event.settings.submissions_open = True
-        event.settings.phase_mode = "auto"
-        event.settings.manual_phase = None
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
 
         admin_two = User(
             user_code="admin-two",
@@ -251,7 +250,6 @@ def test_reset_clears_business_data_preserves_admin_and_shared_resources(client:
         assert current.slug == "keep-slug"
         assert current.settings.phase_mode == "manual"
         assert current.settings.manual_phase == "registration"
-        assert current.settings.submissions_open is False
         assert current.phases == []
         assert db.scalar(select(func.count()).select_from(Event)) == 1
         assert db.scalar(select(func.count()).select_from(Song)) == 0

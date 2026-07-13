@@ -132,7 +132,8 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
 
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
     first = client.post(
         "/api/v1/submissions",
@@ -153,7 +154,7 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
         f"/api/v1/guess-game/charts/{first_chart['id']}/comments",
         json={"content": "保留这条评论"},
     ).status_code == 200
-    set_manual_phase(None)
+    set_manual_phase("submission_1")
 
     invalid = client.post(
         "/api/v1/submissions",
@@ -192,7 +193,8 @@ def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(cli
     _, own_id, assigned_id = create_candidate_rows()
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
 
     own = client.post(
@@ -216,7 +218,7 @@ def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(cli
         "/api/v1/guess-game/vote",
         json={"chart_id": own_chart["id"], "vote_type": "love"},
     ).status_code == 200
-    set_manual_phase(None)
+    set_manual_phase("submission_1")
     with SessionLocal() as db:
         original_storage = db.get(Submission, own_id_submission).storage_path
 
@@ -234,7 +236,7 @@ def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(cli
     assert len(switched_charts) == 2
     assert next(row for row in switched_charts if row["id"] == own_chart["id"])["lane"] == "j"
 
-    set_manual_phase(None)
+    set_manual_phase("submission_1")
     assert client.patch(f"/api/v1/submissions/{own_id_submission}/track", json={"track": "normal"}).status_code == 200
     assert client.patch(f"/api/v1/submissions/{assigned_id_submission}/track", json={"track": "j"}).status_code == 200
     replaced = client.post(
@@ -266,10 +268,15 @@ def test_admin_open_validation_and_draw_lock(client: TestClient):
     with SessionLocal() as db:
         assignment = db.scalar(select(DrawAssignment).where(DrawAssignment.event_id == event_id))
         db.delete(assignment)
+        current = db.get(Event, event_id)
+        current.settings.phase_mode = "manual"
+        current.settings.manual_phase = "submission_1"
         db.commit()
     login_admin(client)
     event = client.get("/api/v1/events/current").json()
-    payload = {"name": event["name"], **event["settings"], "participant_song_limit": 0, "audience_song_limit": 0, "submissions_open": True}
+    payload = {"name": event["name"], **event["settings"], "participant_song_limit": 0, "audience_song_limit": 0}
+    payload.pop("phase_mode")
+    payload.pop("manual_phase")
     rejected = client.put("/api/v1/admin/events/current", json=payload)
     assert rejected.status_code == 400
     with SessionLocal() as db:
@@ -294,7 +301,8 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
         player = db.scalar(select(User).where(User.user_code == "player"))
         song = Song(event_id=event.id, submitted_by_id=player.id, song_name="Own", artist="Artist", song_type="A")
         db.add(song)
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
         song_id = song.id
     uploaded = client.post(
@@ -372,7 +380,8 @@ def test_admin_submission_batch_delete_cleans_all_linked_resources(client: TestC
     _, own_id, assigned_id = create_candidate_rows()
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
     first = client.post(
         "/api/v1/submissions",
@@ -501,7 +510,8 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
         owner_song = Song(event_id=event.id, submitted_by_id=owner.id, song_name="Owner Song", artist="Artist", song_type="A")
         guesser_song = Song(event_id=event.id, submitted_by_id=guesser.id, song_name="Guesser Song", artist="Artist", song_type="B")
         db.add_all([owner_song, guesser_song])
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
         owner_song_id = owner_song.id
         owner_user_id = owner.id

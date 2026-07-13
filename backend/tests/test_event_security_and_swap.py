@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.db.bootstrap import seed_defaults
@@ -20,6 +21,7 @@ from app.models import (
     User,
 )
 from app.modules.events.phase_policy import get_phase_status
+from app.schemas import EventUpdate
 
 
 @pytest.fixture(autouse=True)
@@ -143,6 +145,34 @@ def test_phase_policy_auto_boundaries_and_manual_override():
         assert overridden.active_phase == "reveal"
         assert overridden.capabilities.answers_visible is True
         assert overridden.next_transition_at is None
+
+
+def test_phase_policy_auto_without_schedule_defaults_to_registration():
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.phases.clear()
+        event.settings.phase_mode = "auto"
+        event.settings.manual_phase = None
+        status = get_phase_status(db, event)
+        assert status.active_phase == "registration"
+        assert status.capabilities.song_pool_edit is True
+        assert status.capabilities.submission is False
+
+
+def test_event_update_rejects_removed_legacy_phase_fields():
+    payload = {
+        "name": "Event",
+        "participant_song_limit": 5,
+        "audience_song_limit": 3,
+        "draw_songs_per_participant": 1,
+        "true_love_vote_limit_below_14": 3,
+        "true_love_vote_limit_at_least_14": 3,
+        "funny_vote_limit": 3,
+        "announcement_text": "",
+        "submissions_open": True,
+    }
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        EventUpdate.model_validate(payload)
 
 
 def test_hidden_normal_chart_cannot_be_enumerated_or_accessed_anonymously(client: TestClient):

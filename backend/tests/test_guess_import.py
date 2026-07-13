@@ -75,7 +75,8 @@ def upload(client: TestClient, content: bytes, name: str = "chart.zip"):
             song = Song(event_id=event.id, submitted_by_id=user.id, song_name="Candidate", artist="Artist", song_type="A")
             db.add(song)
             db.flush()
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
         song_id = song.id
     return client.post(
@@ -233,7 +234,8 @@ def test_j_track_upload_and_delete_sync_charts(client: TestClient):
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         song = Song(event_id=event.id, submitted_by_id=user.id, song_name="J Candidate", artist="Artist", song_type="A")
         db.add(song)
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
         song_id = song.id
     response = client.post("/api/v1/submissions", data={"song_id": song_id, "track": "j"}, files={"file": ("j-track.zip", archive_bytes("&title=J Song\n&artist=Artist\n&lv_6=15"), "application/zip")})
@@ -531,7 +533,8 @@ def test_exhibition_allows_multiple_unlinked_submissions(client: TestClient):
     register(client, "exhibitor")
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
-        event.settings.submissions_open = True
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
         db.commit()
     responses = [
         client.post(
