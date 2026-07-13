@@ -477,6 +477,35 @@ describe("Material application shell", () => {
     expect(screen.queryByRole("button", { name: "驳回申请" })).not.toBeInTheDocument();
   });
 
+  it("limits pool editors to the song pool admin tab", async () => {
+    window.history.pushState({}, "", "/admin/overview");
+    const editor = {
+      id: 2,
+      user_code: "editor",
+      qq_id: "2",
+      identity: "participant",
+      display_name: "曲池编辑",
+      roles: ["pool_editor", "participant"],
+      is_admin: false,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    const song = { id: 1, song_name: "曲池曲目", artist: "曲师", song_type: "A", remark: "", submitter: editor, created_at: "2026-07-04T00:00:00" };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: editor });
+      if (path.endsWith("/admin/song-pool")) return json([song]);
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByRole("tab", { name: "曲池" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "总览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "阶段与换曲" })).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/admin/songs"));
+    expect(await screen.findByText("曲池曲目")).toBeInTheDocument();
+  });
+
   it("lets administrators control guess entry visibility", async () => {
     window.history.pushState({}, "", "/admin/settings");
     const admin = {

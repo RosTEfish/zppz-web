@@ -17,10 +17,13 @@ const ADMIN_TABS = [
 
 export default function AdminPage() {
   const { tab = "overview" } = useParams();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isPoolEditor } = useAuth();
   const navigate = useNavigate();
-  const visible = ADMIN_TABS.filter(([key]) => isAdmin || !["settings", "users"].includes(key));
-  const active = visible.some(([key]) => key === tab) ? tab : visible[0][0];
+  const visible = isAdmin ? ADMIN_TABS : ADMIN_TABS.filter(([key]) => isPoolEditor && key === "songs");
+  const active = visible.some(([key]) => key === tab) ? tab : visible[0]?.[0] || "songs";
+  useEffect(() => {
+    if (!isAdmin && isPoolEditor && tab !== "songs") navigate("/admin/songs", { replace: true });
+  }, [isAdmin, isPoolEditor, navigate, tab]);
   return <Stack spacing={2.5}><PageHeader icon={Gauge} title="管理工作台" /><Paper variant="outlined"><Tabs value={active} onChange={(_, value) => navigate(`/admin/${value}`)} variant="scrollable" scrollButtons="auto" sx={{ "& .MuiTabs-flexContainer": { width: { md: "100%" } }, "& .MuiTab-root": { minWidth: { xs: 112, md: 0 }, flex: { md: "1 1 0" } } }}>{visible.map(([key, label, Icon]) => <Tab key={key} value={key} icon={<Icon size={17} />} iconPosition="start" label={label} />)}</Tabs></Paper>{active === "overview" ? <AdminOverview /> : null}{active === "settings" ? <AdminSettings /> : null}{active === "users" ? <AdminUsers /> : null}{active === "songs" ? <AdminSongs /> : null}{active === "draw" ? <AdminDraw /> : null}{active === "phases" ? <AdminPhasesAndSwap /> : null}{active === "submissions" ? <AdminSubmissions /> : null}{active === "guess" ? <AdminGuess /> : null}{active === "stats" ? <AdminStats /> : null}</Stack>;
 }
 

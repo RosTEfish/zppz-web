@@ -304,3 +304,35 @@ def test_admin_can_reject_blocking_swap_request_and_finalize_round(client: TestC
     with SessionLocal() as db:
         request = db.scalar(select(SwapRequest).where(SwapRequest.id == request_id))
         assert request and request.status == "rejected"
+
+
+def test_rejected_swap_request_does_not_block_redraw_or_login(client: TestClient):
+    assignment_id = create_single_swap_case(client, "redraw-player")
+    login(client, "redraw-player")
+    saved = client.put("/api/v1/swap/me", json={"assignment_ids": [assignment_id]})
+    assert saved.status_code == 200, saved.text
+    request_id = saved.json()["request"]["id"]
+
+    login(client, "admin", "change-me-please")
+    rejected = client.post(f"/api/v1/admin/swap/requests/{request_id}/reject")
+    assert rejected.status_code == 200, rejected.text
+    finalized = client.post("/api/v1/admin/swap/finalize")
+    assert finalized.status_code == 200, finalized.text
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event and event.settings
+        event.settings.participant_song_limit = 0
+        event.settings.audience_song_limit = 0
+        db.commit()
+    set_manual_phase("draw")
+
+    login(client, "redraw-player")
+    drawn = client.post("/api/v1/draw/me")
+    assert drawn.status_code == 200, drawn.text
+    assert len(drawn.json()) == 1
+
+    login(client, "redraw-player")
+    with SessionLocal() as db:
+        old_assignment = db.get(DrawAssignment, assignment_id)
+        assert old_assignment and old_assignment.status == "returned"

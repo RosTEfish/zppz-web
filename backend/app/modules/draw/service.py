@@ -2,11 +2,11 @@ import random
 import time
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import DrawAssignment, JTrackSubmission, Song, Submission, User
+from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, SwapRequestItem, User
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
 
@@ -16,7 +16,9 @@ SELF_DRAW_RETRY_DELAY_SECONDS = 0.04
 
 
 def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
+    _begin_sqlite_immediate_transaction(db)
     event = get_current_event(db)
+    _lock_event_row(db, event.id)
     _assert_draw_is_mutable(db, event)
     assert_song_pool_complete(
         db,
@@ -39,7 +41,7 @@ def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
     if not songs:
         raise HTTPException(status_code=400, detail="曲池为空")
 
-    db.execute(delete(DrawAssignment).where(DrawAssignment.event_id == event.id))
+    _retire_active_assignments(db, event.id)
     pool = songs[:]
     random.shuffle(pool)
     created: list[DrawAssignment] = []
@@ -101,6 +103,7 @@ def draw_for_user(db: Session, user: User) -> list[DrawAssignment]:
 def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
     _begin_sqlite_immediate_transaction(db)
     event = get_current_event(db)
+    _lock_event_row(db, event.id)
     _assert_draw_is_mutable(db, event)
     assert_song_pool_complete(
         db,
@@ -132,12 +135,7 @@ def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
     draw_count = min(max(event.settings.draw_songs_per_participant, 1), len(available))
     chosen_song_ids = _choose_song_ids(available, user_id, draw_count)
 
-    db.execute(
-        delete(DrawAssignment).where(
-            DrawAssignment.event_id == event.id,
-            DrawAssignment.assigned_to_id == user_id,
-        )
-    )
+    _retire_active_assignments(db, event.id, assigned_to_id=user_id)
     assignments = [
         DrawAssignment(
             event_id=event.id,
@@ -169,6 +167,56 @@ def _begin_sqlite_immediate_transaction(db: Session) -> None:
         return
     db.rollback()
     db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+
+
+def _lock_event_row(db: Session, event_id: int) -> None:
+    """Serialize draw writers on databases that support row-level locking."""
+    db.scalar(select(Event.id).where(Event.id == event_id).with_for_update())
+
+
+def _retire_active_assignments(db: Session, event_id: int, assigned_to_id: int | None = None) -> None:
+    """Release active songs while preserving rows referenced by swap history.
+
+    Swap request items keep a foreign-key reference to the original draw row so
+    rejected/cancelled requests can remain visible in the audit trail. Deleting
+    such an old assignment during a redraw would therefore fail with a
+    foreign-key error and be incorrectly reported as a concurrent draw
+    conflict. Unreferenced rows can still be removed, which keeps ordinary
+    redraws compact.
+    """
+    stmt = select(DrawAssignment.id).where(
+        DrawAssignment.event_id == event_id,
+        DrawAssignment.status == "active",
+    )
+    if assigned_to_id is not None:
+        stmt = stmt.where(DrawAssignment.assigned_to_id == assigned_to_id)
+    active_ids = set(db.scalars(stmt).all())
+    if not active_ids:
+        return
+
+    referenced_ids = set(
+        db.scalars(
+            select(SwapRequestItem.original_assignment_id).where(
+                SwapRequestItem.original_assignment_id.in_(active_ids)
+            )
+        ).all()
+    )
+    referenced_ids.update(
+        db.scalars(
+            select(SwapRequestItem.replacement_assignment_id).where(
+                SwapRequestItem.replacement_assignment_id.in_(active_ids)
+            )
+        ).all()
+    )
+    if referenced_ids:
+        db.execute(
+            update(DrawAssignment)
+            .where(DrawAssignment.id.in_(referenced_ids))
+            .values(status="returned")
+        )
+    deletable_ids = active_ids - referenced_ids
+    if deletable_ids:
+        db.execute(delete(DrawAssignment).where(DrawAssignment.id.in_(deletable_ids)))
 
 
 def _is_retryable_operational_error(exc: OperationalError) -> bool:
