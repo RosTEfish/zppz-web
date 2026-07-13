@@ -51,6 +51,7 @@ from app.schemas import (
     RevealedGuessChartRead,
     AdminGuessChartRead,
     GuessCommentRead,
+    GuessAvailabilityRead,
     VoteRequest,
 )
 
@@ -111,6 +112,16 @@ def _public_chart_payloads(
             }
         )
     return payloads
+
+
+@router.get("/availability", response_model=GuessAvailabilityRead)
+def guess_availability(db: Session = Depends(get_db)) -> dict:
+    event = get_current_event(db)
+    phase_status = get_phase_status(db, event)
+    stmt = select(GuessChart.id).where(GuessChart.event_id == event.id)
+    if not phase_status.can("normal_submission_public"):
+        stmt = stmt.where(GuessChart.source_submission_type.in_(("j", "exhibition")))
+    return {"available": db.scalar(stmt.limit(1)) is not None}
 
 
 @router.get("/charts/download.zip")

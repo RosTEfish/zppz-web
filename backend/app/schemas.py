@@ -64,7 +64,6 @@ class EventSettingsRead(BaseModel):
     submission_deadline: datetime | None = None
     guess_game_open_at: datetime | None = None
     submissions_open: bool = False
-    guess_game_visible: bool = True
     phase_mode: Literal["auto", "manual"] = "auto"
     manual_phase: EventPhaseName | None = None
 
@@ -98,7 +97,10 @@ class EventUpdate(BaseModel):
     submission_deadline: datetime | None = None
     guess_game_open_at: datetime | None = None
     submissions_open: bool = False
-    guess_game_visible: bool = True
+
+
+class GuessAvailabilityRead(BaseModel):
+    available: bool
 
 
 class EventPhaseWrite(BaseModel):

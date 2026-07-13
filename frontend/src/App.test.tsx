@@ -18,7 +18,6 @@ const eventPayload = {
     submission_deadline: null,
     guess_game_open_at: null,
     submissions_open: false,
-    guess_game_visible: true,
   },
 };
 
@@ -35,6 +34,7 @@ describe("Material application shell", () => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
       if (path.endsWith("/auth/me")) return json({ detail: "未登录" }, 401);
       if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [{ chart_id: 7, guessed_user_id: null }, { chart_id: 8, guessed_user_id: null }] });
       if (path.endsWith("/guess-game/charts")) return json([
         {
@@ -96,11 +96,11 @@ describe("Material application shell", () => {
     expect(screen.getByAltText("公安备案图标").getAttribute("src")).toContain("beian");
   });
 
-  it("hides the guess entry from regular users when disabled", async () => {
-    const hiddenEvent = { ...eventPayload, settings: { ...eventPayload.settings, guess_game_visible: false } };
+  it("hides the guess entry from regular users when no public charts exist", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path.endsWith("/bootstrap")) return json({ event: hiddenEvent, user: null });
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
+      if (path.endsWith("/guess-game/availability")) return json({ available: false });
       return json({ detail: "not found" }, 404);
     }));
 
@@ -506,7 +506,7 @@ describe("Material application shell", () => {
     expect(await screen.findByText("曲池曲目")).toBeInTheDocument();
   });
 
-  it("lets administrators control guess entry visibility", async () => {
+  it("does not expose a manual guess entry visibility switch", async () => {
     window.history.pushState({}, "", "/admin/settings");
     const admin = {
       id: 1,
@@ -519,14 +519,15 @@ describe("Material application shell", () => {
       is_pool_editor: true,
       is_active: true,
     };
-    let currentEvent = { ...eventPayload, settings: { ...eventPayload.settings, guess_game_visible: false } };
-    const updates: Array<{ guess_game_visible: boolean }> = [];
+    let currentEvent = eventPayload;
+    const updates: Array<Record<string, unknown>> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: admin });
+      if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/admin/events/current") && init?.method === "PUT") {
-        const body = JSON.parse(String(init.body)) as typeof eventPayload.settings & { name: string };
-        updates.push({ guess_game_visible: body.guess_game_visible });
+        const body = JSON.parse(String(init.body)) as Record<string, unknown> & { name: string };
+        updates.push(body);
         currentEvent = { ...currentEvent, name: body.name, settings: { ...currentEvent.settings, ...body } };
         return json(currentEvent);
       }
@@ -536,11 +537,10 @@ describe("Material application shell", () => {
 
     render(<App />);
     expect(await screen.findByRole("link", { name: "猜谱" })).toBeInTheDocument();
-    const visibility = await screen.findByRole("switch", { name: "向用户显示猜谱入口" });
-    expect(visibility).not.toBeChecked();
-    fireEvent.click(visibility);
+    expect(screen.queryByRole("switch", { name: "向用户显示猜谱入口" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    await waitFor(() => expect(updates).toEqual([{ guess_game_visible: true }]));
+    await waitFor(() => expect(updates).toHaveLength(1));
+    expect(updates[0]).not.toHaveProperty("guess_game_visible");
   });
 
   it("submits the administrator role from user management", async () => {

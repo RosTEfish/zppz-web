@@ -67,12 +67,15 @@ export interface EventUpdatePayload {
   submission_deadline?: string | null;
   guess_game_open_at?: string | null;
   submissions_open: boolean;
-  guess_game_visible: boolean;
 }
 
 export interface BootstrapRead {
   event: EventRead;
   user: UserRead | null;
+}
+
+export interface GuessAvailabilityRead {
+  available: boolean;
 }
 
 export interface DownloadPreparation {
@@ -362,6 +365,7 @@ export const api = {
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
   eventPhases: () => apiRequest<EventPhasesRead>("/event/phases"),
   updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),
+  guessAvailability: () => apiRequest<GuessAvailabilityRead>("/guess-game/availability"),
 
   mySongs: () => apiRequest<SongRead[]>("/song-pool/me"),
   createSong: (payload: SongPayload) => apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),

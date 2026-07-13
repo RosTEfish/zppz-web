@@ -277,10 +277,6 @@ def test_admin_open_validation_and_draw_lock(client: TestClient):
         db.commit()
     opened = client.put("/api/v1/admin/events/current", json=payload)
     assert opened.status_code == 200, opened.text
-    visibility_payload = {"name": opened.json()["name"], **opened.json()["settings"], "guess_game_visible": False}
-    hidden = client.put("/api/v1/admin/events/current", json=visibility_payload)
-    assert hidden.status_code == 200, hidden.text
-    assert hidden.json()["settings"]["guess_game_visible"] is False
     blocked = client.post("/api/v1/admin/draw")
     assert blocked.status_code == 409
 

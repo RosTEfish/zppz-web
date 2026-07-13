@@ -32,11 +32,6 @@ def get_current_event(db: Session) -> Event:
         # Mark the derived values as loaded so an unrelated commit (vote/comment,
         # for example) cannot accidentally persist and clobber the legacy state.
         set_committed_value(event.settings, "submissions_open", phase_status.can("submission"))
-        set_committed_value(
-            event.settings,
-            "guess_game_visible",
-            phase_status.can("normal_submission_public"),
-        )
     return event
 
 
@@ -96,11 +91,9 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     settings.guess_game_open_at = payload.guess_game_open_at
     if not phase_managed:
         settings.submissions_open = payload.submissions_open
-        settings.guess_game_visible = payload.guess_game_visible
     else:
         phase_status = get_phase_status(db, event)
         settings.submissions_open = phase_status.can("submission")
-        settings.guess_game_visible = phase_status.can("normal_submission_public")
     db.commit()
     db.refresh(event)
     return event
@@ -190,7 +183,6 @@ def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
         open_swap_round.ends_at = swap_window[2]
     phase_status = get_phase_status(db, event)
     event.settings.submissions_open = phase_status.can("submission")
-    event.settings.guess_game_visible = phase_status.can("normal_submission_public")
     db.commit()
     event = get_current_event(db)
     return get_phase_schedule(db, event)

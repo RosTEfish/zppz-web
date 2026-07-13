@@ -398,6 +398,7 @@ def test_public_visibility_neutral_package_and_audience_author_guess(client: Tes
 
     before_guess = client.get("/api/v1/guess-game/charts").json()
     assert [row["source_submission_type"] for row in before_guess] == ["j"]
+    assert client.get("/api/v1/guess-game/availability").json() == {"available": True}
     assert "designer" not in before_guess[0]
     assert "source_submission_id" not in before_guess[0]
     assert "storage_path" not in before_guess[0]
@@ -436,6 +437,42 @@ def test_public_visibility_neutral_package_and_audience_author_guess(client: Tes
         f"/api/v1/guess-game/charts/{j_chart['id']}/author-guess",
         json={"guessed_user_id": player_id},
     ).status_code == 403
+
+
+def test_guess_availability_requires_a_public_chart(client: TestClient):
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event
+        db.add(
+            GuessChart(
+                event_id=event.id,
+                title="Normal only",
+                author="Artist",
+                level="13",
+                lane="normal",
+                source_submission_type="normal",
+            )
+        )
+        db.commit()
+
+    assert client.get("/api/v1/guess-game/availability").json() == {"available": False}
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event
+        db.add(
+            GuessChart(
+                event_id=event.id,
+                title="J public",
+                author="Artist",
+                level="14",
+                lane="j",
+                source_submission_type="j",
+            )
+        )
+        db.commit()
+
+    assert client.get("/api/v1/guess-game/availability").json() == {"available": True}
 
 
 def test_exhibition_allows_multiple_unlinked_submissions(client: TestClient):

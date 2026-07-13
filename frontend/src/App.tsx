@@ -45,9 +45,9 @@ function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
   const { user, isLoggedIn, isAdmin, isPoolEditor, logout } = useAuth();
-  const { event } = useConfig();
+  const { event, guessGameAvailable } = useConfig();
   const navigate = useNavigate();
-  const showGuessEntry = isAdmin || isPoolEditor || event?.settings.guess_game_visible === true;
+  const showGuessEntry = isAdmin || isPoolEditor || guessGameAvailable;
 
   useEffect(() => setDrawerOpen(false), [location.pathname]);
 

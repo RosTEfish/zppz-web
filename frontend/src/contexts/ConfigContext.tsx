@@ -17,12 +17,12 @@ interface AppConfig {
   registration_deadline?: string | null;
   submission_deadline?: string | null;
   submissions_open: boolean;
-  guess_game_visible: boolean;
 }
 
 interface ConfigContextType {
   event: EventRead | null;
   phases: EventPhasesRead | null;
+  guessGameAvailable: boolean;
   config: AppConfig | null;
   refreshConfig: () => Promise<void>;
   loading: boolean;
@@ -46,13 +46,13 @@ function toConfig(event: EventRead | null): AppConfig | null {
     registration_deadline: event.settings.registration_deadline,
     submission_deadline: event.settings.submission_deadline,
     submissions_open: event.settings.submissions_open,
-    guess_game_visible: event.settings.guess_game_visible,
   };
 }
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [event, setEvent] = useState<EventRead | null>(null);
   const [phases, setPhases] = useState<EventPhasesRead | null>(null);
+  const [guessGameAvailable, setGuessGameAvailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
 
@@ -61,9 +61,14 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     const task = (async () => {
       setLoading(true);
       try {
-        const [nextEvent, nextPhases] = await Promise.all([api.currentEvent(), api.eventPhases().catch(() => null)]);
+        const [nextEvent, nextPhases, availability] = await Promise.all([
+          api.currentEvent(),
+          api.eventPhases().catch(() => null),
+          api.guessAvailability().catch(() => ({ available: false })),
+        ]);
         setEvent(nextEvent);
         setPhases(nextPhases);
+        setGuessGameAvailable(availability.available);
       } finally {
         setLoading(false);
         inFlightRef.current = null;
@@ -75,12 +80,20 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setLoading(true);
-    void Promise.all([api.bootstrap(), api.eventPhases().catch(() => null)])
-      .then(([data, nextPhases]) => { setEvent(data.event); setPhases(nextPhases); })
+    void Promise.all([
+      api.bootstrap(),
+      api.eventPhases().catch(() => null),
+      api.guessAvailability().catch(() => ({ available: false })),
+    ])
+      .then(([data, nextPhases, availability]) => {
+        setEvent(data.event);
+        setPhases(nextPhases);
+        setGuessGameAvailable(availability.available);
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  const value = useMemo(() => ({ event, phases, config: toConfig(event), refreshConfig, loading }), [event, phases, loading, refreshConfig]);
+  const value = useMemo(() => ({ event, phases, guessGameAvailable, config: toConfig(event), refreshConfig, loading }), [event, phases, guessGameAvailable, loading, refreshConfig]);
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 }
 

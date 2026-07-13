@@ -7,14 +7,14 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
 export default function HomePage() {
-  const { event, phases } = useConfig();
+  const { event, phases, guessGameAvailable } = useConfig();
   const { user, isLoggedIn, isAdmin, isPoolEditor } = useAuth();
   const stages = [
     { label: "曲池", value: `${event?.settings.participant_song_limit ?? "-"} 首上限`, icon: Music2, to: "/songs" },
     { label: "抽签", value: `每人 ${event?.settings.draw_songs_per_participant ?? "-"} 首`, icon: Sparkles, to: "/draw" },
     { label: "投稿", value: phases?.capabilities.submission ? "开放中" : "当前未开放", icon: Upload, to: "/submissions" },
     { label: "猜谱", value: phases ? PHASE_LABELS[phases.active_phase] : "查看与投票", icon: Vote, to: "/guess" },
-  ].filter(({ to }) => to !== "/guess" || isAdmin || isPoolEditor || event?.settings.guess_game_visible === true || phases?.capabilities.normal_submission_public);
+  ].filter(({ to }) => to !== "/guess" || isAdmin || isPoolEditor || guessGameAvailable);
   const nextAction = !isLoggedIn ? "登录或注册后选择参赛者 / 观众身份" : user?.identity === "participant" ? (phases?.capabilities.swap ? "检查抽签结果并提交换曲申请" : phases?.capabilities.submission ? "上传或检查你的投稿包" : phases?.capabilities.author_guess ? "浏览普通稿并提交作者竞猜" : "关注下一阶段开放时间") : phases?.capabilities.author_guess ? "观众也可以参与普通稿作者竞猜" : "关注赛程，猜谱阶段即可参与互动";
   return (
     <Stack spacing={3}>
