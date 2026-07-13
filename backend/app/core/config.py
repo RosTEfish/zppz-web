@@ -17,6 +17,11 @@ class Settings:
     app_name = "ZPPZ Arena"
     api_prefix = "/api/v1"
     database_url = os.getenv("DATABASE_URL", "sqlite:///./zppz_v2.db")
+    db_pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    db_max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    db_pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    db_pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+    slow_request_ms = int(os.getenv("SLOW_REQUEST_MS", "500"))
     secret_key = os.getenv("SECRET_KEY", "change-me-in-production")
     session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "zppz_session")
     session_expire_hours = int(os.getenv("SESSION_EXPIRE_HOURS", "168"))

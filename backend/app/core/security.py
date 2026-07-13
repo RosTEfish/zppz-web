@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
 import hashlib
 import secrets
+from threading import Lock
+from time import monotonic
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from passlib.context import CryptContext
-from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -13,6 +15,10 @@ from app.models import Role, User, UserSession
 
 
 pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
+_session_cleanup_lock = Lock()
+_last_session_cleanup = 0.0
+_SESSION_CLEANUP_INTERVAL_SECONDS = 15 * 60
+_SESSION_CLEANUP_BATCH_SIZE = 500
 
 
 def hash_password(password: str) -> str:
@@ -30,6 +36,7 @@ def hash_token(token: str) -> str:
 def issue_session(response: Response, db: Session, user: User) -> str:
     settings = get_settings()
     token = secrets.token_urlsafe(48)
+    _cleanup_expired_sessions(db)
     session = UserSession(
         user_id=user.id,
         token_hash=hash_token(token),
@@ -64,15 +71,50 @@ def _extract_token(request: Request) -> str | None:
     return None
 
 
+def _lookup_session(db: Session, token: str) -> UserSession | None:
+    return (
+        db.execute(
+            select(UserSession)
+            .options(joinedload(UserSession.user).joinedload(User.roles))
+            .where(UserSession.token_hash == hash_token(token))
+        )
+        .unique()
+        .scalar_one_or_none()
+    )
+
+
+def _cleanup_expired_sessions(db: Session) -> None:
+    """Bound cleanup work on login and avoid adding writes to normal requests."""
+    global _last_session_cleanup
+    now = monotonic()
+    if now - _last_session_cleanup < _SESSION_CLEANUP_INTERVAL_SECONDS:
+        return
+    if not _session_cleanup_lock.acquire(blocking=False):
+        return
+    try:
+        now = monotonic()
+        if now - _last_session_cleanup < _SESSION_CLEANUP_INTERVAL_SECONDS:
+            return
+        expired_ids = list(
+            db.scalars(
+                select(UserSession.id)
+                .where(UserSession.expires_at < datetime.utcnow())
+                .order_by(UserSession.expires_at.asc())
+                .limit(_SESSION_CLEANUP_BATCH_SIZE)
+            ).all()
+        )
+        if expired_ids:
+            db.execute(delete(UserSession).where(UserSession.id.in_(expired_ids)))
+        _last_session_cleanup = now
+    finally:
+        _session_cleanup_lock.release()
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = _extract_token(request)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
-    session = db.scalar(
-        select(UserSession)
-        .options(joinedload(UserSession.user).selectinload(User.roles))
-        .where(UserSession.token_hash == hash_token(token))
-    )
+    session = _lookup_session(db, token)
     if not session or session.expires_at < datetime.utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已过期")
     user = session.user
@@ -85,11 +127,7 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
     token = _extract_token(request)
     if not token:
         return None
-    session = db.scalar(
-        select(UserSession)
-        .options(joinedload(UserSession.user).selectinload(User.roles))
-        .where(UserSession.token_hash == hash_token(token))
-    )
+    session = _lookup_session(db, token)
     if not session or session.expires_at < datetime.utcnow():
         return None
     return session.user if session.user.is_active else None

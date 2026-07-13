@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -14,7 +13,14 @@ from app.core.security import get_current_user, require_role
 from app.db.session import get_db
 from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission, User
 from app.modules.common import serialize_song, serialize_submission
-from app.modules.downloads import DownloadEntry, PreparedZip, file_download_response, prepare_streaming_zip
+from app.modules.downloads import (
+    DownloadEntry,
+    PreparedZip,
+    file_download_response,
+    parse_csv_ids,
+    prepare_streaming_zip,
+    safe_download_name,
+)
 from app.modules.events.service import get_current_event
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.guess_game.importer import (
@@ -621,7 +627,13 @@ def _select_admin_downloads(
     track: str | None,
 ) -> tuple[list[Submission], list[int] | None, str | None]:
     stmt = select(Submission).options(*_submission_options()).where(Submission.event_id == event_id)
-    selected_ids = _parse_ids(ids)
+    selected_ids = parse_csv_ids(
+        ids,
+        required=False,
+        max_items=MAX_BATCH_FILES,
+        empty_detail="请至少选择一份投稿",
+        limit_detail=f"一次最多下载 {MAX_BATCH_FILES} 份投稿",
+    )
     if selected_ids is not None:
         stmt = stmt.where(Submission.id.in_(selected_ids))
     selected_track = _normalize_track(track) if track else None
@@ -669,25 +681,6 @@ def admin_download_submission_metadata(
     }
 
 
-def _parse_ids(value: str | None) -> list[int] | None:
-    if value is None or not value.strip():
-        return None
-    try:
-        result = list(dict.fromkeys(int(item.strip()) for item in value.split(",") if item.strip()))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="ids 必须是逗号分隔的数字") from exc
-    if not result:
-        raise HTTPException(status_code=400, detail="请至少选择一份投稿")
-    if len(result) > MAX_BATCH_FILES:
-        raise HTTPException(status_code=413, detail=f"一次最多下载 {MAX_BATCH_FILES} 份投稿")
-    return result
-
-
-def _safe_zip_name(value: str, fallback: str) -> str:
-    cleaned = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", value).strip(" .")
-    return cleaned[:180] or fallback
-
-
 def _prepare_submission_zip(rows: list[Submission], filename: str) -> PreparedZip:
     if len(rows) > MAX_BATCH_FILES:
         raise HTTPException(status_code=413, detail=f"一次最多下载 {MAX_BATCH_FILES} 份投稿")
@@ -711,7 +704,7 @@ def _prepare_submission_zip(rows: list[Submission], filename: str) -> PreparedZi
     for row, path in existing:
         user_code = row.user.user_code if row.user else str(row.user_id)
         song_name = row.source_song.song_name if row.source_song else "未关联曲目"
-        base = _safe_zip_name(
+        base = safe_download_name(
             f"{row.track}_{user_code}_{song_name}_{row.id}_{row.file_name}",
             f"submission_{row.id}{path.suffix}",
         )

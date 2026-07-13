@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, Song, Submission, User
+from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, Song, Submission, User
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 
 
@@ -142,7 +142,13 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
     assert first.status_code == 200, first.text
     set_manual_phase("guess")
     first_chart = public_chart_for_submission(client, first.json()["id"])
-    assert client.post("/api/v1/guess-game/vote", json={"chart_id": first_chart["id"], "vote_type": "love"}).status_code == 200
+    voted = client.post("/api/v1/guess-game/vote", json={"chart_id": first_chart["id"], "vote_type": "love"})
+    assert voted.status_code == 200
+    assert voted.json()["vote_counts"] == {"love": 1, "funny": 0}
+    assert voted.json()["my_votes"] == ["love"]
+    detail = client.get(f"/api/v1/guess-game/charts/{first_chart['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["plays"] == first_chart["plays"] + 1
     assert client.post(
         f"/api/v1/guess-game/charts/{first_chart['id']}/comments",
         json={"content": "保留这条评论"},
@@ -556,6 +562,18 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert owner_stats["received_guesses"] == 1
     assert owner_stats["received_correct"] == 1
     assert owner_stats["being_guessed_probability"] == 100.0
+
+    summary = client.get("/api/v1/admin/guess-game/stats?scope=all&include_details=false")
+    assert summary.status_code == 200, summary.text
+    assert "guess_details" not in summary.json()
+    assert summary.json()["overview"] == stats.json()["overview"]
+    details = client.get("/api/v1/admin/guess-game/stats/details?scope=all&limit=1&offset=0")
+    assert details.status_code == 200, details.text
+    assert details.json()["total"] == 1
+    assert details.json()["limit"] == 1
+    assert details.json()["offset"] == 0
+    assert details.json()["items"] == stats.json()["guess_details"]
+    assert client.get("/api/v1/admin/guess-game/stats/details?limit=101").status_code == 422
 
     imported = client.post(
         "/api/v1/admin/guess-game/charts/import",

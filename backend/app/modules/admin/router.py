@@ -33,10 +33,19 @@ def reset_database(
 @router.get("/stats")
 def admin_dashboard(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
+    counts = db.execute(
+        select(
+            select(func.count()).select_from(User).scalar_subquery(),
+            select(func.count()).select_from(Song).where(Song.event_id == event.id).scalar_subquery(),
+            select(func.count()).select_from(DrawAssignment).where(DrawAssignment.event_id == event.id).scalar_subquery(),
+            select(func.count()).select_from(Submission).where(Submission.event_id == event.id).scalar_subquery(),
+            select(func.count()).select_from(GuessChart).where(GuessChart.event_id == event.id).scalar_subquery(),
+        )
+    ).one()
     return {
-        "users": db.scalar(select(func.count()).select_from(User)) or 0,
-        "songs": db.scalar(select(func.count()).select_from(Song).where(Song.event_id == event.id)) or 0,
-        "assignments": db.scalar(select(func.count()).select_from(DrawAssignment).where(DrawAssignment.event_id == event.id)) or 0,
-        "submissions": db.scalar(select(func.count()).select_from(Submission).where(Submission.event_id == event.id)) or 0,
-        "guess_charts": db.scalar(select(func.count()).select_from(GuessChart).where(GuessChart.event_id == event.id)) or 0,
+        "users": int(counts[0] or 0),
+        "songs": int(counts[1] or 0),
+        "assignments": int(counts[2] or 0),
+        "submissions": int(counts[3] or 0),
+        "guess_charts": int(counts[4] or 0),
     }

@@ -49,6 +49,7 @@ class User(Base, TimestampMixin):
 
 class UserSession(Base, TimestampMixin):
     __tablename__ = "user_sessions"
+    __table_args__ = (Index("ix_user_sessions_expires_at", "expires_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -83,7 +84,8 @@ class EventSetting(Base, TimestampMixin):
     participant_song_limit: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
     audience_song_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     draw_songs_per_participant: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    true_love_vote_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    true_love_vote_limit_below_14: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    true_love_vote_limit_at_least_14: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     funny_vote_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     announcement_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     registration_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -113,6 +115,7 @@ class EventPhase(Base, TimestampMixin):
 
 class Song(Base, TimestampMixin):
     __tablename__ = "songs"
+    __table_args__ = (Index("ix_songs_event_submitter", "event_id", "submitted_by_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -136,6 +139,7 @@ class DrawAssignment(Base, TimestampMixin):
             postgresql_where=text("status = 'active'"),
             sqlite_where=text("status = 'active'"),
         ),
+        Index("ix_draw_assignments_event_assignee_status", "event_id", "assigned_to_id", "status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -233,6 +237,7 @@ class Submission(Base, TimestampMixin):
             postgresql_where=text("track = 'j'"),
             sqlite_where=text("track = 'j'"),
         ),
+        Index("ix_submissions_event_user_track", "event_id", "user_id", "track"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -290,6 +295,14 @@ class AdminGuessArchive(Base, TimestampMixin):
 
 class GuessChart(Base, TimestampMixin):
     __tablename__ = "guess_charts"
+    __table_args__ = (
+        Index(
+            "ix_guess_charts_event_source",
+            "event_id",
+            "source_submission_type",
+            "source_submission_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -310,7 +323,10 @@ class GuessChart(Base, TimestampMixin):
 
 class GuessVote(Base, TimestampMixin):
     __tablename__ = "guess_votes"
-    __table_args__ = (UniqueConstraint("chart_id", "user_id", "vote_type", name="uq_guess_vote_chart_user_type"),)
+    __table_args__ = (
+        UniqueConstraint("chart_id", "user_id", "vote_type", name="uq_guess_vote_chart_user_type"),
+        Index("ix_guess_votes_user_type", "user_id", "vote_type"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     chart_id: Mapped[int] = mapped_column(ForeignKey("guess_charts.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -320,6 +336,7 @@ class GuessVote(Base, TimestampMixin):
 
 class GuessComment(Base, TimestampMixin):
     __tablename__ = "guess_comments"
+    __table_args__ = (Index("ix_guess_comments_chart_created", "chart_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     chart_id: Mapped[int] = mapped_column(ForeignKey("guess_charts.id", ondelete="CASCADE"), index=True, nullable=False)

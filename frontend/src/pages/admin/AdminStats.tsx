@@ -1,0 +1,26 @@
+import { type ReactNode, useState } from "react";
+import { Box, Chip, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, Typography } from "@mui/material";
+import { api, type GuessStats } from "../../api/v1";
+import { ResourceState, useResource } from "../../components/PagePrimitives";
+
+const DETAIL_LIMIT = 50;
+
+export default function AdminStats() {
+  const [scope, setScope] = useState<"all" | "j">("all");
+  const [offset, setOffset] = useState(0);
+  const stats = useResource((signal) => api.guessStats(scope, false, signal), [scope]);
+  const details = useResource((signal) => api.guessStatsDetails(scope, DETAIL_LIMIT, offset, signal), [offset, scope]);
+  return <Stack spacing={2}><Tabs value={scope} onChange={(_, value: "all" | "j") => { setScope(value); setOffset(0); }}><Tab value="all" label="全部" /><Tab value="j" label="J 赛道" /></Tabs><ResourceState loading={stats.loading} error={stats.error} />{stats.data ? <StatsContent stats={stats.data} details={details.data?.items ?? []} detailsLoading={details.loading} detailsError={details.error} total={details.data?.total ?? 0} offset={offset} onOffsetChange={setOffset} /> : null}</Stack>;
+}
+
+function StatsContent({ stats, details, detailsLoading, detailsError, total, offset, onOffsetChange }: { stats: GuessStats; details: Array<Record<string, unknown>>; detailsLoading: boolean; detailsError: string; total: number; offset: number; onOffsetChange: (offset: number) => void }) {
+  const overview = [["谱面", stats.overview.charts], ["查看", stats.overview.views], ["真爱票", stats.overview.love_votes], ["欢乐票", stats.overview.funny_votes], ["有效猜测", stats.overview.counted_guesses], ["猜对", stats.overview.correct_guesses], ["准确率", stats.overview.accuracy === null ? "-" : `${stats.overview.accuracy}%`], ["参与用户", stats.overview.users_guessing]];
+  return <Stack spacing={3}><Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1.5 }}>{overview.map(([label, value]) => <Paper key={String(label)} variant="outlined" sx={{ p: 2 }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="h2" sx={{ mt: 0.5 }}>{value}</Typography></Paper>)}</Box><StatsTable title="逐谱统计" rows={stats.chart_stats} columns={["title", "level", "lane", "views", "love_votes", "funny_votes", "guess_count", "accuracy"]} /><StatsTable title="用户准确率" rows={stats.user_stats} columns={["user", "guesses", "counted", "correct", "accuracy"]} /><StatsTable title="用户被猜中概率" rows={stats.author_stats} columns={["user", "received_guesses", "received_correct", "being_guessed_probability"]} /><StatsTable title="候选选择" rows={stats.candidate_stats} columns={["display_id", "user", "selected_count"]} /><StatsTable title="猜测明细" rows={details} columns={["title", "guesser", "guessed_display_id", "actual_author", "is_correct"]} loading={detailsLoading} error={detailsError} footer={<TablePagination component="div" count={total} page={Math.floor(offset / DETAIL_LIMIT)} onPageChange={(_, page) => onOffsetChange(page * DETAIL_LIMIT)} rowsPerPage={DETAIL_LIMIT} rowsPerPageOptions={[DETAIL_LIMIT]} labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`} />} /></Stack>;
+}
+
+function StatsTable({ title, rows, columns, loading = false, error = "", footer }: { title: string; rows: Array<Record<string, unknown>>; columns: string[]; loading?: boolean; error?: string; footer?: ReactNode }) {
+  const labels: Record<string, string> = { title: "曲目", level: "等级", lane: "赛道", views: "查看", love_votes: "真爱票", funny_votes: "欢乐票", guess_count: "猜测", accuracy: "准确率", user: "用户", guesses: "提交", counted: "有效", correct: "正确", received_guesses: "被猜次数", received_correct: "被猜对次数", being_guessed_probability: "被猜中概率", display_id: "展示 ID", selected_count: "被选次数", guesser: "猜测人", guessed_display_id: "选择", actual_author: "实际作者", is_correct: "结果" };
+  return <Paper variant="outlined" sx={{ overflow: "hidden" }}><Typography variant="h3" sx={{ p: 2 }}>{title}</Typography><ResourceState loading={loading} error={error} /><TableContainer sx={{ maxHeight: 420 }}><Table size="small" stickyHeader><TableHead><TableRow>{columns.map((column) => <TableCell key={column}>{labels[column] || column}</TableCell>)}</TableRow></TableHead><TableBody>{!loading && rows.length ? rows.map((row, index) => <TableRow key={String(row.chart_id ?? index)} sx={{ contentVisibility: "auto", containIntrinsicSize: "48px" }}>{columns.map((column) => <TableCell key={column}>{formatStatValue(column, row[column])}</TableCell>)}</TableRow>) : !loading ? <TableRow><TableCell colSpan={columns.length} align="center">暂无数据</TableCell></TableRow> : null}</TableBody></Table></TableContainer>{footer}</Paper>;
+}
+
+function formatStatValue(key: string, value: unknown): ReactNode { if (value === null || value === undefined) return "-"; if ((key === "accuracy" || key === "being_guessed_probability") && typeof value === "number") return `${value}%`; if (key === "is_correct") return value ? <Chip size="small" color="success" label="正确" /> : <Chip size="small" variant="outlined" label="错误" />; if (typeof value === "object") { const user = value as { user_code?: string; display_name?: string }; return user.display_name || user.user_code || "-"; } return String(value); }

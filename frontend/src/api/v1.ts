@@ -60,7 +60,8 @@ export interface EventUpdatePayload {
   participant_song_limit: number;
   audience_song_limit: number;
   draw_songs_per_participant: number;
-  true_love_vote_limit: number;
+  true_love_vote_limit_below_14: number;
+  true_love_vote_limit_at_least_14: number;
   funny_vote_limit: number;
   announcement_text: string;
   registration_deadline?: string | null;
@@ -212,6 +213,7 @@ export interface GuessChartRead {
   love_votes: number;
   funny_votes: number;
   my_votes: string[];
+  love_vote_bucket: LoveVoteBucket;
   track_duration_seconds?: number | null;
   is_long_track?: boolean;
   can_download?: boolean;
@@ -296,7 +298,34 @@ export interface GuessStats {
   user_stats: Array<Record<string, unknown>>;
   candidate_stats: Array<Record<string, unknown>>;
   author_stats: Array<Record<string, unknown>>;
-  guess_details: Array<Record<string, unknown>>;
+  guess_details?: Array<Record<string, unknown>>;
+}
+
+export interface GuessStatsDetails {
+  items: Array<Record<string, unknown>>;
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface VoteMutationResponse {
+  message: string;
+  vote_counts?: { love: number; funny: number };
+  my_votes?: string[];
+  love_vote_quota?: LoveVoteQuotaRead;
+}
+
+export type LoveVoteBucket = "below_14" | "at_least_14";
+
+export interface LoveVoteQuotaTier {
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+export interface LoveVoteQuotaRead {
+  below_14: LoveVoteQuotaTier;
+  at_least_14: LoveVoteQuotaTier;
 }
 
 const API_PREFIX = "/api/v1";
@@ -366,7 +395,6 @@ function submissionForm(file: File, songId?: number, track?: Track): FormData {
 
 export const api = {
   bootstrap: () => apiRequest<BootstrapRead>("/bootstrap"),
-  me: () => apiRequest<{ user: UserRead }>("/auth/me"),
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
   register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
   logout: () => apiRequest<{ message: string }>("/auth/logout", { method: "POST" }),
@@ -378,11 +406,11 @@ export const api = {
   updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),
   guessAvailability: () => apiRequest<GuessAvailabilityRead>("/guess-game/availability"),
 
-  mySongs: () => apiRequest<SongRead[]>("/song-pool/me"),
+  mySongs: (signal?: AbortSignal) => apiRequest<SongRead[]>("/song-pool/me", { signal }),
   createSong: (payload: SongPayload) => apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),
   updateMySong: (id: number, payload: SongPayload) => apiRequest<SongRead>(`/song-pool/me/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteSong: (id: number) => apiRequest<{ message: string }>(`/song-pool/me/${id}`, { method: "DELETE" }),
-  adminSongs: () => apiRequest<SongRead[]>("/admin/song-pool"),
+  adminSongs: (signal?: AbortSignal) => apiRequest<SongRead[]>("/admin/song-pool", { signal }),
   updateSong: (id: number, payload: SongPayload) => apiRequest<SongRead>(`/admin/song-pool/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteAdminSong: (id: number) => apiRequest<{ message: string }>(`/admin/song-pool/${id}`, { method: "DELETE" }),
   batchDeleteAdminSongs: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/song-pool/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
@@ -393,26 +421,26 @@ export const api = {
     return apiRequest<{ message: string; updated: number }>("/admin/song-pool/import.csv", { method: "POST", body: form });
   },
 
-  myDraw: () => apiRequest<DrawAssignmentRead[]>("/draw/results"),
+  myDraw: (signal?: AbortSignal) => apiRequest<DrawAssignmentRead[]>("/draw/results", { signal }),
   drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
   runDraw: () => apiRequest<DrawAssignmentRead[]>("/admin/draw", { method: "POST" }),
-  adminDrawResults: () => apiRequest<DrawAssignmentRead[]>("/admin/draw/results"),
-  mySwap: () => apiRequest<SwapMeRead>("/swap/me"),
+  adminDrawResults: (signal?: AbortSignal) => apiRequest<DrawAssignmentRead[]>("/admin/draw/results", { signal }),
+  mySwap: (signal?: AbortSignal) => apiRequest<SwapMeRead>("/swap/me", { signal }),
   updateMySwap: (assignment_ids: number[]) => apiRequest<SwapMeRead>("/swap/me", { method: "PUT", body: JSON.stringify({ assignment_ids }) }),
   cancelMySwap: () => apiRequest<SwapMeRead>("/swap/me", { method: "DELETE" }),
   validateSwaps: () => apiRequest<SwapValidationRead>("/admin/swap/validate", { method: "POST" }),
   finalizeSwaps: () => apiRequest<SwapAuditRead>("/admin/swap/finalize", { method: "POST" }),
   rejectSwapRequest: (requestId: number) => apiRequest<SwapAuditRead>(`/admin/swap/requests/${requestId}/reject`, { method: "POST" }),
-  swapAudit: () => apiRequest<SwapAuditRead>("/admin/swap/audit"),
+  swapAudit: (signal?: AbortSignal) => apiRequest<SwapAuditRead>("/admin/swap/audit", { signal }),
 
-  submissionTargets: () => apiRequest<SubmissionTargetsResponse>("/submissions/targets"),
-  mySubmissions: () => apiRequest<StoredFileRead[]>("/submissions"),
+  submissionTargets: (signal?: AbortSignal) => apiRequest<SubmissionTargetsResponse>("/submissions/targets", { signal }),
+  mySubmissions: (signal?: AbortSignal) => apiRequest<StoredFileRead[]>("/submissions", { signal }),
   uploadSubmission: (songId: number, track: Track, file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track) }),
   uploadExhibition: (file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, undefined, "exhibition") }),
   replaceSubmission: (id: number, track: Track, file: File) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
-  adminSubmissions: (track?: Track | "all") => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`),
+  adminSubmissions: (track?: Track | "all", signal?: AbortSignal) => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`, { signal }),
   replaceAdminSubmission: (id: number, file: File, track?: Track) => apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
   batchDeleteAdminSubmissions: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/submissions/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
@@ -424,22 +452,23 @@ export const api = {
     return downloadPrepared(`/admin/submissions/download-metadata${params.size ? `?${params}` : ""}`);
   },
 
-  guessCharts: () => apiRequest<GuessChartRead[]>("/guess-game/charts"),
+  guessCharts: (signal?: AbortSignal) => apiRequest<GuessChartRead[]>("/guess-game/charts", { signal }),
+  loveVoteQuota: (signal?: AbortSignal) => apiRequest<LoveVoteQuotaRead>("/guess-game/vote-quota", { signal }),
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
   downloadChart: (id: number) => downloadPrepared(`/guess-game/charts/${id}/download-metadata`),
   downloadCharts: (ids: number[]) => downloadPrepared(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`),
-  vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
-  unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<{ message: string }>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),
+  vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
+  unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),
   comments: (chartId: number) => apiRequest<GuessCommentRead[]>(`/guess-game/charts/${chartId}/comments`),
   createComment: (chartId: number, content: string) => apiRequest<GuessCommentRead>(`/guess-game/charts/${chartId}/comments`, { method: "POST", body: JSON.stringify({ content }) }),
   authorGuess: (chartId: number) => apiRequest<AuthorGuessState>(`/guess-game/charts/${chartId}/author-guess`),
   saveAuthorGuess: (chartId: number, guessed_user_id: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/author-guess`, { method: "PUT", body: JSON.stringify({ guessed_user_id }) }),
   clearAuthorGuess: (chartId: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/author-guess`, { method: "DELETE" }),
-  designerGuesses: () => apiRequest<DesignerGuessOverview>("/guess-game/designer-guesses"),
+  designerGuesses: (signal?: AbortSignal) => apiRequest<DesignerGuessOverview>("/guess-game/designer-guesses", { signal }),
   saveDesignerGuess: (chartId: number, guessed_user_id: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/designer-guess`, { method: "PUT", body: JSON.stringify({ guessed_user_id }) }),
   clearDesignerGuess: (chartId: number) => apiRequest<{ message: string }>(`/guess-game/charts/${chartId}/designer-guess`, { method: "DELETE" }),
 
-  adminCharts: () => apiRequest<GuessChartRead[]>("/admin/guess-game/charts"),
+  adminCharts: (signal?: AbortSignal) => apiRequest<GuessChartRead[]>("/admin/guess-game/charts", { signal }),
   importCharts: (file: File) => {
     const form = new FormData();
     form.set("file", file);
@@ -449,14 +478,15 @@ export const api = {
   deleteChart: (id: number) => apiRequest<{ message: string }>(`/admin/guess-game/charts/${id}`, { method: "DELETE" }),
   batchDeleteAdminCharts: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/guess-game/charts/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   parseSubmissions: () => apiRequest<GuessImportSummary>("/admin/guess-game/parse-submissions", { method: "POST" }),
-  importIssues: () => apiRequest<GuessImportIssueRead[]>("/admin/guess-game/import-issues"),
-  authorCandidates: () => apiRequest<AuthorCandidateAdmin[]>("/admin/guess-game/author-candidates"),
+  importIssues: (signal?: AbortSignal) => apiRequest<GuessImportIssueRead[]>("/admin/guess-game/import-issues", { signal }),
+  authorCandidates: (signal?: AbortSignal) => apiRequest<AuthorCandidateAdmin[]>("/admin/guess-game/author-candidates", { signal }),
   saveAuthorCandidates: (rows: Array<{ user_id: number; display_id: string }>) => apiRequest<{ message: string; count: number }>("/admin/guess-game/author-candidates", { method: "PUT", body: JSON.stringify({ rows }) }),
-  guessStats: (scope: "all" | "j") => apiRequest<GuessStats>(`/admin/guess-game/stats?scope=${scope}`),
+  guessStats: (scope: "all" | "j", includeDetails = true, signal?: AbortSignal) => apiRequest<GuessStats>(`/admin/guess-game/stats?scope=${scope}&include_details=${includeDetails}`, { signal }),
+  guessStatsDetails: (scope: "all" | "j", limit = 50, offset = 0, signal?: AbortSignal) => apiRequest<GuessStatsDetails>(`/admin/guess-game/stats/details?scope=${scope}&limit=${limit}&offset=${offset}`, { signal }),
 
-  users: () => apiRequest<UserRead[]>("/admin/users"),
+  users: (signal?: AbortSignal) => apiRequest<UserRead[]>("/admin/users", { signal }),
   updateUser: (id: number, payload: { identity: string; roles: string[]; display_name: string; is_active: boolean }) => apiRequest<UserRead>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  siteStats: () => apiRequest<Record<string, number>>("/admin/stats"),
+  siteStats: (signal?: AbortSignal) => apiRequest<Record<string, number>>("/admin/stats", { signal }),
 };
 
 export function formatMB(size: number): string {

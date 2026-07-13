@@ -25,6 +25,11 @@ services:
       ADMIN_SEED_PASSWORD: change-me-please
       CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000
       SECURE_COOKIES: "false"
+      WEB_CONCURRENCY: "2"
+      DB_POOL_SIZE: "5"
+      DB_MAX_OVERFLOW: "5"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
     volumes:
       - zppz-data:/data
     depends_on:
@@ -49,4 +54,3 @@ services:
 volumes:
   postgres-data:
   zppz-data:
-

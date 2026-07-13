@@ -11,17 +11,20 @@ from app.schemas import EventPhasesUpdate, EventUpdate
 
 
 def get_current_event(db: Session) -> Event:
-    event = db.scalar(
-        select(Event)
-        .options(joinedload(Event.settings), selectinload(Event.phases))
-        .where(Event.is_current.is_(True))
-    )
+    event = db.info.get("current_event")
+    if event is None:
+        event = db.scalar(
+            select(Event)
+            .options(joinedload(Event.settings), selectinload(Event.phases))
+            .where(Event.is_current.is_(True))
+        )
     if not event:
         event = Event(name="这谱谱这正赛", slug="zppz-current", is_current=True)
         event.settings = EventSetting()
         db.add(event)
         db.commit()
         db.refresh(event)
+    db.info["current_event"] = event
     if not event.settings:
         event.settings = EventSetting(event_id=event.id)
         db.commit()
@@ -83,7 +86,8 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     settings.participant_song_limit = payload.participant_song_limit
     settings.audience_song_limit = payload.audience_song_limit
     settings.draw_songs_per_participant = payload.draw_songs_per_participant
-    settings.true_love_vote_limit = payload.true_love_vote_limit
+    settings.true_love_vote_limit_below_14 = payload.true_love_vote_limit_below_14
+    settings.true_love_vote_limit_at_least_14 = payload.true_love_vote_limit_at_least_14
     settings.funny_vote_limit = payload.funny_vote_limit
     settings.announcement_text = payload.announcement_text
     settings.registration_deadline = payload.registration_deadline

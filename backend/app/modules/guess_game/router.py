@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-import re
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
 from app.core.security import get_current_user, get_optional_user, require_role, user_payload
@@ -20,13 +20,19 @@ from app.models import (
     GuessChart,
     GuessComment,
     ImportIssue,
-    JTrackSubmission,
     Song,
     Submission,
     User,
 )
 from app.modules.common import serialize_chart, serialize_charts
-from app.modules.downloads import DownloadEntry, PreparedZip, file_download_response, prepare_streaming_zip
+from app.modules.downloads import (
+    DownloadEntry,
+    PreparedZip,
+    file_download_response,
+    parse_csv_ids,
+    prepare_streaming_zip,
+    safe_download_name,
+)
 from app.modules.events.service import get_current_event
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.guess_game.importer import (
@@ -36,8 +42,9 @@ from app.modules.guess_game.importer import (
     rebuild_event_charts,
     sync_parsed_source,
 )
-from app.modules.guess_game.service import list_comments, put_vote, remove_vote, set_author_candidates
-from app.modules.guess_game.stats import build_guess_stats
+from app.modules.guess_game.service import list_comments, put_vote, remove_vote, set_author_candidates, vote_state
+from app.modules.guess_game.stats import build_guess_details, build_guess_stats
+from app.modules.guess_game.vote_quota import love_vote_quota
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
 from app.schemas import (
     AuthorCandidatesUpdate,
@@ -52,6 +59,7 @@ from app.schemas import (
     AdminGuessChartRead,
     GuessCommentRead,
     GuessAvailabilityRead,
+    LoveVoteQuotaRead,
     VoteRequest,
 )
 
@@ -160,7 +168,14 @@ def _select_chart_downloads(
     event_id: int,
     ids: str,
 ) -> tuple[list[GuessChart], list[int], list[int]]:
-    chart_ids = _parse_ids(ids)
+    chart_ids = parse_csv_ids(
+        ids,
+        required=True,
+        max_items=MAX_BATCH_FILES,
+        empty_detail="请至少选择一张谱面",
+        limit_detail=f"一次最多选择 {MAX_BATCH_FILES} 张谱面",
+    )
+    assert chart_ids is not None
     phase_status = get_phase_status(db)
     rows = list(
         db.scalars(
@@ -185,7 +200,7 @@ def download_chart(chart_id: int, db: Session = Depends(get_db)):
     path, file_name, _ = source
     if not path.is_file():
         raise HTTPException(status_code=404, detail="投稿文件不存在")
-    return file_download_response(path, _safe_zip_name(f"{chart.title}_{chart.level}_{file_name}", file_name))
+    return file_download_response(path, safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name))
 
 
 @router.get("/charts/{chart_id}/download-metadata", response_model=DownloadPreparation)
@@ -200,7 +215,7 @@ def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dic
     path, file_name, _ = source
     if not path.is_file():
         raise HTTPException(status_code=404, detail="投稿文件不存在")
-    download_name = _safe_zip_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
+    download_name = safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
     return {
         "download_url": f"{get_settings().api_prefix}/guess-game/charts/{chart_id}/download",
         "file_name": download_name,
@@ -240,7 +255,14 @@ def chart_detail(chart_id: int, user: User | None = Depends(get_optional_user), 
     chart = _visible_chart(db, event, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
-    chart.plays += 1
+    plays = db.execute(
+        update(GuessChart)
+        .where(GuessChart.id == chart.id)
+        .values(plays=GuessChart.plays + 1)
+        .returning(GuessChart.plays)
+        .execution_options(synchronize_session=False)
+    ).scalar_one()
+    set_committed_value(chart, "plays", int(plays))
     db.commit()
     return _public_chart_payloads(
         db,
@@ -250,6 +272,12 @@ def chart_detail(chart_id: int, user: User | None = Depends(get_optional_user), 
     )[0]
 
 
+@router.get("/vote-quota", response_model=LoveVoteQuotaRead)
+def vote_quota(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    event = get_current_event(db)
+    return love_vote_quota(db, user.id, event)
+
+
 @router.post("/vote")
 def vote(payload: VoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
@@ -257,7 +285,7 @@ def vote(payload: VoteRequest, user: User = Depends(get_current_user), db: Sessi
     chart = _visible_chart(db, event, payload.chart_id)
     _require_quality_voteable_chart(chart)
     put_vote(db, user.id, payload.chart_id, payload.vote_type)
-    return {"message": "已投票"}
+    return {"message": "已投票", **vote_state(db, user.id, payload.chart_id)}
 
 
 @router.delete("/vote")
@@ -267,7 +295,7 @@ def unvote(payload: VoteRequest, user: User = Depends(get_current_user), db: Ses
     chart = _visible_chart(db, event, payload.chart_id)
     _require_quality_voteable_chart(chart)
     remove_vote(db, user.id, payload.chart_id, payload.vote_type)
-    return {"message": "已取消投票"}
+    return {"message": "已取消投票", **vote_state(db, user.id, payload.chart_id)}
 
 
 @router.get("/charts/{chart_id}/comments", response_model=list[GuessCommentRead])
@@ -682,10 +710,22 @@ def admin_update_author_candidates(
 @admin_router.get("/stats")
 def admin_stats(
     scope: str = Query("all"),
+    include_details: bool = Query(True),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:
-    return build_guess_stats(db, scope)
+    return build_guess_stats(db, scope, include_details=include_details)
+
+
+@admin_router.get("/stats/details")
+def admin_stats_details(
+    scope: str = Query("all"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    return build_guess_details(db, scope, limit=limit, offset=offset)
 
 
 def _group_chart_ids(db: Session, chart: GuessChart) -> list[int]:
@@ -763,23 +803,6 @@ def _resolve_archive(db: Session, chart: GuessChart) -> tuple[Path, str, tuple[s
     return None
 
 
-def _parse_ids(value: str) -> list[int]:
-    try:
-        ids = list(dict.fromkeys(int(item.strip()) for item in value.split(",") if item.strip()))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="ids 必须是逗号分隔的数字") from exc
-    if not ids:
-        raise HTTPException(status_code=400, detail="请至少选择一张谱面")
-    if len(ids) > MAX_BATCH_FILES:
-        raise HTTPException(status_code=413, detail=f"一次最多选择 {MAX_BATCH_FILES} 张谱面")
-    return ids
-
-
-def _safe_zip_name(value: str, fallback: str) -> str:
-    cleaned = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", value).strip(" .")
-    return cleaned[:180] or fallback
-
-
 def _prepare_chart_zip(
     db: Session,
     charts: list[GuessChart],
@@ -812,7 +835,7 @@ def _prepare_chart_zip(
     entries: list[DownloadEntry] = []
     used_names: set[str] = set()
     for chart, path, file_name in selected:
-        base = _safe_zip_name(
+        base = safe_download_name(
             f"{chart.id}_{chart.title}_{chart.level}_{file_name}",
             f"chart_{chart.id}{path.suffix}",
         )

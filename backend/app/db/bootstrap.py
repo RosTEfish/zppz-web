@@ -4,6 +4,8 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -78,6 +80,23 @@ def upgrade_schema() -> None:
     config.set_main_option("script_location", str(backend_root / "alembic"))
     config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
     command.upgrade(config, "head")
+
+
+def check_schema_current() -> None:
+    """Fail fast when a deployed database was not prepared for this release."""
+    if get_settings().database_url.endswith(":memory:"):
+        return
+    backend_root = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    expected = ScriptDirectory.from_config(config).get_current_head()
+    with engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+    if current != expected:
+        raise RuntimeError(
+            f"database schema is not prepared (current={current or 'none'}, expected={expected}); "
+            "run `python -m app.prepare` before starting the service"
+        )
 
 
 def seed_defaults(db: Session) -> None:

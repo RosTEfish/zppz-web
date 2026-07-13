@@ -5,7 +5,7 @@ from datetime import datetime
 import random
 from secrets import token_hex
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -295,7 +295,6 @@ def _build_plan(db: Session, round_row: SwapRound) -> SwapPlan:
     randomizer = random.Random(round_row.random_seed)
     candidates: dict[int, list[int]] = {}
     for slot_index, item in enumerate(slot_items):
-        original = active_by_id[item.original_assignment_id]
         user_id = user_by_request[item.request_id]
         choices = [
             song.id

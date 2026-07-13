@@ -14,7 +14,7 @@ from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
-from app.modules.guess_game.importer import ArchiveParseError, parse_archive
+from app.modules.guess_game.importer import ArchiveParseError, parse_archive, write_public_package
 
 
 @pytest.fixture(autouse=True)
@@ -147,6 +147,58 @@ def test_parser_reads_only_required_7z_members(tmp_path: Path):
     assert [(level.slot, level.level) for level in parsed.levels] == [("4", "13+")]
     assert parsed.cover_suffix == ".jpg"
     assert parsed.cover_bytes == b"cover"
+
+
+def test_public_package_uses_member_references_and_preserves_selected_files(tmp_path: Path):
+    path = tmp_path / "streamed.zip"
+    with ZipFile(path, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "nested/maidata.txt",
+            "&title=Streamed\n&artist=Artist\n&des=Designer\n&lv_4=13\n&inote_4=(120){1},",
+        )
+        archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
+        archive.writestr("nested/bg.png", b"cover")
+        archive.writestr("nested/mv.mp4", b"video-payload")
+
+    parsed = parse_archive(path)
+    assert parsed.archive_path == path
+    assert [(item.output_name, item.member_name) for item in parsed.public_files] == [
+        ("maidata.txt", "nested/maidata.txt"),
+        ("track.mp3", "nested/track.mp3"),
+        ("bg.png", "nested/bg.png"),
+        ("mv.mp4", "nested/mv.mp4"),
+    ]
+
+    relative = write_public_package(1, 1, parsed)
+    with ZipFile(get_settings().data_dir / relative) as archive:
+        assert archive.read("mv.mp4") == b"video-payload"
+        assert b"&des=Designer" in archive.read("maidata.txt")
+
+
+def test_public_package_reopens_zip_members_with_backslash_names(tmp_path: Path):
+    path = tmp_path / "backslash-members.zip"
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "nested/maidata.txt",
+            "&title=Backslash\n&artist=Artist\n&lv_4=13\n&inote_4=(120){1},",
+        )
+        archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
+        archive.writestr("nested/bg.png", b"cover")
+    # Python normalizes names written on Windows. Patch both local and central
+    # directory records to exercise archives produced by tools that keep '\\'.
+    path.write_bytes(buffer.getvalue().replace(b"nested/", b"nested\\"))
+
+    parsed = parse_archive(path)
+    assert [item.member_name for item in parsed.public_files] == [
+        "nested\\maidata.txt",
+        "nested\\track.mp3",
+        "nested\\bg.png",
+    ]
+    relative = write_public_package(1, 2, parsed)
+    with ZipFile(get_settings().data_dir / relative) as archive:
+        assert archive.namelist() == ["maidata.txt", "track.mp3", "bg.png"]
+        assert archive.read("bg.png") == b"cover"
 
 
 def test_upload_creates_charts_and_serves_cover(client: TestClient):

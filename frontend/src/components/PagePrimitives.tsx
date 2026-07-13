@@ -1,4 +1,4 @@
-import { type DependencyList, type Dispatch, type ReactNode, type SetStateAction, useCallback, useEffect, useState } from "react";
+import { type DependencyList, type Dispatch, type ReactNode, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 import type { LucideIcon } from "lucide-react";
 
@@ -9,31 +9,53 @@ export type Resource<T> = {
   error: string;
   reload: () => Promise<T | null>;
   setData: Dispatch<SetStateAction<T | null>>;
+  updateData: (updater: (current: T) => T) => void;
 };
 
 
-export function useResource<T>(loader: () => Promise<T>, dependencies: DependencyList): Resource<T> {
+export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>, dependencies: DependencyList, enabled = true): Resource<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const requestSequenceRef = useRef(0);
   const reload = useCallback(async () => {
+    requestRef.current?.controller.abort();
+    const request = { id: ++requestSequenceRef.current, controller: new AbortController() };
+    requestRef.current = request;
     setLoading(true);
     setError("");
     try {
-      const result = await loader();
+      const result = await loader(request.controller.signal);
+      if (requestRef.current?.id !== request.id) return null;
       setData(result);
       return result;
     } catch (err) {
+      if (request.controller.signal.aborted || requestRef.current?.id !== request.id) return null;
       setError(err instanceof Error ? err.message : "加载失败");
       return null;
     } finally {
-      setLoading(false);
+      if (requestRef.current?.id === request.id) setLoading(false);
     }
   }, dependencies);
   useEffect(() => {
+    if (!enabled) {
+      requestRef.current?.controller.abort();
+      requestRef.current = null;
+      setLoading(false);
+      setError("");
+      return;
+    }
     void reload();
-  }, [reload]);
-  return { data, loading, error, reload, setData };
+    return () => {
+      requestRef.current?.controller.abort();
+      requestRef.current = null;
+    };
+  }, [enabled, reload]);
+  const updateData = useCallback((updater: (current: T) => T) => {
+    setData((current) => current === null ? current : updater(current));
+  }, []);
+  return { data, loading, error, reload, setData, updateData };
 }
 
 

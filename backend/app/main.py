@@ -1,14 +1,16 @@
+from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
+from time import perf_counter
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.db.bootstrap import backfill_guess_chart_metadata, create_schema, seed_defaults, upgrade_schema
-from app.db.session import SessionLocal
+from app.db.bootstrap import check_schema_current
 from app.modules.admin.router import router as admin_router
 from app.modules.assets.router import router as assets_router
 from app.modules.auth.router import router as auth_router
@@ -23,14 +25,27 @@ from app.modules.song_pool.router import admin_router as admin_song_pool_router
 from app.modules.song_pool.router import router as song_pool_router
 from app.modules.submissions.router import admin_router as admin_submissions_router
 from app.modules.submissions.router import router as submissions_router
-from app.modules.submissions.service import copy_asset_from_repo
 from app.modules.swap.router import admin_router as admin_swap_router
 from app.modules.swap.router import router as swap_router
 from app.modules.users.router import router as users_router
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="2.0.0", openapi_url=f"{settings.api_prefix}/openapi.json")
+logger = logging.getLogger("app.requests")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    check_schema_current()
+    yield
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version="2.0.0",
+    openapi_url=f"{settings.api_prefix}/openapi.json",
+    lifespan=lifespan,
+)
 
 app.add_middleware(GZipMiddleware, minimum_size=512, compresslevel=5)
 
@@ -53,20 +68,26 @@ class CachedStaticFiles(StaticFiles):
         return response
 
 
-@app.on_event("startup")
-def startup() -> None:
-    upgrade_schema()
-    create_schema()
-    with SessionLocal() as db:
-        seed_defaults(db)
-        backfill_guess_chart_metadata(db)
-    repo_root = Path(__file__).resolve().parents[2]
-    for file in (repo_root / "ruleDetail").glob("*.pdf"):
-        copy_asset_from_repo(file, "rules")
-    for file in (repo_root / "banlist").glob("*.*"):
-        copy_asset_from_repo(file, "banlists")
-    for file in (repo_root / "bg").glob("*.*"):
-        copy_asset_from_repo(file, "backgrounds")
+@app.middleware("http")
+async def log_slow_requests(request: Request, call_next):
+    started = perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        elapsed_ms = (perf_counter() - started) * 1000
+        if elapsed_ms >= settings.slow_request_ms:
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", request.url.path)
+            logger.warning(
+                "slow_request method=%s route=%s status=%s duration_ms=%.1f",
+                request.method,
+                route_path,
+                status_code,
+                elapsed_ms,
+            )
 
 
 @app.get("/health")

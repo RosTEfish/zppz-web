@@ -1,53 +1,16 @@
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, EventPhasesRead, EventRead } from "../api/v1";
-
-interface AppConfig {
-  current_event: string;
-  event_switched_at?: string | null;
-  role_song_limits: { participant: number; audience: number };
-  allow_duplicate_registration?: boolean;
-  allow_redraw?: boolean;
-  draw_songs_per_participant: number;
-  true_love_vote_limit?: number;
-  funny_vote_limit?: number;
-  guess_game_open_at?: string | null;
-  announcement_text: string;
-  max_upload_mb?: number;
-  allowed_extensions?: string[];
-  registration_deadline?: string | null;
-  submission_deadline?: string | null;
-  submissions_open: boolean;
-}
 
 interface ConfigContextType {
   event: EventRead | null;
   phases: EventPhasesRead | null;
   guessGameAvailable: boolean;
-  config: AppConfig | null;
   refreshConfig: () => Promise<void>;
+  refreshGuessAvailability: () => Promise<void>;
   loading: boolean;
 }
 
 const ConfigContext = createContext<ConfigContextType | null>(null);
-
-function toConfig(event: EventRead | null): AppConfig | null {
-  if (!event) return null;
-  return {
-    current_event: event.name,
-    role_song_limits: {
-      participant: event.settings.participant_song_limit,
-      audience: event.settings.audience_song_limit,
-    },
-    draw_songs_per_participant: event.settings.draw_songs_per_participant,
-    true_love_vote_limit: event.settings.true_love_vote_limit,
-    funny_vote_limit: event.settings.funny_vote_limit,
-    guess_game_open_at: event.settings.guess_game_open_at,
-    announcement_text: event.settings.announcement_text,
-    registration_deadline: event.settings.registration_deadline,
-    submission_deadline: event.settings.submission_deadline,
-    submissions_open: event.settings.submissions_open,
-  };
-}
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [event, setEvent] = useState<EventRead | null>(null);
@@ -55,6 +18,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [guessGameAvailable, setGuessGameAvailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
+
+  const refreshGuessAvailability = useCallback(async () => {
+    const availability = await api.guessAvailability().catch(() => ({ available: false }));
+    setGuessGameAvailable(availability.available);
+  }, []);
 
   const refreshConfig = useCallback(async () => {
     if (inFlightRef.current) return inFlightRef.current;
@@ -93,7 +61,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const value = useMemo(() => ({ event, phases, guessGameAvailable, config: toConfig(event), refreshConfig, loading }), [event, phases, guessGameAvailable, loading, refreshConfig]);
+  const value = useMemo(() => ({ event, phases, guessGameAvailable, refreshConfig, refreshGuessAvailability, loading }), [event, phases, guessGameAvailable, loading, refreshConfig, refreshGuessAvailability]);
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 }
 

@@ -16,4 +16,4 @@ COPY banlist /app/banlist
 COPY ruleDetail /app/ruleDetail
 
 WORKDIR /app/backend
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python -m app.prepare && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1}"]

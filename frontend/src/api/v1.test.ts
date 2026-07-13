@@ -22,6 +22,20 @@ describe("v1 API helpers", () => {
     expect(formatDuration(null)).toBe("--:--");
   });
 
+  it("deduplicates concurrent bootstrap requests", async () => {
+    let resolveResponse: ((response: Response) => void) | undefined;
+    const response = new Promise<Response>((resolve) => { resolveResponse = resolve; });
+    const fetchMock = vi.fn(() => response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = api.bootstrap();
+    const second = api.bootstrap();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveResponse?.(new Response(JSON.stringify({ event: {}, user: null }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
+
   it("prepares large downloads and starts a native browser download", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       download_url: "/api/v1/guess-game/charts/7/download",

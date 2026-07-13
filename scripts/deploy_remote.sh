@@ -8,6 +8,7 @@ SERVICE_NAME="${SERVICE_NAME:-zppz-web}"
 APP_PORT="${APP_PORT:-8000}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
+WEB_CONCURRENCY="${WEB_CONCURRENCY:-1}"
 RUN_USER="${RUN_USER:-$(id -un)}"
 RUN_GROUP="${RUN_GROUP:-$(id -gn)}"
 
@@ -40,7 +41,18 @@ ADMIN_SEED_CODE=admin
 ADMIN_SEED_PASSWORD=change-me-please
 MAX_UPLOAD_MB=100
 ALLOWED_EXTENSIONS=zip,7z,rar
+WEB_CONCURRENCY=$WEB_CONCURRENCY
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=5
+DB_POOL_TIMEOUT=30
+DB_POOL_RECYCLE=1800
+SLOW_REQUEST_MS=500
 EOF
+fi
+
+configured_workers="$(sed -n 's/^WEB_CONCURRENCY=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
+if [[ "$configured_workers" =~ ^[1-9][0-9]*$ ]]; then
+  WEB_CONCURRENCY="$configured_workers"
 fi
 
 rm -rf "$release_dir"
@@ -96,7 +108,18 @@ mkdir -p "$app_dir/data/uploads" "$app_dir/data/assets"
 PIP_CACHE_DIR="$pip_cache_dir" "$venv_dir/bin/pip" install --disable-pip-version-check -r "$app_dir/backend/requirements.txt"
 "$venv_dir/bin/python" -m uvicorn --version
 service_workdir="$app_dir/backend"
-service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT"
+service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT --workers $WEB_CONCURRENCY"
+
+# Run write-producing database preparation exactly once per deployment, before
+# the service master and its workers are started.
+(
+  set -a
+  # shellcheck disable=SC1090
+  source "$env_file"
+  set +a
+  cd "$service_workdir"
+  "$venv_dir/bin/python" -m app.prepare
+)
 
 service_file="/etc/systemd/system/$SERVICE_NAME.service"
 sudo -n tee "$service_file" >/dev/null <<EOF

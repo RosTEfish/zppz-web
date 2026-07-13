@@ -171,12 +171,12 @@ def export_songs(_: User = Depends(require_role("admin", "pool_editor")), db: Se
 
 
 @admin_router.post("/import.csv")
-async def import_songs(
+def import_songs(
     file: UploadFile = File(...),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:
-    raw = await file.read()
+    raw = file.file.read()
     text = _decode_csv(raw)
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:

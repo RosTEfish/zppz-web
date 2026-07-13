@@ -57,7 +57,8 @@ class EventSettingsRead(BaseModel):
     participant_song_limit: int
     audience_song_limit: int
     draw_songs_per_participant: int
-    true_love_vote_limit: int
+    true_love_vote_limit_below_14: int
+    true_love_vote_limit_at_least_14: int
     funny_vote_limit: int
     announcement_text: str
     registration_deadline: datetime | None = None
@@ -90,7 +91,8 @@ class EventUpdate(BaseModel):
     participant_song_limit: int = Field(ge=0, le=50)
     audience_song_limit: int = Field(ge=0, le=50)
     draw_songs_per_participant: int = Field(ge=1, le=10)
-    true_love_vote_limit: int = Field(ge=0, le=50)
+    true_love_vote_limit_below_14: int = Field(ge=0, le=50)
+    true_love_vote_limit_at_least_14: int = Field(ge=0, le=50)
     funny_vote_limit: int = Field(ge=0, le=50)
     announcement_text: str = ""
     registration_deadline: datetime | None = None
@@ -322,6 +324,7 @@ class GuessChartRead(BaseModel):
     love_votes: int = 0
     funny_votes: int = 0
     my_votes: list[str] = []
+    love_vote_bucket: Literal["below_14", "at_least_14"]
 
     model_config = {"from_attributes": True}
 
@@ -349,6 +352,7 @@ class PublicGuessChartRead(BaseModel):
     love_votes: int = 0
     funny_votes: int = 0
     my_votes: list[str] = Field(default_factory=list)
+    love_vote_bucket: Literal["below_14", "at_least_14"]
 
     model_config = {"from_attributes": True}
 
@@ -365,6 +369,17 @@ class AdminGuessChartRead(GuessChartRead):
 class VoteRequest(BaseModel):
     chart_id: int
     vote_type: str
+
+
+class LoveVoteQuotaBucketRead(BaseModel):
+    used: int
+    limit: int
+    remaining: int
+
+
+class LoveVoteQuotaRead(BaseModel):
+    below_14: LoveVoteQuotaBucketRead
+    at_least_14: LoveVoteQuotaBucketRead
 
 
 class CommentCreate(BaseModel):

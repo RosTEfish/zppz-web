@@ -1,9 +1,8 @@
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, UserRead } from "../api/v1";
 
 interface AuthContextType {
   user: UserRead | null;
-  token: string;
   isLoggedIn: boolean;
   isAdmin: boolean;
   isPoolEditor: boolean;
@@ -12,7 +11,6 @@ interface AuthContextType {
   logout: () => Promise<void>;
   register: (id: string, qq: string, password: string, identity?: string) => Promise<{ user: UserRead }>;
   changePassword: (oldPassword: string, newPassword: string, confirmPassword?: string) => Promise<unknown>;
-  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -20,15 +18,6 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserRead | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const refreshUser = useCallback(async () => {
-    try {
-      const data = await api.me();
-      setUser(data.user);
-    } catch {
-      setUser(null);
-    }
-  }, []);
 
   useEffect(() => {
     api.bootstrap()
@@ -68,7 +57,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       user,
-      token: "",
       isLoggedIn: Boolean(user),
       isAdmin: Boolean(user?.is_admin),
       isPoolEditor: Boolean(user?.is_pool_editor),
@@ -77,9 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       register,
       changePassword,
-      refreshUser,
     }),
-    [changePassword, loading, login, logout, refreshUser, register, user],
+    [changePassword, loading, login, logout, register, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from urllib.parse import quote
 
+from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from zipstream import ZIP_STORED, ZipStream
 
@@ -13,6 +15,34 @@ DOWNLOAD_HEADERS = {
     "Content-Encoding": "identity",
     "X-Accel-Buffering": "no",
 }
+
+
+def safe_download_name(value: str, fallback: str) -> str:
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", value).strip(" .")
+    return cleaned[:180] or fallback
+
+
+def parse_csv_ids(
+    value: str | None,
+    *,
+    required: bool,
+    max_items: int,
+    empty_detail: str,
+    limit_detail: str,
+) -> list[int] | None:
+    if value is None or not value.strip():
+        if not required:
+            return None
+        raise HTTPException(status_code=400, detail=empty_detail)
+    try:
+        result = list(dict.fromkeys(int(item.strip()) for item in value.split(",") if item.strip()))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="ids 必须是逗号分隔的数字") from exc
+    if not result:
+        raise HTTPException(status_code=400, detail=empty_detail)
+    if len(result) > max_items:
+        raise HTTPException(status_code=413, detail=limit_detail)
+    return result
 
 
 @dataclass(frozen=True)

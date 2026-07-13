@@ -1,36 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import { Megaphone, X } from "lucide-react";
 import { AnnouncementMarkdown } from "./AnnouncementMarkdown";
-
-
-function announcementSignature(markdown: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < markdown.length; index += 1) {
-    hash ^= markdown.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${markdown.length}:${(hash >>> 0).toString(36)}`;
-}
+import { announcementSignature, announcementStorageKey } from "./announcementState";
 
 
 export default function AnnouncementDialog({ eventId, markdown }: { eventId: number; markdown: string }) {
   const content = markdown.trim();
   const signature = useMemo(() => announcementSignature(content), [content]);
-  const storageKey = `zppz:announcement:last-seen:${eventId}`;
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!content) {
-      setOpen(false);
-      return;
-    }
-    try {
-      setOpen(window.localStorage.getItem(storageKey) !== signature);
-    } catch {
-      setOpen(true);
-    }
-  }, [content, signature, storageKey]);
+  const storageKey = announcementStorageKey(eventId);
+  const [open, setOpen] = useState(true);
 
   function acknowledge() {
     try {

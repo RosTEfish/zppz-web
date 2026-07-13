@@ -11,7 +11,8 @@ const eventPayload = {
     participant_song_limit: 5,
     audience_song_limit: 3,
     draw_songs_per_participant: 1,
-    true_love_vote_limit: 3,
+    true_love_vote_limit_below_14: 3,
+    true_love_vote_limit_at_least_14: 2,
     funny_vote_limit: 3,
     announcement_text: "",
     registration_deadline: null,
@@ -269,6 +270,62 @@ describe("Material application shell", () => {
     await waitFor(() => expect(savedBodies).toEqual([{ guessed_user_id: 5 }]));
     await waitFor(() => expect(screen.getAllByRole("combobox", { name: "谱师猜测 同曲" }).every((control) => control.textContent?.includes("P01"))).toBe(true));
     expect(overviewCalls).toBe(1);
+  });
+
+  it("does not request love vote quota for anonymous guess viewers", async () => {
+    window.history.pushState({}, "", "/guess");
+    let quotaCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
+      if (path.endsWith("/guess-game/charts")) return json([]);
+      if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
+      if (path.endsWith("/guess-game/vote-quota")) { quotaCalls += 1; return json({ below_14: { used: 0, limit: 3, remaining: 3 }, at_least_14: { used: 0, limit: 2, remaining: 2 } }); }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("暂无谱面")).toBeInTheDocument();
+    expect(quotaCalls).toBe(0);
+  });
+
+  it("shows split love vote quotas and keeps exhausted selected votes removable", async () => {
+    window.history.pushState({}, "", "/guess");
+    const participant = { id: 9, user_code: "player", qq_id: "9", identity: "participant", display_name: "参赛者", roles: ["participant"], is_admin: false, is_pool_editor: false, is_active: true };
+    const chart = (id: number, title: string, level: string, bucket: "below_14" | "at_least_14", selected: boolean) => ({ id, title, author: "曲师", designer: "谱师", level, lane: "normal", guess_group_key: `group-${id}`, source_submission_type: "normal", source_submission_id: id, source_level_slot: "4", cover_path: "", is_self_selected: false, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: selected ? 1 : 0, funny_votes: 0, my_votes: selected ? ["love"] : [], love_vote_bucket: bucket, can_vote: true, can_comment: false });
+    const low = chart(31, "低难度谱面", "13+", "below_14", false);
+    const high = chart(32, "高难度谱面", "14", "at_least_14", true);
+    let quotaCalls = 0;
+    let voteCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/guess-game/charts")) return json([low, high]);
+      if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
+      if (path.endsWith("/guess-game/vote-quota")) { quotaCalls += 1; return json({ below_14: { used: 3, limit: 3, remaining: 0 }, at_least_14: { used: 1, limit: 1, remaining: 0 } }); }
+      if (path.endsWith("/guess-game/charts/31")) return json({ ...low, plays: 1 });
+      if (path.endsWith("/guess-game/charts/32")) return json({ ...high, plays: 1 });
+      if (path.endsWith("/guess-game/vote") && init?.method === "DELETE") { voteCalls += 1; return json({ message: "已取消投票", vote_counts: { love: 0, funny: 0 }, my_votes: [], love_vote_quota: { below_14: { used: 3, limit: 3, remaining: 0 }, at_least_14: { used: 0, limit: 1, remaining: 1 } } }); }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("14 以下：已用 3/3，剩余 0")).toBeInTheDocument();
+    expect(screen.getByText("14 及以上：已用 1/1，剩余 0")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("低难度谱面"));
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "真爱票 0" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭谱面详情" }));
+
+    fireEvent.click(screen.getByText("高难度谱面"));
+    dialog = await screen.findByRole("dialog");
+    const removeVote = within(dialog).getByRole("button", { name: "真爱票 1" });
+    expect(removeVote).toBeEnabled();
+    fireEvent.click(removeVote);
+    await waitFor(() => expect(voteCalls).toBe(1));
+    expect(await screen.findByText("14 及以上：已用 0/1，剩余 1")).toBeInTheDocument();
+    expect(quotaCalls).toBe(1);
   });
 
   it("allows only one staged J track submission", async () => {
@@ -539,9 +596,13 @@ describe("Material application shell", () => {
     render(<App />);
     expect(await screen.findByRole("link", { name: "猜谱" })).toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "向用户显示猜谱入口" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    expect(await screen.findByRole("spinbutton", { name: "14 以下真爱票上限" })).toHaveValue(3);
+    expect(screen.getByRole("spinbutton", { name: "14 及以上真爱票上限" })).toHaveValue(2);
+    fireEvent.click(await screen.findByRole("button", { name: "保存设置" }));
     await waitFor(() => expect(updates).toHaveLength(1));
     expect(updates[0]).not.toHaveProperty("guess_game_visible");
+    expect(updates[0]).not.toHaveProperty("true_love_vote_limit");
+    expect(updates[0]).toMatchObject({ true_love_vote_limit_below_14: 3, true_love_vote_limit_at_least_14: 2 });
   });
 
   it("requires an exact confirmation before resetting all data and then logs out", async () => {

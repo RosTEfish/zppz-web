@@ -1,4 +1,4 @@
-import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { CircleUserRound, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -6,6 +6,8 @@ import { LoadingBlock } from "./components/PagePrimitives";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
 import beianIcon from "./assets/beian.png";
+import { announcementSignature, shouldShowAnnouncement } from "./components/announcementState";
+import { preloadAdminTab } from "./pages/admin/adminTabLoaders";
 
 const DRAWER_WIDTH = 248;
 
@@ -15,7 +17,14 @@ const loadSongPoolPage = () => import("./pages/SongPoolPage");
 const loadDrawPage = () => import("./pages/DrawPage");
 const loadSubmissionPage = () => import("./pages/SubmissionPage");
 const loadGuessPage = () => import("./pages/GuessPage");
-const loadAdminPage = () => import("./pages/AdminPage");
+const preloadAdminPage = (pathname: string) => Promise.all([
+  import("./pages/AdminPage"),
+  preloadAdminTab(pathname),
+]);
+const loadAdminPage = async () => {
+  const [page] = await preloadAdminPage(window.location.pathname);
+  return page;
+};
 const loadAnnouncementDialog = () => import("./components/AnnouncementDialog");
 
 const HomePage = lazy(loadHomePage);
@@ -48,6 +57,12 @@ function AppShell() {
   const { event, guessGameAvailable } = useConfig();
   const navigate = useNavigate();
   const showGuessEntry = isAdmin || isPoolEditor || guessGameAvailable;
+  const managerPath = isAdmin ? "/admin/overview" : "/admin/songs";
+  const announcement = event?.settings.announcement_text ?? "";
+  const showAnnouncement = useMemo(
+    () => event ? shouldShowAnnouncement(event.id, announcement) : false,
+    [announcement, event?.id],
+  );
 
   useEffect(() => setDrawerOpen(false), [location.pathname]);
 
@@ -72,7 +87,7 @@ function AppShell() {
             <ListItemIcon sx={{ minWidth: 38 }}><Icon size={19} /></ListItemIcon><ListItemText primary={label} />
           </ListItemButton>
         ))}
-        {(isAdmin || isPoolEditor) ? <ListItemButton component={Link} to="/admin/overview" selected={location.pathname.startsWith("/admin")} onPointerEnter={() => void loadAdminPage()} onFocus={() => void loadAdminPage()} sx={{ mt: 1, borderRadius: 1 }}><ListItemIcon sx={{ minWidth: 38 }}><Gauge size={19} /></ListItemIcon><ListItemText primary="管理工作台" /></ListItemButton> : null}
+        {(isAdmin || isPoolEditor) ? <ListItemButton component={Link} to={managerPath} selected={location.pathname.startsWith("/admin")} onPointerEnter={() => void preloadAdminPage(managerPath)} onFocus={() => void preloadAdminPage(managerPath)} sx={{ mt: 1, borderRadius: 1 }}><ListItemIcon sx={{ minWidth: 38 }}><Gauge size={19} /></ListItemIcon><ListItemText primary="管理工作台" /></ListItemButton> : null}
       </List>
       <Box sx={{ flex: 1 }} />
       <Divider />
@@ -104,7 +119,7 @@ function AppShell() {
         </Container>
         <SiteFooter />
       </Box>
-      {event?.settings.announcement_text.trim() ? <Suspense fallback={null}><AnnouncementDialog eventId={event.id} markdown={event.settings.announcement_text} /></Suspense> : null}
+      {event && showAnnouncement ? <Suspense fallback={null}><AnnouncementDialog key={`${event.id}:${announcementSignature(announcement)}`} eventId={event.id} markdown={announcement} /></Suspense> : null}
     </Box>
   );
 }

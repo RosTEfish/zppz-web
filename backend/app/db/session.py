@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -12,11 +13,18 @@ class Base(DeclarativeBase):
 
 
 settings = get_settings()
-engine_kwargs = {"pool_pre_ping": True}
+engine_kwargs: dict[str, Any] = {"pool_pre_ping": True}
 if settings.database_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
     if settings.database_url.endswith(":memory:"):
         engine_kwargs["poolclass"] = StaticPool
+else:
+    engine_kwargs.update(
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout,
+        pool_recycle=settings.db_pool_recycle,
+    )
 
 engine = create_engine(settings.database_url, **engine_kwargs)
 
