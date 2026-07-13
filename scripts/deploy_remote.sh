@@ -65,6 +65,25 @@ if LC_ALL=C grep -q $'\r' "$env_file"; then
   exit 1
 fi
 
+# Older Docker-oriented configurations used /data, which is not writable for
+# the unprivileged user used by native systemd deployments. Keep the persistent
+# environment file aligned with this script's runtime data directory. Only the
+# exact legacy paths are migrated; PostgreSQL and custom database URLs are left
+# untouched.
+configured_data_dir="$(sed -n 's/^DATA_DIR=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
+if [ "$configured_data_dir" = "/data" ]; then
+  echo "Migrating DATA_DIR from /data to $app_dir/data"
+  sed -i "s|^DATA_DIR=.*$|DATA_DIR=$app_dir/data|" "$env_file"
+fi
+
+configured_database_url="$(sed -n 's/^DATABASE_URL=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
+if [[ "$configured_database_url" == sqlite:////data/* ]]; then
+  sqlite_file="${configured_database_url#sqlite:////data/}"
+  migrated_database_url="sqlite:///$app_dir/data/$sqlite_file"
+  echo "Migrating SQLite database path from /data to $app_dir/data"
+  sed -i "s|^DATABASE_URL=.*$|DATABASE_URL=$migrated_database_url|" "$env_file"
+fi
+
 configured_workers="$(sed -n 's/^WEB_CONCURRENCY=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
 if [[ "$configured_workers" =~ ^[1-9][0-9]*$ ]]; then
   WEB_CONCURRENCY="$configured_workers"
@@ -132,6 +151,8 @@ service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --po
   # shellcheck disable=SC1090
   source "$env_file"
   set +a
+  # Match the explicit DATA_DIR override in the generated systemd service.
+  export DATA_DIR="$app_dir/data"
   cd "$service_workdir"
   "$venv_dir/bin/python" -m app.prepare
 )
