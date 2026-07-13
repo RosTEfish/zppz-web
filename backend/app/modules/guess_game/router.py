@@ -6,6 +6,7 @@ import re
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -27,6 +28,7 @@ from app.models import (
 from app.modules.common import serialize_chart, serialize_charts
 from app.modules.downloads import DownloadEntry, PreparedZip, file_download_response, prepare_streaming_zip
 from app.modules.events.service import get_current_event
+from app.modules.events.phase_policy import get_phase_status
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     delete_cover_paths,
@@ -45,7 +47,9 @@ from app.schemas import (
     CommentCreate,
     DownloadPreparation,
     GuessChartCreate,
-    GuessChartRead,
+    PublicGuessChartRead,
+    RevealedGuessChartRead,
+    AdminGuessChartRead,
     GuessCommentRead,
     VoteRequest,
 )
@@ -56,6 +60,57 @@ admin_router = APIRouter(prefix="/admin/guess-game", tags=["admin-guess-game"])
 
 MAX_BATCH_FILES = 500
 MAX_BATCH_SOURCE_BYTES = 10 * 1024 * 1024 * 1024
+
+
+def _is_public_chart(chart: GuessChart, phase_status) -> bool:
+    return chart.source_submission_type in {"j", "exhibition"} or phase_status.can("normal_submission_public")
+
+
+def _visible_chart(db: Session, event, chart_id: int) -> GuessChart:
+    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    if not chart or not _is_public_chart(chart, get_phase_status(db, event)):
+        # Deliberately use 404 so hidden normal submissions cannot be enumerated.
+        raise HTTPException(status_code=404, detail="谱面不存在")
+    return chart
+
+
+def _require_quality_vote_phase(db: Session, event) -> None:
+    if not get_phase_status(db, event).can("quality_vote"):
+        raise HTTPException(status_code=409, detail="当前阶段不能投票或评论")
+
+
+def _require_author_guess(db: Session, event, chart: GuessChart) -> None:
+    if chart.source_submission_type != "normal":
+        raise HTTPException(status_code=403, detail="J 和场外投稿不参与作者竞猜")
+    if not get_phase_status(db, event).can("author_guess"):
+        raise HTTPException(status_code=409, detail="当前阶段不能竞猜作者")
+
+
+def _public_chart_payloads(
+    db: Session,
+    rows: list[GuessChart],
+    user_id: int | None,
+    phase_status,
+) -> list[dict]:
+    payloads = serialize_charts(
+        db,
+        rows,
+        user_id,
+        include_designer=phase_status.can("answers_visible"),
+    )
+    for payload, chart in zip(payloads, rows):
+        payload.update(
+            {
+                "can_download": True,
+                "can_vote": phase_status.can("quality_vote"),
+                "can_comment": phase_status.can("quality_vote"),
+                "can_author_guess": (
+                    chart.source_submission_type == "normal"
+                    and phase_status.can("author_guess")
+                ),
+            }
+        )
+    return payloads
 
 
 @router.get("/charts/download.zip")
@@ -90,12 +145,13 @@ def _select_chart_downloads(
     ids: str,
 ) -> tuple[list[GuessChart], list[int], list[int]]:
     chart_ids = _parse_ids(ids)
+    phase_status = get_phase_status(db)
     rows = list(
         db.scalars(
             select(GuessChart).where(GuessChart.event_id == event_id, GuessChart.id.in_(chart_ids))
         ).all()
     )
-    by_id = {row.id: row for row in rows}
+    by_id = {row.id: row for row in rows if _is_public_chart(row, phase_status)}
     ordered = [by_id[chart_id] for chart_id in chart_ids if chart_id in by_id]
     missing_ids = [chart_id for chart_id in chart_ids if chart_id not in by_id]
     return ordered, missing_ids, chart_ids
@@ -104,7 +160,7 @@ def _select_chart_downloads(
 @router.get("/charts/{chart_id}/download")
 def download_chart(chart_id: int, db: Session = Depends(get_db)):
     event = get_current_event(db)
-    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    chart = _visible_chart(db, event, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
     source = _resolve_archive(db, chart)
@@ -119,7 +175,7 @@ def download_chart(chart_id: int, db: Session = Depends(get_db)):
 @router.get("/charts/{chart_id}/download-metadata", response_model=DownloadPreparation)
 def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
-    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    chart = _visible_chart(db, event, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
     source = _resolve_archive(db, chart)
@@ -136,38 +192,71 @@ def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dic
     }
 
 
-@router.get("/charts", response_model=list[GuessChartRead])
+@router.get("/charts/{chart_id}/cover")
+def chart_cover(chart_id: int, db: Session = Depends(get_db)):
+    event = get_current_event(db)
+    chart = _visible_chart(db, event, chart_id)
+    file_name = Path(chart.cover_path).name
+    file = get_settings().assets_dir / "guess-covers" / file_name
+    if not file_name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=404, detail="谱面封面不存在")
+    return FileResponse(
+        file,
+        headers={"Cache-Control": "public, max-age=300", "Content-Encoding": "identity"},
+    )
+
+
+@router.get("/charts", response_model=list[RevealedGuessChartRead | PublicGuessChartRead])
 def charts(user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
-    rows = db.scalars(select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc())).all()
-    return serialize_charts(db, rows, user.id if user else None)
+    phase_status = get_phase_status(db, event)
+    rows = [
+        row for row in db.scalars(
+            select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc())
+        ).all() if _is_public_chart(row, phase_status)
+    ]
+    return _public_chart_payloads(db, rows, user.id if user else None, phase_status)
 
 
-@router.get("/charts/{chart_id}", response_model=GuessChartRead)
+@router.get("/charts/{chart_id}", response_model=RevealedGuessChartRead | PublicGuessChartRead)
 def chart_detail(chart_id: int, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
-    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    chart = _visible_chart(db, event, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
     chart.plays += 1
     db.commit()
-    return serialize_chart(db, chart, user.id if user else None)
+    return _public_chart_payloads(
+        db,
+        [chart],
+        user.id if user else None,
+        get_phase_status(db, event),
+    )[0]
 
 
 @router.post("/vote")
 def vote(payload: VoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    event = get_current_event(db)
+    _require_quality_vote_phase(db, event)
+    _visible_chart(db, event, payload.chart_id)
     put_vote(db, user.id, payload.chart_id, payload.vote_type)
     return {"message": "已投票"}
 
 
 @router.delete("/vote")
 def unvote(payload: VoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    event = get_current_event(db)
+    _require_quality_vote_phase(db, event)
+    _visible_chart(db, event, payload.chart_id)
     remove_vote(db, user.id, payload.chart_id, payload.vote_type)
     return {"message": "已取消投票"}
 
 
 @router.get("/charts/{chart_id}/comments", response_model=list[GuessCommentRead])
 def comments(chart_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    event = get_current_event(db)
+    _require_quality_vote_phase(db, event)
+    _visible_chart(db, event, chart_id)
     return [
         {"id": item.id, "content": item.content, "user": user_payload(item.user), "created_at": item.created_at}
         for item in list_comments(db, chart_id)
@@ -177,6 +266,8 @@ def comments(chart_id: int, db: Session = Depends(get_db)) -> list[dict]:
 @router.post("/charts/{chart_id}/comments", response_model=GuessCommentRead)
 def create_comment(chart_id: int, payload: CommentCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
+    _require_quality_vote_phase(db, event)
+    _visible_chart(db, event, chart_id)
     if not db.scalar(select(GuessChart.id).where(GuessChart.id == chart_id, GuessChart.event_id == event.id)):
         raise HTTPException(status_code=404, detail="谱面不存在")
     item = GuessComment(chart_id=chart_id, user_id=user.id, content=payload.content)
@@ -193,14 +284,18 @@ def designer_guess_overview(
     db: Session = Depends(get_db),
 ) -> dict:
     event = get_current_event(db)
+    phase_status = get_phase_status(db, event)
+    can_view = bool(user and phase_status.can("author_guess"))
+    if not can_view:
+        # Hidden normal chart IDs are part of the embargo boundary too.
+        return {"can_guess": False, "candidates": [], "states": []}
     charts = list(
         db.scalars(
             select(GuessChart)
-            .where(GuessChart.event_id == event.id)
+            .where(GuessChart.event_id == event.id, GuessChart.source_submission_type == "normal")
             .order_by(GuessChart.id.asc())
         ).all()
     )
-    can_view = bool(user and (user.identity == "participant" or user.has_role("admin") or user.has_role("pool_editor")))
     candidates = _selected_author_candidates(db, event.id) if can_view else []
     guessed_by_group: dict[str, int] = {}
     if user and charts:
@@ -220,7 +315,7 @@ def designer_guess_overview(
             if chart:
                 guessed_by_group[_chart_group_identity(chart)] = row.guessed_user_id
     return {
-        "can_guess": bool(user and user.identity == "participant"),
+        "can_guess": can_view,
         "candidates": [{"user_id": row[0], "display_id": row[1]} for row in candidates],
         "states": [
             {
@@ -240,10 +335,10 @@ def author_guess_state(
     db: Session = Depends(get_db),
 ) -> dict:
     event = get_current_event(db)
-    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    chart = _visible_chart(db, event, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
-    can_view = bool(user and (user.identity == "participant" or user.has_role("admin") or user.has_role("pool_editor")))
+    can_view = bool(user and chart.source_submission_type == "normal" and get_phase_status(db, event).can("author_guess"))
     candidates = _selected_author_candidates(db, event.id) if can_view else []
     group_ids = _group_chart_ids(db, chart)
     current = None
@@ -254,7 +349,7 @@ def author_guess_state(
             .order_by(GuessAuthorGuess.updated_at.desc())
         )
     return {
-        "can_guess": bool(user and user.identity == "participant"),
+        "can_guess": can_view,
         "candidates": [{"user_id": row[0], "display_id": row[1]} for row in candidates],
         "my_guess_user_id": current.guessed_user_id if current else None,
     }
@@ -263,10 +358,9 @@ def author_guess_state(
 @router.put("/charts/{chart_id}/designer-guess")
 @router.put("/charts/{chart_id}/author-guess")
 def put_author_guess(chart_id: int, payload: AuthorGuessRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    if user.identity != "participant":
-        raise HTTPException(status_code=403, detail="仅参赛者可以猜作者")
     event = get_current_event(db)
-    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    chart = _visible_chart(db, event, chart_id)
+    _require_author_guess(db, event, chart)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
     candidate_ids = {row[0] for row in _selected_author_candidates(db, event.id)}
@@ -296,7 +390,8 @@ def put_author_guess(chart_id: int, payload: AuthorGuessRequest, user: User = De
 @router.delete("/charts/{chart_id}/author-guess")
 def delete_author_guess(chart_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
-    chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
+    chart = _visible_chart(db, event, chart_id)
+    _require_author_guess(db, event, chart)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
     group_ids = _group_chart_ids(db, chart)
@@ -310,11 +405,11 @@ def delete_author_guess(chart_id: int, user: User = Depends(get_current_user), d
     return {"message": "已清除谱师猜测"}
 
 
-@admin_router.get("/charts", response_model=list[GuessChartRead])
+@admin_router.get("/charts", response_model=list[AdminGuessChartRead])
 def admin_charts(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
     rows = db.scalars(select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc())).all()
-    return serialize_charts(db, rows)
+    return serialize_charts(db, rows, include_private=True)
 
 
 @admin_router.post("/charts/import")
@@ -369,7 +464,7 @@ def admin_import_charts(
             .order_by(GuessChart.source_level_slot.asc())
         ).all()
     )
-    return {"archive_id": archive.id, "charts": serialize_charts(db, charts)}
+    return {"archive_id": archive.id, "charts": serialize_charts(db, charts, include_private=True)}
 
 
 @admin_router.post("/charts/batch-delete", response_model=BatchDeleteResponse)
@@ -403,7 +498,7 @@ def admin_batch_delete_charts(
     return {"deleted": len(charts), "message": f"已删除 {len(charts)} 张谱面"}
 
 
-@admin_router.put("/charts/{chart_id}", response_model=GuessChartRead)
+@admin_router.put("/charts/{chart_id}", response_model=AdminGuessChartRead)
 def admin_update_chart(chart_id: int, payload: GuessChartCreate, _: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
@@ -413,7 +508,7 @@ def admin_update_chart(chart_id: int, payload: GuessChartCreate, _: User = Depen
         setattr(chart, key, value)
     db.commit()
     db.refresh(chart)
-    return serialize_chart(db, chart)
+    return serialize_chart(db, chart, include_private=True)
 
 
 @admin_router.delete("/charts/{chart_id}")
@@ -528,7 +623,7 @@ def admin_author_candidates(_: User = Depends(require_role("admin", "pool_editor
         {
             "user": user_payload(user),
             "song_count": song_count,
-            "selected": True,
+            "selected": user.id in selected,
             "display_id": (selected[user.id].display_id.strip() or user.user_code)
             if user.id in selected
             else user.user_code,
@@ -576,20 +671,23 @@ def admin_stats(
 
 
 def _group_chart_ids(db: Session, chart: GuessChart) -> list[int]:
-    if not chart.guess_group_key:
+    if chart.source_submission_id is None:
         return [chart.id]
     return list(
         db.scalars(
             select(GuessChart.id).where(
                 GuessChart.event_id == chart.event_id,
-                GuessChart.guess_group_key == chart.guess_group_key,
+                GuessChart.source_submission_type == chart.source_submission_type,
+                GuessChart.source_submission_id == chart.source_submission_id,
             )
         ).all()
     ) or [chart.id]
 
 
 def _chart_group_identity(chart: GuessChart) -> str:
-    return chart.guess_group_key or f"chart:{chart.id}"
+    if chart.source_submission_id is not None:
+        return f"submission:{chart.source_submission_type}:{chart.source_submission_id}"
+    return f"chart:{chart.id}"
 
 
 def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]:
@@ -598,7 +696,7 @@ def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]
             select(User)
             .options(selectinload(User.roles))
             .where(
-                User.identity.in_(("participant", "audience")),
+                User.identity == "participant",
                 User.is_active.is_(True),
             )
             .order_by(User.user_code.asc())
@@ -618,28 +716,26 @@ def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]
 
 def _selected_author_candidates(db: Session, event_id: int) -> list[tuple[int, str]]:
     eligible = _eligible_author_users(db, event_id)
-    display_overrides = {
-        row.user_id: row.display_id.strip()
-        for row in db.scalars(
-            select(GuessAuthorCandidate).where(GuessAuthorCandidate.event_id == event_id)
-        ).all()
-    }
+    selected_rows = list(db.scalars(
+        select(GuessAuthorCandidate).where(GuessAuthorCandidate.event_id == event_id)
+    ).all())
+    display_overrides = {row.user_id: row.display_id.strip() for row in selected_rows}
+    selected_ids = set(display_overrides)
     return [
         (user.id, display_overrides.get(user.id) or user.user_code)
         for user, _ in eligible
+        if user.id in selected_ids
     ]
 
 
 def _resolve_archive(db: Session, chart: GuessChart) -> tuple[Path, str, tuple[str, int | str]] | None:
     source_id = chart.source_submission_id
-    if source_id is not None and chart.source_submission_type in {"normal", "j"}:
+    if source_id is not None and chart.source_submission_type in {"normal", "j", "exhibition"}:
         submission = db.get(Submission, source_id)
-        if submission and submission.event_id == chart.event_id:
-            return absolute_storage_path(submission.storage_path), submission.file_name, ("submission", submission.id)
-        if chart.source_submission_type == "j":
-            legacy = db.get(JTrackSubmission, source_id)
-            if legacy and legacy.event_id == chart.event_id:
-                return absolute_storage_path(legacy.storage_path), legacy.file_name, ("legacy-j", legacy.id)
+        if submission and submission.event_id == chart.event_id and submission.public_storage_path:
+            return absolute_storage_path(submission.public_storage_path), "chart-package.zip", ("submission", submission.id)
+        # Never fall back to the original upload: it can disclose account or file names.
+        return None
     if source_id is not None and chart.source_submission_type == "admin":
         archive = db.get(AdminGuessArchive, source_id)
         if archive and archive.event_id == chart.event_id:

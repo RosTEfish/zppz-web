@@ -1,4 +1,39 @@
-export type Track = "normal" | "j";
+export type Track = "normal" | "j" | "exhibition";
+export type EventPhaseName = "registration" | "draw" | "submission_1" | "swap" | "submission_2" | "guess" | "reveal" | "closed";
+
+export interface PhaseCapabilities {
+  song_pool_edit: boolean;
+  draw: boolean;
+  submission: boolean;
+  swap: boolean;
+  normal_submission_public: boolean;
+  author_guess: boolean;
+  quality_vote: boolean;
+  answers_visible: boolean;
+}
+
+export interface EventPhaseWindow {
+  phase: EventPhaseName;
+  starts_at: string;
+  ends_at: string;
+}
+
+export interface EventPhasesRead {
+  phase_mode: "auto" | "manual";
+  manual_phase?: EventPhaseName | null;
+  active_phase: EventPhaseName;
+  phases: EventPhaseWindow[];
+  capabilities: PhaseCapabilities;
+  next_transition_at?: string | null;
+  /** UTC timestamp captured by the API, used to correct an inaccurate client clock. */
+  server_time?: string;
+}
+
+export interface EventPhasesUpdate {
+  phase_mode: "auto" | "manual";
+  manual_phase?: EventPhaseName | null;
+  phases: EventPhaseWindow[];
+}
 
 export interface UserRead {
   id: number;
@@ -74,6 +109,9 @@ export interface StoredFileRead {
   source_song?: SongRead | null;
   user?: UserRead | null;
   created_at: string;
+  track_duration_seconds?: number | null;
+  public_package_ready?: boolean;
+  validation?: { maidata: boolean; track: boolean; background: boolean; duration: boolean };
 }
 
 export interface SubmissionTargetRead {
@@ -92,27 +130,56 @@ export interface DrawAssignmentRead {
   assigned_to: UserRead;
   song: SongRead;
   created_at: string;
+  status?: "active" | "returned" | "replaced";
+  draw_kind?: "initial" | "swap";
+  replaces_assignment_id?: number | null;
 }
+
+export interface SwapMeRead {
+  is_open: boolean;
+  active_phase: EventPhaseName;
+  max_selections: number;
+  round?: { id: number; status: string; starts_at: string; ends_at: string; finalized_at?: string | null } | null;
+  request?: { id: number; status: string; assignment_ids: number[] } | null;
+  assignments: Array<DrawAssignmentRead & { selected: boolean }>;
+  results: Array<{ original: DrawAssignmentRead; replacement?: DrawAssignmentRead | null }>;
+}
+
+export interface SwapValidationRead {
+  ok: boolean;
+  message: string;
+  request_count?: number;
+  item_count?: number;
+  pool_size?: number;
+}
+
+export interface SwapAuditRead { round: Record<string, unknown> | null; requests: Array<Record<string, unknown>>; message?: string }
 
 export interface GuessChartRead {
   id: number;
   title: string;
   author: string;
-  designer: string;
+  designer?: string;
   level: string;
   lane: Track | string;
   guess_group_key: string;
   source_submission_type: string;
   source_submission_id?: number | null;
-  source_level_slot: string;
+  source_level_slot?: string;
   cover_path: string;
-  storage_path: string;
+  storage_path?: string;
   is_self_selected: boolean;
   plays: number;
   created_at: string;
   love_votes: number;
   funny_votes: number;
   my_votes: string[];
+  track_duration_seconds?: number | null;
+  is_long_track?: boolean;
+  can_download?: boolean;
+  can_vote?: boolean;
+  can_comment?: boolean;
+  can_author_guess?: boolean;
 }
 
 export interface GuessCommentRead {
@@ -258,6 +325,8 @@ export const api = {
   changePassword: (old_password: string, new_password: string) => apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
   currentEvent: () => apiRequest<EventRead>("/events/current"),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
+  eventPhases: () => apiRequest<EventPhasesRead>("/event/phases"),
+  updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),
 
   mySongs: () => apiRequest<SongRead[]>("/song-pool/me"),
   createSong: (payload: SongPayload) => apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),
@@ -278,10 +347,16 @@ export const api = {
   drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
   runDraw: () => apiRequest<DrawAssignmentRead[]>("/admin/draw", { method: "POST" }),
   adminDrawResults: () => apiRequest<DrawAssignmentRead[]>("/admin/draw/results"),
+  mySwap: () => apiRequest<SwapMeRead>("/swap/me"),
+  updateMySwap: (assignment_ids: number[]) => apiRequest<SwapMeRead>("/swap/me", { method: "PUT", body: JSON.stringify({ assignment_ids }) }),
+  validateSwaps: () => apiRequest<SwapValidationRead>("/admin/swap/validate", { method: "POST" }),
+  finalizeSwaps: () => apiRequest<SwapAuditRead>("/admin/swap/finalize", { method: "POST" }),
+  swapAudit: () => apiRequest<SwapAuditRead>("/admin/swap/audit"),
 
   submissionTargets: () => apiRequest<SubmissionTargetsResponse>("/submissions/targets"),
   mySubmissions: () => apiRequest<StoredFileRead[]>("/submissions"),
   uploadSubmission: (songId: number, track: Track, file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track) }),
+  uploadExhibition: (file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, undefined, "exhibition") }),
   replaceSubmission: (id: number, track: Track, file: File) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
@@ -339,4 +414,10 @@ export function formatMB(size: number): string {
 export function formatTime(value?: string | null): string {
   if (!value) return "未设置";
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+export function formatDuration(value?: number | null): string {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) return "--:--";
+  const totalSeconds = Math.floor(value);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }

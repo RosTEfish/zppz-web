@@ -1,13 +1,21 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
-from app.models import DrawAssignment, Event, EventSetting, Song, User
-from app.schemas import EventUpdate
+from app.models import DrawAssignment, Event, EventPhase, EventSetting, Song, SwapRound, User
+from app.modules.events.phase_policy import PHASES, get_phase_status, phase_status_payload
+from app.schemas import EventPhasesUpdate, EventUpdate
 
 
 def get_current_event(db: Session) -> Event:
-    event = db.scalar(select(Event).options(joinedload(Event.settings)).where(Event.is_current.is_(True)))
+    event = db.scalar(
+        select(Event)
+        .options(joinedload(Event.settings), selectinload(Event.phases))
+        .where(Event.is_current.is_(True))
+    )
     if not event:
         event = Event(name="这谱谱这正赛", slug="zppz-current", is_current=True)
         event.settings = EventSetting()
@@ -18,12 +26,27 @@ def get_current_event(db: Session) -> Event:
         event.settings = EventSetting(event_id=event.id)
         db.commit()
         db.refresh(event)
+    if event.phases or event.settings.phase_mode == "manual":
+        phase_status = get_phase_status(db, event)
+        # Compatibility flags are presentation-only once phase policy is active.
+        # Mark the derived values as loaded so an unrelated commit (vote/comment,
+        # for example) cannot accidentally persist and clobber the legacy state.
+        set_committed_value(event.settings, "submissions_open", phase_status.can("submission"))
+        set_committed_value(
+            event.settings,
+            "guess_game_visible",
+            phase_status.can("normal_submission_public"),
+        )
     return event
 
 
 def update_current_event(db: Session, payload: EventUpdate) -> Event:
     event = get_current_event(db)
-    if payload.submissions_open:
+    phase_managed = bool(event.phases) or event.settings.phase_mode == "manual"
+    submissions_will_be_open = (
+        get_phase_status(db, event).can("submission") if phase_managed else payload.submissions_open
+    )
+    if submissions_will_be_open:
         assert_song_pool_complete(
             db,
             event.id,
@@ -44,7 +67,7 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
         assignment_counts = dict(
             db.execute(
                 select(DrawAssignment.assigned_to_id, func.count(DrawAssignment.id))
-                .where(DrawAssignment.event_id == event.id)
+                .where(DrawAssignment.event_id == event.id, DrawAssignment.status == "active")
                 .group_by(DrawAssignment.assigned_to_id)
             ).all()
         )
@@ -71,11 +94,106 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     settings.registration_deadline = payload.registration_deadline
     settings.submission_deadline = payload.submission_deadline
     settings.guess_game_open_at = payload.guess_game_open_at
-    settings.submissions_open = payload.submissions_open
-    settings.guess_game_visible = payload.guess_game_visible
+    if not phase_managed:
+        settings.submissions_open = payload.submissions_open
+        settings.guess_game_visible = payload.guess_game_visible
+    else:
+        phase_status = get_phase_status(db, event)
+        settings.submissions_open = phase_status.can("submission")
+        settings.guess_game_visible = phase_status.can("normal_submission_public")
     db.commit()
     db.refresh(event)
     return event
+
+
+def _utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _utc_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime, datetime]]:
+    if len(payload.phases) > len(PHASES):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Too many phase windows")
+    names: set[str] = set()
+    rows: list[tuple[str, datetime, datetime]] = []
+    for item in payload.phases:
+        starts_at = _utc_naive(item.starts_at)
+        ends_at = _utc_naive(item.ends_at)
+        if item.phase in names:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Duplicate phase window: {item.phase}",
+            )
+        if starts_at >= ends_at:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid time window for phase: {item.phase}",
+            )
+        names.add(item.phase)
+        rows.append((item.phase, starts_at, ends_at))
+    rows.sort(key=lambda row: (row[1], row[2]))
+    for previous, current in zip(rows, rows[1:]):
+        if current[1] < previous[2]:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Phase windows overlap: {previous[0]} and {current[0]}",
+            )
+    return rows
+
+
+def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
+    event = event or get_current_event(db)
+    status_payload = phase_status_payload(get_phase_status(db, event))
+    return {
+        "event_id": event.id,
+        "phase_mode": event.settings.phase_mode,
+        "manual_phase": event.settings.manual_phase,
+        "timezone": "Asia/Shanghai",
+        "server_time": datetime.now(timezone.utc),
+        "phases": [
+            {
+                "id": row.id,
+                "phase": row.phase,
+                "starts_at": _utc_aware(row.starts_at),
+                "ends_at": _utc_aware(row.ends_at),
+            }
+            for row in sorted(event.phases, key=lambda item: (item.starts_at, item.ends_at))
+        ],
+        **status_payload,
+    }
+
+
+def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
+    event = get_current_event(db)
+    rows = _validate_phase_rows(payload)
+    event.phases.clear()
+    event.phases.extend(
+        EventPhase(event_id=event.id, phase=phase, starts_at=starts_at, ends_at=ends_at)
+        for phase, starts_at, ends_at in rows
+    )
+    event.settings.phase_mode = payload.phase_mode
+    event.settings.manual_phase = payload.manual_phase if payload.phase_mode == "manual" else None
+    db.flush()
+    swap_window = next((row for row in rows if row[0] == "swap"), None)
+    open_swap_round = db.scalar(
+        select(SwapRound).where(SwapRound.event_id == event.id, SwapRound.status == "open")
+    )
+    if open_swap_round and swap_window:
+        open_swap_round.starts_at = swap_window[1]
+        open_swap_round.ends_at = swap_window[2]
+    phase_status = get_phase_status(db, event)
+    event.settings.submissions_open = phase_status.can("submission")
+    event.settings.guess_game_visible = phase_status.can("normal_submission_public")
+    db.commit()
+    event = get_current_event(db)
+    return get_phase_schedule(db, event)
 
 
 def incomplete_song_pool_users(

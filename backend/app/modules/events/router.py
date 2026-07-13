@@ -4,20 +4,30 @@ from sqlalchemy.orm import Session
 from app.core.security import require_role
 from app.db.session import get_db
 from app.models import User
-from app.modules.events.service import get_current_event, update_current_event
-from app.schemas import EventRead, EventUpdate
+from app.modules.events.service import (
+    get_current_event,
+    get_phase_schedule,
+    update_current_event,
+    update_phase_schedule,
+)
+from app.schemas import EventPhasesRead, EventPhasesUpdate, EventRead, EventUpdate
 
 
-router = APIRouter(prefix="/events", tags=["events"])
-admin_router = APIRouter(prefix="/admin/events", tags=["admin-events"])
+router = APIRouter(tags=["events"])
+admin_router = APIRouter(tags=["admin-events"])
 
 
-@router.get("/current", response_model=EventRead)
+@router.get("/events/current", response_model=EventRead)
 def current_event(db: Session = Depends(get_db)):
     return get_current_event(db)
 
 
-@admin_router.put("/current", response_model=EventRead)
+@router.get("/event/phases", response_model=EventPhasesRead)
+def event_phases(db: Session = Depends(get_db)):
+    return get_phase_schedule(db)
+
+
+@admin_router.put("/admin/events/current", response_model=EventRead)
 def admin_update_current_event(
     payload: EventUpdate,
     _: User = Depends(require_role("admin")),
@@ -25,3 +35,11 @@ def admin_update_current_event(
 ):
     return update_current_event(db, payload)
 
+
+@admin_router.put("/admin/event/phases", response_model=EventPhasesRead)
+def admin_update_event_phases(
+    payload: EventPhasesUpdate,
+    _: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    return update_phase_schedule(db, payload)

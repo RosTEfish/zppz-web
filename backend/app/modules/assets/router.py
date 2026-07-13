@@ -1,9 +1,16 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.security import get_optional_user
+from app.db.session import get_db
+from app.models import GuessChart, User
+from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.service import get_current_event
 
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -74,9 +81,29 @@ def background_file(file_name: str):
 
 
 @router.get("/guess-covers/{file_name}")
-def guess_cover(file_name: str):
+def guess_cover(
+    file_name: str,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
     safe = Path(file_name).name
     file = get_settings().assets_dir / "guess-covers" / safe
     if safe != file_name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}:
         raise HTTPException(status_code=404, detail="猜谱封面不存在")
+    event = get_current_event(db)
+    manager = bool(user and (user.has_role("admin") or user.has_role("pool_editor")))
+    cover_path = f"/api/v1/assets/guess-covers/{safe}"
+    source_types = set(
+        db.scalars(
+            select(GuessChart.source_submission_type).where(
+                GuessChart.event_id == event.id,
+                GuessChart.cover_path == cover_path,
+            )
+        ).all()
+    )
+    if not source_types:
+        raise HTTPException(status_code=404, detail="猜谱封面不存在")
+    if not manager and not source_types.intersection({"j", "exhibition"}):
+        if not get_phase_status(db, event).can("normal_submission_public"):
+            raise HTTPException(status_code=404, detail="猜谱封面不存在")
     return FileResponse(file, headers=IMMUTABLE_CACHE_HEADERS)

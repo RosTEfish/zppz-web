@@ -20,6 +20,9 @@ def serialize_assignment(item) -> dict:
         "id": item.id,
         "assigned_to": user_payload(item.assigned_to),
         "song": serialize_song(item.song),
+        "status": item.status,
+        "draw_kind": item.draw_kind,
+        "replaces_assignment_id": item.replaces_assignment_id,
         "created_at": item.created_at,
     }
 

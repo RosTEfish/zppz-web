@@ -24,6 +24,8 @@ from app.modules.song_pool.router import router as song_pool_router
 from app.modules.submissions.router import admin_router as admin_submissions_router
 from app.modules.submissions.router import router as submissions_router
 from app.modules.submissions.service import copy_asset_from_repo
+from app.modules.swap.router import admin_router as admin_swap_router
+from app.modules.swap.router import router as swap_router
 from app.modules.users.router import router as users_router
 
 
@@ -80,6 +82,7 @@ for router in (
     song_pool_router,
     draw_router,
     submissions_router,
+    swap_router,
     guess_game_router,
     admin_router,
     admin_events_router,
@@ -87,6 +90,7 @@ for router in (
     admin_song_pool_router,
     admin_draw_router,
     admin_submissions_router,
+    admin_swap_router,
     admin_guess_game_router,
 ):
     app.include_router(router, prefix=settings.api_prefix)

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, formatMB, formatTime } from "./v1";
+import { api, formatDuration, formatMB, formatTime } from "./v1";
 
 describe("v1 API helpers", () => {
   afterEach(() => {
@@ -13,6 +13,13 @@ describe("v1 API helpers", () => {
 
   it("handles empty timestamps", () => {
     expect(formatTime(null)).toBe("未设置");
+  });
+
+  it("formats parsed track durations as m:ss", () => {
+    expect(formatDuration(240)).toBe("4:00");
+    expect(formatDuration(240.001)).toBe("4:00");
+    expect(formatDuration(252.9)).toBe("4:12");
+    expect(formatDuration(null)).toBe("--:--");
   });
 
   it("prepares large downloads and starts a native browser download", async () => {

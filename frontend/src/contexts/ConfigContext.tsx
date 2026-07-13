@@ -1,5 +1,5 @@
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { api, EventRead } from "../api/v1";
+import { api, EventPhasesRead, EventRead } from "../api/v1";
 
 interface AppConfig {
   current_event: string;
@@ -22,6 +22,7 @@ interface AppConfig {
 
 interface ConfigContextType {
   event: EventRead | null;
+  phases: EventPhasesRead | null;
   config: AppConfig | null;
   refreshConfig: () => Promise<void>;
   loading: boolean;
@@ -51,6 +52,7 @@ function toConfig(event: EventRead | null): AppConfig | null {
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [event, setEvent] = useState<EventRead | null>(null);
+  const [phases, setPhases] = useState<EventPhasesRead | null>(null);
   const [loading, setLoading] = useState(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
 
@@ -59,7 +61,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     const task = (async () => {
       setLoading(true);
       try {
-        setEvent(await api.currentEvent());
+        const [nextEvent, nextPhases] = await Promise.all([api.currentEvent(), api.eventPhases().catch(() => null)]);
+        setEvent(nextEvent);
+        setPhases(nextPhases);
       } finally {
         setLoading(false);
         inFlightRef.current = null;
@@ -71,12 +75,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setLoading(true);
-    void api.bootstrap()
-      .then((data) => setEvent(data.event))
+    void Promise.all([api.bootstrap(), api.eventPhases().catch(() => null)])
+      .then(([data, nextPhases]) => { setEvent(data.event); setPhases(nextPhases); })
       .finally(() => setLoading(false));
   }, []);
 
-  const value = useMemo(() => ({ event, config: toConfig(event), refreshConfig, loading }), [event, loading, refreshConfig]);
+  const value = useMemo(() => ({ event, phases, config: toConfig(event), refreshConfig, loading }), [event, phases, loading, refreshConfig]);
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 }
 

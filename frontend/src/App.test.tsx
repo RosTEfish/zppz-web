@@ -46,10 +46,9 @@ describe("Material application shell", () => {
           lane: "normal",
           guess_group_key: "test",
           source_submission_type: "normal",
-          source_submission_id: 1,
-          source_level_slot: "4",
+          track_duration_seconds: 240,
+          is_long_track: false,
           cover_path: "",
-          storage_path: "",
           is_self_selected: true,
           plays: 7,
           created_at: "2026-07-03T00:00:00",
@@ -66,10 +65,9 @@ describe("Material application shell", () => {
           lane: "j",
           guess_group_key: "j-test",
           source_submission_type: "j",
-          source_submission_id: 2,
-          source_level_slot: "5",
+          track_duration_seconds: 240.001,
+          is_long_track: true,
           cover_path: "",
-          storage_path: "",
           is_self_selected: false,
           plays: 3,
           created_at: "2026-07-03T00:00:00",
@@ -90,7 +88,7 @@ describe("Material application shell", () => {
   it("renders the current event and workflow", async () => {
     render(<App />);
     expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
-    expect(await screen.findByText("等待开放")).toBeInTheDocument();
+    expect(await screen.findByText("当前未开放")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
     expect(screen.getByRole("link", { name: "往期 Ban 曲列表" })).toHaveAttribute("href", "/api/v1/assets/banlist/download");
     expect(screen.getByRole("link", { name: "京ICP备2026012070号-1" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
@@ -156,7 +154,7 @@ describe("Material application shell", () => {
     expect(screen.queryByText(/播放/)).not.toBeInTheDocument();
   });
 
-  it("filters guess charts and clearly labels chart metadata", async () => {
+  it("filters guess charts and safely renders public chart metadata", async () => {
     window.history.pushState({}, "", "/guess");
     render(<App />);
 
@@ -168,12 +166,11 @@ describe("Material application shell", () => {
     expect(screen.getAllByText("非自选").length).toBeGreaterThan(0);
     expect(screen.getAllByText("普通谱").length).toBeGreaterThan(0);
     expect(screen.getByText("J谱面").closest("[data-lane='j']")).toBeInTheDocument();
-    const redLevelCard = screen.getByText("测试谱面").closest("[data-level-slot='lv_4']");
-    const purpleLevelCard = screen.getByText("J谱面").closest("[data-level-slot='lv_5']");
-    expect(redLevelCard?.querySelector(".MuiCardContent-root")).toHaveStyle({ backgroundColor: "#FFE9E7" });
-    expect(purpleLevelCard?.querySelector(".MuiCardContent-root")).toHaveStyle({ backgroundColor: "#F1E9FF" });
+    expect(screen.getByText("测试谱面").closest("[data-level-slot]")).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText("音频时长 4:00")).toHaveLength(2);
+    expect(screen.getByLabelText("Long Track，音频超过 4 分钟")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "J 谱" }));
+    fireEvent.click(screen.getByRole("button", { name: "J" }));
     expect(screen.queryByText("测试谱面")).not.toBeInTheDocument();
     expect(screen.getByText("J谱面")).toBeInTheDocument();
     expect(screen.getByText("显示 1 / 共 2 张谱面")).toBeInTheDocument();
@@ -199,7 +196,7 @@ describe("Material application shell", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "选择 测试谱面" }));
     expect(screen.getByRole("button", { name: "下载 1 项" })).toBeEnabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "J 谱" }));
+    fireEvent.click(screen.getByRole("button", { name: "J" }));
     expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
   });
 
@@ -324,16 +321,13 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
-    expect(await screen.findByText("候选投稿")).toBeInTheDocument();
-    const switches = await screen.findAllByRole("switch", { name: "J 赛道" });
-    expect(switches[0]).toBeChecked();
-    expect(switches[1]).not.toBeChecked();
-    fireEvent.click(switches[1]);
-    expect(switches[0]).not.toBeChecked();
-    expect(switches[1]).toBeChecked();
-    fireEvent.click(switches[1]);
-    expect(switches[0]).not.toBeChecked();
-    expect(switches[1]).not.toBeChecked();
+    expect(await screen.findByText("第一首")).toBeInTheDocument();
+    const jButtons = await screen.findAllByRole("button", { name: "J" });
+    expect(jButtons[0]).toHaveAttribute("aria-pressed", "true");
+    expect(jButtons[1]).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(jButtons[1]);
+    expect(jButtons[0]).toHaveAttribute("aria-pressed", "false");
+    expect(jButtons[1]).toHaveAttribute("aria-pressed", "true");
   });
 
   it("persists a submitted J track switch without replacing the file", async () => {
@@ -392,12 +386,12 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
-    const switches = await screen.findAllByRole("switch", { name: "J 赛道" });
-    fireEvent.click(switches[1]);
-    expect(switches[0]).not.toBeChecked();
-    expect(switches[1]).toBeChecked();
+    const jButtons = await screen.findAllByRole("button", { name: "J" });
+    fireEvent.click(jButtons[1]);
+    expect(jButtons[0]).toHaveAttribute("aria-pressed", "false");
+    expect(jButtons[1]).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(patchBodies).toEqual([{ track: "j" }]));
-    await waitFor(() => expect(screen.getAllByRole("switch", { name: "J 赛道" })[1]).toBeChecked());
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "J" })[1]).toHaveAttribute("aria-pressed", "true"));
   });
 
   it("lets administrators control guess entry visibility", async () => {

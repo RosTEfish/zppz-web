@@ -16,6 +16,7 @@ from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission
 from app.modules.common import serialize_song, serialize_submission
 from app.modules.downloads import DownloadEntry, PreparedZip, file_download_response, prepare_streaming_zip
 from app.modules.events.service import get_current_event
+from app.modules.events.phase_policy import get_phase_status
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     ParsedArchive,
@@ -23,6 +24,7 @@ from app.modules.guess_game.importer import (
     delete_source_charts,
     parse_stored_archive,
     sync_parsed_source,
+    write_public_package,
 )
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
 from app.schemas import BatchDeleteRequest, BatchDeleteResponse, DownloadPreparation, StoredFileRead, SubmissionTargetsResponse, SubmissionTrackUpdate
@@ -40,7 +42,7 @@ def _validated_upload(storage_path: str) -> ParsedArchive:
         return parse_stored_archive(storage_path)
     except ArchiveParseError as exc:
         delete_stored_file(storage_path)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         delete_stored_file(storage_path)
         raise
@@ -51,15 +53,15 @@ def _require_participant(user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅参赛者可以上传投稿")
 
 
-def _require_submissions_open(event) -> None:
-    if not event.settings.submissions_open:
+def _require_submissions_open(db: Session, event) -> None:
+    if not get_phase_status(db, event).can("submission"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="投稿尚未开放")
 
 
 def _normalize_track(track: str | None, fallback: str = "normal") -> str:
     value = (track or fallback).strip().lower()
-    if value not in {"normal", "j"}:
-        raise HTTPException(status_code=400, detail="投稿赛道必须为 normal 或 j")
+    if value not in {"normal", "j", "exhibition"}:
+        raise HTTPException(status_code=422, detail="投稿类型必须为 normal、j 或 exhibition")
     return value
 
 
@@ -78,6 +80,7 @@ def _eligible_song(db: Session, event_id: int, user: User, song_id: int) -> tupl
             DrawAssignment.event_id == event_id,
             DrawAssignment.assigned_to_id == user.id,
             DrawAssignment.song_id == song.id,
+            DrawAssignment.status == "active",
         )
     )
     if not assignment:
@@ -120,8 +123,7 @@ def _demote_existing_j_track(db: Session, event_id: int, user_id: int, exclude_i
         stmt = stmt.where(Submission.id != exclude_id)
     existing = db.scalar(stmt.with_for_update())
     if existing:
-        _move_submission_track(db, existing, "normal")
-        db.flush()
+        raise HTTPException(status_code=409, detail="每位参赛者只能提交一个 J 投稿包")
 
 
 def _sync_and_commit(
@@ -159,7 +161,7 @@ def _create_submission(
     *,
     event_id: int,
     user: User,
-    song: Song,
+    song: Song | None,
     source_kind: str,
     track: str,
     file: UploadFile,
@@ -170,15 +172,16 @@ def _create_submission(
             Submission.user_id == user.id,
             Submission.source_song_id == song.id,
         )
-    )
+    ) if song is not None else None
     if existing:
         raise HTTPException(status_code=409, detail="该候选已有投稿，请使用替换功能")
     storage_path, size = save_upload(file, f"events/{event_id}/submissions/{user.id}")
     parsed = _validated_upload(storage_path)
+    public_storage_path: str | None = None
     row = Submission(
         event_id=event_id,
         user_id=user.id,
-        source_song_id=song.id,
+        source_song_id=song.id if song is not None else None,
         source_kind=source_kind,
         track=track,
         file_name=file.filename or "upload",
@@ -190,16 +193,23 @@ def _create_submission(
             _demote_existing_j_track(db, event_id, user.id)
         db.add(row)
         db.flush()
+        row.track_duration_seconds = parsed.track_duration_seconds
+        public_storage_path = write_public_package(event_id, row.id, parsed)
+        row.public_storage_path = public_storage_path
         _sync_and_commit(db, row, parsed)
     except IntegrityError as exc:
         db.rollback()
         delete_stored_file(storage_path)
+        if public_storage_path:
+            delete_stored_file(public_storage_path)
         if track == "j":
             raise HTTPException(status_code=409, detail="J 赛道切换冲突，请刷新页面后重试") from exc
         raise
     except Exception:
         db.rollback()
         delete_stored_file(storage_path)
+        if public_storage_path:
+            delete_stored_file(public_storage_path)
         raise
     db.refresh(row)
     row.user = user
@@ -219,7 +229,9 @@ def _replace_submission(
     new_storage_path, size = save_upload(file, f"events/{row.event_id}/submissions/{row.user_id}")
     parsed = _validated_upload(new_storage_path)
     old_storage_path = row.storage_path
+    old_public_storage_path = row.public_storage_path
     old_track = row.track
+    new_public_storage_path: str | None = None
     try:
         if next_track == "j":
             _demote_existing_j_track(db, row.event_id, row.user_id, row.id)
@@ -227,36 +239,47 @@ def _replace_submission(
         row.file_name = file.filename or "upload"
         row.storage_path = new_storage_path
         row.file_size = size
+        row.track_duration_seconds = parsed.track_duration_seconds
+        new_public_storage_path = write_public_package(row.event_id, row.id, parsed)
+        row.public_storage_path = new_public_storage_path
         if source_kind:
             row.source_kind = source_kind
         _sync_and_commit(db, row, parsed, match_source_type=old_track)
     except IntegrityError as exc:
         db.rollback()
         delete_stored_file(new_storage_path)
+        if new_public_storage_path:
+            delete_stored_file(new_public_storage_path)
         if next_track == "j":
             raise HTTPException(status_code=409, detail="J 赛道切换冲突，请刷新页面后重试") from exc
         raise
     except Exception:
         db.rollback()
         delete_stored_file(new_storage_path)
+        if new_public_storage_path:
+            delete_stored_file(new_public_storage_path)
         raise
     delete_stored_file(old_storage_path)
+    if old_public_storage_path:
+        delete_stored_file(old_public_storage_path)
     db.refresh(row)
     return row
 
 
 def _delete_submission(db: Session, row: Submission) -> None:
-    storage_path, cover_paths = _stage_delete_submission(db, row)
+    storage_path, public_storage_path, cover_paths = _stage_delete_submission(db, row)
     db.commit()
     delete_stored_file(storage_path)
+    if public_storage_path:
+        delete_stored_file(public_storage_path)
     delete_cover_paths(cover_paths)
 
 
-def _stage_delete_submission(db: Session, row: Submission) -> tuple[str, set[str]]:
+def _stage_delete_submission(db: Session, row: Submission) -> tuple[str, str | None, set[str]]:
     _, cover_paths = delete_source_charts(db, row.event_id, row.track, row.id)
     storage_path = row.storage_path
     db.delete(row)
-    return storage_path, cover_paths
+    return storage_path, row.public_storage_path, cover_paths
 
 
 def _submission_options():
@@ -273,6 +296,7 @@ def submission_targets(user: User = Depends(get_current_user), db: Session = Dep
     assigned_song_ids = select(DrawAssignment.song_id).where(
         DrawAssignment.event_id == event.id,
         DrawAssignment.assigned_to_id == user.id,
+        DrawAssignment.status == "active",
     )
     songs = list(
         db.scalars(
@@ -294,7 +318,7 @@ def submission_targets(user: User = Depends(get_current_user), db: Session = Dep
     )
     by_song_id = {row.source_song_id: row for row in submissions if row.source_song_id is not None}
     return {
-        "is_open": event.settings.submissions_open,
+        "is_open": get_phase_status(db, event).can("submission"),
         "targets": [
             {
                 "song": serialize_song(song),
@@ -321,7 +345,7 @@ def my_submissions(user: User = Depends(get_current_user), db: Session = Depends
 
 @router.post("", response_model=StoredFileRead)
 def upload_submission(
-    song_id: int = Form(...),
+    song_id: int | None = Form(None),
     track: str = Form("normal"),
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
@@ -329,15 +353,21 @@ def upload_submission(
 ) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(event)
-    song, source_kind = _eligible_song(db, event.id, user, song_id)
+    _require_submissions_open(db, event)
+    normalized_track = _normalize_track(track)
+    if normalized_track == "exhibition":
+        song, source_kind = (None, "exhibition") if song_id is None else _eligible_song(db, event.id, user, song_id)
+    else:
+        if song_id is None:
+            raise HTTPException(status_code=422, detail="普通和 J 投稿必须关联候选曲目")
+        song, source_kind = _eligible_song(db, event.id, user, song_id)
     row = _create_submission(
         db,
         event_id=event.id,
         user=user,
         song=song,
         source_kind=source_kind,
-        track=_normalize_track(track),
+        track=normalized_track,
         file=file,
     )
     return serialize_submission(row)
@@ -353,11 +383,18 @@ def replace_submission(
 ) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(event)
+    _require_submissions_open(db, event)
     row = db.scalar(select(Submission).options(*_submission_options()).where(Submission.id == submission_id))
-    if not row or row.user_id != user.id or row.event_id != event.id or row.source_song_id is None:
+    if not row or row.user_id != user.id or row.event_id != event.id:
         raise HTTPException(status_code=404, detail="投稿不存在")
-    song, source_kind = _eligible_song(db, event.id, user, row.source_song_id)
+    if row.source_song_id is None:
+        if row.track != "exhibition":
+            raise HTTPException(status_code=409, detail="非场外投稿缺少关联曲目")
+        if track is not None and _normalize_track(track) != "exhibition":
+            raise HTTPException(status_code=422, detail="独立场外投稿不能改为普通或 J 投稿")
+        song, source_kind = None, "exhibition"
+    else:
+        song, source_kind = _eligible_song(db, event.id, user, row.source_song_id)
     row = _replace_submission(db, row, file, track=track, source_kind=source_kind)
     row.user = user
     row.source_song = song
@@ -373,7 +410,7 @@ def update_submission_track(
 ) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(event)
+    _require_submissions_open(db, event)
     row = db.scalar(
         select(Submission)
         .options(*_submission_options())
@@ -383,6 +420,8 @@ def update_submission_track(
         raise HTTPException(status_code=404, detail="投稿不存在")
     song, source_kind = _eligible_song(db, event.id, user, row.source_song_id)
     next_track = _normalize_track(payload.track)
+    if next_track != "exhibition" and row.source_song_id is None:
+        raise HTTPException(status_code=422, detail="普通和 J 投稿必须关联候选曲目")
     try:
         if next_track == "j":
             _demote_existing_j_track(db, event.id, user.id, row.id)
@@ -423,7 +462,7 @@ def my_j_track(user: User = Depends(get_current_user), db: Session = Depends(get
 def delete_j_track(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(event)
+    _require_submissions_open(db, event)
     row = db.scalar(
         select(Submission).where(
             Submission.event_id == event.id,
@@ -441,7 +480,7 @@ def delete_j_track(user: User = Depends(get_current_user), db: Session = Depends
 def delete_submission(submission_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     _require_participant(user)
     event = get_current_event(db)
-    _require_submissions_open(event)
+    _require_submissions_open(db, event)
     row = db.get(Submission, submission_id)
     if not row or row.user_id != user.id or row.event_id != event.id:
         raise HTTPException(status_code=404, detail="投稿不存在")
@@ -487,17 +526,22 @@ def admin_batch_delete_submissions(
     if missing_ids:
         raise HTTPException(status_code=404, detail=f"投稿不存在：{', '.join(map(str, missing_ids))}")
     storage_paths: set[str] = set()
+    public_storage_paths: set[str] = set()
     cover_paths: set[str] = set()
     try:
         for row in rows:
-            storage_path, row_cover_paths = _stage_delete_submission(db, row)
+            storage_path, public_storage_path, row_cover_paths = _stage_delete_submission(db, row)
             storage_paths.add(storage_path)
+            if public_storage_path:
+                public_storage_paths.add(public_storage_path)
             cover_paths.update(row_cover_paths)
         db.commit()
     except Exception:
         db.rollback()
         raise
     for storage_path in storage_paths:
+        delete_stored_file(storage_path)
+    for storage_path in public_storage_paths:
         delete_stored_file(storage_path)
     delete_cover_paths(cover_paths)
     return {"deleted": len(rows), "message": f"已删除 {len(rows)} 份投稿"}

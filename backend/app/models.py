@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -67,6 +67,12 @@ class Event(Base, TimestampMixin):
     is_current: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
 
     settings: Mapped["EventSetting"] = relationship(back_populates="event", uselist=False, cascade="all, delete-orphan")
+    phases: Mapped[list["EventPhase"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", order_by="EventPhase.starts_at"
+    )
+    swap_rounds: Mapped[list["SwapRound"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", order_by="SwapRound.round_number"
+    )
 
 
 class EventSetting(Base, TimestampMixin):
@@ -86,8 +92,23 @@ class EventSetting(Base, TimestampMixin):
     submissions_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     guess_game_visible: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     guess_chart_metadata_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    phase_mode: Mapped[str] = mapped_column(String(10), default="auto", nullable=False)
+    manual_phase: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     event: Mapped[Event] = relationship(back_populates="settings")
+
+
+class EventPhase(Base, TimestampMixin):
+    __tablename__ = "event_phases"
+    __table_args__ = (UniqueConstraint("event_id", "phase", name="uq_event_phase_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    phase: Mapped[str] = mapped_column(String(30), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    event: Mapped[Event] = relationship(back_populates="phases")
 
 
 class Song(Base, TimestampMixin):
@@ -106,21 +127,104 @@ class Song(Base, TimestampMixin):
 
 class DrawAssignment(Base, TimestampMixin):
     __tablename__ = "draw_assignments"
-    __table_args__ = (UniqueConstraint("event_id", "song_id", name="uq_draw_event_song"),)
+    __table_args__ = (
+        Index(
+            "uq_draw_event_active_song",
+            "event_id",
+            "song_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
     assigned_to_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     song_id: Mapped[int] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    draw_kind: Mapped[str] = mapped_column(String(20), default="initial", nullable=False)
+    replaces_assignment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("draw_assignments.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
     assigned_to: Mapped[User] = relationship(foreign_keys=[assigned_to_id])
     song: Mapped[Song] = relationship()
+    replaces_assignment: Mapped["DrawAssignment | None"] = relationship(
+        remote_side="DrawAssignment.id", foreign_keys=[replaces_assignment_id]
+    )
+
+
+class SwapRound(Base, TimestampMixin):
+    __tablename__ = "swap_rounds"
+    __table_args__ = (
+        UniqueConstraint("event_id", "round_number", name="uq_swap_round_event_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    round_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+    random_seed: Mapped[str] = mapped_column(String(128), nullable=False)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    event: Mapped[Event] = relationship(back_populates="swap_rounds")
+    requests: Mapped[list["SwapRequest"]] = relationship(back_populates="round", cascade="all, delete-orphan")
+
+
+class SwapRequest(Base, TimestampMixin):
+    __tablename__ = "swap_requests"
+    __table_args__ = (UniqueConstraint("round_id", "user_id", name="uq_swap_request_round_user"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    round_id: Mapped[int] = mapped_column(ForeignKey("swap_rounds.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+
+    round: Mapped[SwapRound] = relationship(back_populates="requests")
+    user: Mapped[User] = relationship()
+    items: Mapped[list["SwapRequestItem"]] = relationship(
+        back_populates="request", cascade="all, delete-orphan", order_by="SwapRequestItem.position"
+    )
+
+
+class SwapRequestItem(Base, TimestampMixin):
+    __tablename__ = "swap_request_items"
+    __table_args__ = (
+        UniqueConstraint("request_id", "original_assignment_id", name="uq_swap_item_request_assignment"),
+        UniqueConstraint("request_id", "position", name="uq_swap_item_request_position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("swap_requests.id", ondelete="CASCADE"), index=True, nullable=False)
+    original_assignment_id: Mapped[int] = mapped_column(
+        ForeignKey("draw_assignments.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    replacement_assignment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("draw_assignments.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    request: Mapped[SwapRequest] = relationship(back_populates="items")
+    original_assignment: Mapped[DrawAssignment] = relationship(foreign_keys=[original_assignment_id])
+    replacement_assignment: Mapped[DrawAssignment | None] = relationship(foreign_keys=[replacement_assignment_id])
 
 
 class Submission(Base, TimestampMixin):
     __tablename__ = "submissions"
     __table_args__ = (
         UniqueConstraint("event_id", "user_id", "source_song_id", name="uq_submission_event_user_song"),
+        CheckConstraint(
+            "track IN ('normal', 'j', 'exhibition')",
+            name="ck_submission_track_type",
+        ),
+        CheckConstraint(
+            "track = 'exhibition' OR source_song_id IS NOT NULL",
+            name="ck_submission_source_song_required",
+        ),
         Index(
             "uq_submission_event_user_j_track",
             "event_id",
@@ -143,12 +247,18 @@ class Submission(Base, TimestampMixin):
     track: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    public_storage_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    track_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     review_status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
     review_note: Mapped[str] = mapped_column(String(500), default="", nullable=False)
 
     user: Mapped[User] = relationship()
     source_song: Mapped[Song | None] = relationship()
+
+    @property
+    def is_long_track(self) -> bool:
+        return self.track_duration_seconds is not None and self.track_duration_seconds > 240
 
 
 class JTrackSubmission(Base, TimestampMixin):

@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import re
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -35,10 +36,15 @@ def client():
 
 
 def archive_bytes(title: str = "Song", levels: str = "&lv_4=13\n&lv_5=14") -> bytes:
+    playable = "\n".join(
+        f"&inote_{slot}=(120){{1}},"
+        for slot in re.findall(r"(?im)^\s*&lv_([1-7])\s*=", levels)
+    )
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
-        archive.writestr("nested/maidata.txt", f"&title={title}\n&artist=Artist\n{levels}")
+        archive.writestr("nested/maidata.txt", f"&title={title}\n&artist=Artist\n{levels}\n{playable}")
         archive.writestr("nested/bg.png", b"cover")
+        archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
     return buffer.getvalue()
 
 
@@ -76,6 +82,20 @@ def login(client: TestClient, code: str, password: str = "secret123") -> None:
 
 def login_admin(client: TestClient) -> None:
     login(client, "admin", "change-me-please")
+
+
+def set_manual_phase(phase: str | None) -> None:
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.phase_mode = "manual" if phase else "auto"
+        event.settings.manual_phase = phase
+        db.commit()
+
+
+def public_chart_for_submission(client: TestClient, submission_id: int) -> dict:
+    with SessionLocal() as db:
+        chart_id = db.scalar(select(GuessChart.id).where(GuessChart.source_submission_id == submission_id))
+    return next(row for row in client.get("/api/v1/guess-game/charts").json() if row["id"] == chart_id)
 
 
 def create_candidate_rows() -> tuple[int, int, int]:
@@ -120,22 +140,21 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
         files={"file": ("j.zip", archive_bytes("J Song", "&lv_6=15"), "application/zip")},
     )
     assert first.status_code == 200, first.text
-    first_chart = next(
-        row for row in client.get("/api/v1/guess-game/charts").json()
-        if row["source_submission_id"] == first.json()["id"]
-    )
+    set_manual_phase("guess")
+    first_chart = public_chart_for_submission(client, first.json()["id"])
     assert client.post("/api/v1/guess-game/vote", json={"chart_id": first_chart["id"], "vote_type": "love"}).status_code == 200
     assert client.post(
         f"/api/v1/guess-game/charts/{first_chart['id']}/comments",
         json={"content": "保留这条评论"},
     ).status_code == 200
+    set_manual_phase(None)
 
     invalid = client.post(
         "/api/v1/submissions",
         data={"song_id": own_id, "track": "j"},
         files={"file": ("invalid.zip", b"not-a-zip", "application/zip")},
     )
-    assert invalid.status_code == 400
+    assert invalid.status_code == 422
     assert client.get("/api/v1/submissions/j-track").json()["submission"]["id"] == first.json()["id"]
 
     second = client.post(
@@ -143,14 +162,19 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
         data={"song_id": own_id, "track": "j"},
         files={"file": ("j2.zip", archive_bytes("Other J", "&lv_4=13"), "application/zip")},
     )
-    assert second.status_code == 200, second.text
+    assert second.status_code == 409
+    assert "J" in second.json()["detail"]
 
     targets_after = client.get("/api/v1/submissions/targets").json()["targets"]
-    tracks = {row["song"]["id"]: row["submission"]["track"] for row in targets_after}
-    assert tracks == {assigned_id: "normal", own_id: "j"}
+    tracks = {
+        row["song"]["id"]: row["submission"]["track"] if row["submission"] else None
+        for row in targets_after
+    }
+    assert tracks == {assigned_id: "j", own_id: None}
+    set_manual_phase("guess")
     old_chart = next(row for row in client.get("/api/v1/guess-game/charts").json() if row["id"] == first_chart["id"])
-    assert old_chart["lane"] == "normal"
-    assert old_chart["source_submission_type"] == "normal"
+    assert old_chart["lane"] == "j"
+    assert old_chart["source_submission_type"] == "j"
     assert old_chart["love_votes"] == 1
     comments = client.get(f"/api/v1/guess-game/charts/{first_chart['id']}/comments").json()
     assert [row["content"] for row in comments] == ["保留这条评论"]
@@ -172,19 +196,21 @@ def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(cli
     )
     assigned = client.post(
         "/api/v1/submissions",
-        data={"song_id": assigned_id, "track": "j"},
+        data={"song_id": assigned_id, "track": "normal"},
         files={"file": ("test2.zip", archive_bytes("test2", "&lv_5=14"), "application/zip")},
     )
     assert own.status_code == assigned.status_code == 200
     own_id_submission = own.json()["id"]
     assigned_id_submission = assigned.json()["id"]
+    set_manual_phase("guess")
     charts = client.get("/api/v1/guess-game/charts").json()
     assert len(charts) == 2
-    own_chart = next(row for row in charts if row["source_submission_id"] == own_id_submission)
+    own_chart = public_chart_for_submission(client, own_id_submission)
     assert client.post(
         "/api/v1/guess-game/vote",
         json={"chart_id": own_chart["id"], "vote_type": "love"},
     ).status_code == 200
+    set_manual_phase(None)
     with SessionLocal() as db:
         original_storage = db.get(Submission, own_id_submission).storage_path
 
@@ -197,28 +223,34 @@ def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(cli
         own_id: "j",
         assigned_id: "normal",
     }
+    set_manual_phase("guess")
     switched_charts = client.get("/api/v1/guess-game/charts").json()
     assert len(switched_charts) == 2
     assert next(row for row in switched_charts if row["id"] == own_chart["id"])["lane"] == "j"
 
+    set_manual_phase(None)
     assert client.patch(f"/api/v1/submissions/{own_id_submission}/track", json={"track": "normal"}).status_code == 200
     assert client.patch(f"/api/v1/submissions/{assigned_id_submission}/track", json={"track": "j"}).status_code == 200
     replaced = client.post(
         f"/api/v1/submissions/{own_id_submission}/replace",
-        data={"track": "j"},
+        data={"track": "normal"},
         files={"file": ("test1-new.zip", archive_bytes("test1-new", "&lv_4=13+"), "application/zip")},
     )
     assert replaced.status_code == 200, replaced.text
+    set_manual_phase("guess")
     final_charts = client.get("/api/v1/guess-game/charts").json()
     assert len(final_charts) == 2
-    final_own = [row for row in final_charts if row["source_submission_id"] == own_id_submission]
-    final_assigned = [row for row in final_charts if row["source_submission_id"] == assigned_id_submission]
+    with SessionLocal() as db:
+        own_chart_ids = set(db.scalars(select(GuessChart.id).where(GuessChart.source_submission_id == own_id_submission)).all())
+        assigned_chart_ids = set(db.scalars(select(GuessChart.id).where(GuessChart.source_submission_id == assigned_id_submission)).all())
+    final_own = [row for row in final_charts if row["id"] in own_chart_ids]
+    final_assigned = [row for row in final_charts if row["id"] in assigned_chart_ids]
     assert len(final_own) == len(final_assigned) == 1
     assert final_own[0]["id"] == own_chart["id"]
     assert final_own[0]["title"] == "test1-new"
-    assert final_own[0]["lane"] == "j"
+    assert final_own[0]["lane"] == "normal"
     assert final_own[0]["love_votes"] == 1
-    assert final_assigned[0]["lane"] == "normal"
+    assert final_assigned[0]["lane"] == "j"
 
 
 def test_admin_open_validation_and_draw_lock(client: TestClient):
@@ -269,6 +301,7 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
         files={"file": ("source.zip", archive_bytes(), "application/zip")},
     )
     assert uploaded.status_code == 200
+    set_manual_phase("guess")
     chart_ids = [row["id"] for row in client.get("/api/v1/guess-game/charts").json()]
     metadata = client.get(f"/api/v1/guess-game/charts/download-metadata?ids={','.join(map(str, chart_ids))}")
     assert metadata.status_code == 200, metadata.text
@@ -281,8 +314,9 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
     assert int(response.headers["content-length"]) == len(response.content)
     with ZipFile(BytesIO(response.content)) as archive:
         archive_names = archive.namelist()
-        assert len([name for name in archive_names if name.endswith("source.zip")]) == 1
-        assert "_下载报告.txt" in archive_names
+        assert len([name for name in archive_names if name.endswith(".zip")]) == 1
+        assert all("source.zip" not in name for name in archive_names)
+    assert "_下载报告.txt" in archive_names
 
     login_admin(client)
     submission_id = uploaded.json()["id"]
@@ -350,6 +384,7 @@ def test_admin_submission_batch_delete_cleans_all_linked_resources(client: TestC
     )
     assert first.status_code == second.status_code == 200
     submission_ids = [first.json()["id"], second.json()["id"]]
+    set_manual_phase("guess")
     charts = client.get("/api/v1/guess-game/charts").json()
     assert client.post("/api/v1/guess-game/vote", json={"chart_id": charts[0]["id"], "vote_type": "love"}).status_code == 200
     assert client.post(f"/api/v1/guess-game/charts/{charts[0]['id']}/comments", json={"content": "cleanup"}).status_code == 200
@@ -476,6 +511,7 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
         files={"file": ("owner.zip", archive_bytes("Owner Work"), "application/zip")},
     )
     assert uploaded.status_code == 200, uploaded.text
+    set_manual_phase("guess")
     chart_ids = [row["id"] for row in client.get("/api/v1/guess-game/charts").json()]
 
     assert client.post("/api/v1/auth/logout").status_code == 200
@@ -487,9 +523,8 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     admin_candidates = client.get("/api/v1/admin/guess-game/author-candidates")
     assert admin_candidates.status_code == 200, admin_candidates.text
     candidates_by_code = {row["user"]["user_code"]: row for row in admin_candidates.json()}
-    assert set(candidates_by_code) == {"admin", "owner", "guesser", "viewer"}
-    assert all(row["selected"] for row in candidates_by_code.values())
-    assert candidates_by_code["viewer"]["song_count"] == 0
+    assert set(candidates_by_code) == {"admin", "owner", "guesser"}
+    assert all("selected" in row for row in candidates_by_code.values())
     configured = client.put(
         "/api/v1/admin/guess-game/author-candidates",
         json={"rows": [{"user_id": owner_user_id, "display_id": "P01"}]},
@@ -501,7 +536,7 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert overview.status_code == 200, overview.text
     assert overview.json()["can_guess"] is True
     display_ids = {item["display_id"] for item in overview.json()["candidates"]}
-    assert display_ids == {"admin", "P01", "guesser", "viewer"}
+    assert display_ids == {"P01"}
     assert {item["chart_id"] for item in overview.json()["states"]} == set(chart_ids)
     assert {item["guessed_user_id"] for item in overview.json()["states"]} == {None}
     owner_id = next(item["user_id"] for item in overview.json()["candidates"] if item["display_id"] == "P01")

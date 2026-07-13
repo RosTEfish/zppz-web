@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import re
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -12,7 +13,7 @@ from app.core.config import get_settings
 from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
+from app.models import Event, GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
 from app.modules.guess_game.importer import ArchiveParseError, parse_archive
 
 
@@ -36,9 +37,17 @@ def client():
 
 
 def archive_bytes(maidata: str, encoding: str = "utf-8", cover: bytes | None = b"cover") -> bytes:
+    playable = "\n".join(
+        f"&inote_{slot}=(120){{1}},"
+        for slot in re.findall(r"(?im)^\s*&lv_([1-7])\s*=", maidata)
+        if not re.search(rf"(?im)^\s*&inote_{slot}\s*=", maidata)
+    )
+    if playable:
+        maidata = f"{maidata}\n{playable}"
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr("nested/maidata.txt", maidata.encode(encoding))
+        archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
         if cover is not None:
             archive.writestr("nested/bg.png", cover)
     return buffer.getvalue()
@@ -115,7 +124,7 @@ def test_parser_resolves_global_and_per_level_designers(tmp_path: Path):
     assert parse_archive(missing).levels[0].designer == ""
 
 
-def test_parser_rejects_missing_required_fields_and_allows_missing_cover(tmp_path: Path):
+def test_parser_rejects_missing_required_fields_and_cover(tmp_path: Path):
     missing_title = tmp_path / "invalid.zip"
     missing_title.write_bytes(archive_bytes("&artist=artist\n&lv_4=13"))
     with pytest.raises(ArchiveParseError, match="title"):
@@ -123,17 +132,16 @@ def test_parser_rejects_missing_required_fields_and_allows_missing_cover(tmp_pat
 
     no_cover = tmp_path / "no-cover.zip"
     no_cover.write_bytes(archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13", cover=None))
-    parsed = parse_archive(no_cover)
-    assert parsed.cover_bytes is None
-    assert parsed.warnings[0].issue_type == "bg_missing"
+    with pytest.raises(ArchiveParseError, match="bg"):
+        parse_archive(no_cover)
 
 
 def test_parser_reads_only_required_7z_members(tmp_path: Path):
     path = tmp_path / "chart.7z"
     with py7zr.SevenZipFile(path, "w") as archive:
-        archive.writestr("&title=Seven\n&artist=Artist\n&lv_4=13+", "nested/maidata.txt")
+        archive.writestr("&title=Seven\n&artist=Artist\n&lv_4=13+\n&inote_4=(120){1},", "nested/maidata.txt")
         archive.writestr(b"cover", "nested/bg.jpg")
-        archive.writestr(b"unused", "nested/music.ogg")
+        archive.writestr((bytes.fromhex("FFFB9064") + bytes(413)) * 2, "nested/track.mp3")
     parsed = parse_archive(path)
     assert parsed.title == "Seven"
     assert [(level.slot, level.level) for level in parsed.levels] == [("4", "13+")]
@@ -146,12 +154,23 @@ def test_upload_creates_charts_and_serves_cover(client: TestClient):
     response = upload(client, archive_bytes("&title=Song\n&artist=Artist\n&des=Global\n&des5=Expert\n&lv_4=13+\n&lv_5=14"))
     assert response.status_code == 200, response.text
 
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "guess"
+        db.commit()
+        imported = list(db.scalars(select(GuessChart)).all())
+        assert {(row.source_level_slot, row.level) for row in imported} == {("4", "13+"), ("5", "14")}
+        assert {row.source_level_slot: row.designer for row in imported} == {"4": "Global", "5": "Expert"}
+
     charts = client.get("/api/v1/guess-game/charts")
     assert charts.status_code == 200
-    assert {(row["source_level_slot"], row["level"]) for row in charts.json()} == {("4", "13+"), ("5", "14")}
-    assert {row["source_level_slot"]: row["designer"] for row in charts.json()} == {"4": "Global", "5": "Expert"}
+    assert {row["level"] for row in charts.json()} == {"13+", "14"}
+    assert all("designer" not in row for row in charts.json())
+    assert {row["source_level_slot"] for row in charts.json()} == {"4", "5"}
     cover_path = charts.json()[0]["cover_path"]
-    assert cover_path.startswith("/api/v1/assets/guess-covers/")
+    assert cover_path.startswith("/api/v1/guess-game/charts/")
+    assert cover_path.endswith("/cover")
     assert client.get(cover_path).status_code == 200
 
 
@@ -217,7 +236,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
 def test_invalid_upload_and_replace_leave_no_partial_state(client: TestClient):
     register(client)
     invalid = upload(client, archive_bytes("&artist=Artist\n&lv_4=13"), "invalid.zip")
-    assert invalid.status_code == 400
+    assert invalid.status_code == 422
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(Submission)) == 0
         assert db.scalar(select(func.count()).select_from(GuessChart)) == 0
@@ -235,7 +254,7 @@ def test_invalid_upload_and_replace_leave_no_partial_state(client: TestClient):
         f"/api/v1/submissions/{submission_id}/replace",
         files={"file": ("broken.zip", archive_bytes("&artist=Artist\n&lv_4=14"), "application/zip")},
     )
-    assert failed.status_code == 400
+    assert failed.status_code == 422
     with SessionLocal() as db:
         current = db.get(Submission, submission_id)
         assert current.storage_path == original_storage_path
@@ -346,9 +365,95 @@ def test_delete_submission_removes_only_its_charts_and_cover(client: TestClient)
     register(client)
     created = upload(client, archive_bytes("&title=Delete Me\n&artist=Artist\n&lv_4=13"))
     assert created.status_code == 200
-    cover_path = client.get("/api/v1/guess-game/charts").json()[0]["cover_path"]
+    with SessionLocal() as db:
+        cover_path = db.scalar(select(GuessChart.cover_path))
     response = client.delete(f"/api/v1/submissions/{created.json()['id']}")
     assert response.status_code == 200
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(GuessChart)) == 0
     assert client.get(cover_path).status_code == 404
+
+
+def test_public_visibility_neutral_package_and_audience_author_guess(client: TestClient):
+    register(client, "player1")
+    normal = upload(
+        client,
+        archive_bytes("&title=Normal\n&artist=Artist\n&des=Visible In Package\n&lv_4=13"),
+    )
+    assert normal.status_code == 200, normal.text
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        user = db.scalar(select(User).where(User.user_code == "player1"))
+        second_song = Song(event_id=event.id, submitted_by_id=user.id, song_name="J", artist="Artist", song_type="J")
+        db.add(second_song)
+        db.commit()
+        second_song_id = second_song.id
+    j_track = client.post(
+        "/api/v1/submissions",
+        data={"song_id": second_song_id, "track": "j"},
+        files={"file": ("identity-leaking-name.zip", archive_bytes("&title=J\n&artist=Artist\n&des=J Designer\n&lv_5=14"), "application/zip")},
+    )
+    assert j_track.status_code == 200, j_track.text
+
+    before_guess = client.get("/api/v1/guess-game/charts").json()
+    assert [row["source_submission_type"] for row in before_guess] == ["j"]
+    assert "designer" not in before_guess[0]
+    assert "source_submission_id" not in before_guess[0]
+    assert "storage_path" not in before_guess[0]
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        player = db.scalar(select(User).where(User.user_code == "player1"))
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "guess"
+        db.add(GuessAuthorCandidate(event_id=event.id, user_id=player.id, display_id="P1"))
+        db.commit()
+    all_charts = client.get("/api/v1/guess-game/charts").json()
+    normal_chart = next(row for row in all_charts if row["source_submission_type"] == "normal")
+    assert "designer" not in normal_chart
+
+    downloaded = client.get(f"/api/v1/guess-game/charts/{normal_chart['id']}/download")
+    assert downloaded.status_code == 200
+    assert "identity-leaking-name" not in downloaded.headers["content-disposition"]
+    with ZipFile(BytesIO(downloaded.content)) as archive:
+        assert set(archive.namelist()) == {"maidata.txt", "track.mp3", "bg.png"}
+        assert b"&des=Visible In Package" in archive.read("maidata.txt")
+
+    register(client, "viewer")
+    with SessionLocal() as db:
+        viewer = db.scalar(select(User).where(User.user_code == "viewer"))
+        viewer.identity = "audience"
+        db.commit()
+        player_id = db.scalar(select(User.id).where(User.user_code == "player1"))
+    guessed = client.put(
+        f"/api/v1/guess-game/charts/{normal_chart['id']}/author-guess",
+        json={"guessed_user_id": player_id},
+    )
+    assert guessed.status_code == 200, guessed.text
+    j_chart = next(row for row in all_charts if row["source_submission_type"] == "j")
+    assert client.put(
+        f"/api/v1/guess-game/charts/{j_chart['id']}/author-guess",
+        json={"guessed_user_id": player_id},
+    ).status_code == 403
+
+
+def test_exhibition_allows_multiple_unlinked_submissions(client: TestClient):
+    register(client, "exhibitor")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.submissions_open = True
+        db.commit()
+    responses = [
+        client.post(
+            "/api/v1/submissions",
+            data={"track": "exhibition"},
+            files={"file": (f"outside-{index}.zip", archive_bytes(f"&title=Outside {index}\n&artist=Artist\n&lv_4=8"), "application/zip")},
+        )
+        for index in range(2)
+    ]
+    assert [response.status_code for response in responses] == [200, 200]
+    assert all(response.json()["source_song"] is None for response in responses)
+    public = client.get("/api/v1/guess-game/charts").json()
+    assert {row["source_submission_type"] for row in public} == {"exhibition"}
+    assert len(public) == 2

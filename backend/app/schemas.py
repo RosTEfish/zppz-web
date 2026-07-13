@@ -1,6 +1,19 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+EventPhaseName = Literal[
+    "registration",
+    "draw",
+    "submission_1",
+    "swap",
+    "submission_2",
+    "guess",
+    "reveal",
+    "closed",
+]
 
 
 class ApiMessage(BaseModel):
@@ -52,6 +65,8 @@ class EventSettingsRead(BaseModel):
     guess_game_open_at: datetime | None = None
     submissions_open: bool = False
     guess_game_visible: bool = True
+    phase_mode: Literal["auto", "manual"] = "auto"
+    manual_phase: EventPhaseName | None = None
 
     model_config = {"from_attributes": True}
 
@@ -86,6 +101,63 @@ class EventUpdate(BaseModel):
     guess_game_visible: bool = True
 
 
+class EventPhaseWrite(BaseModel):
+    phase: EventPhaseName
+    starts_at: datetime
+    ends_at: datetime
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        starts_at = self.starts_at if self.starts_at.tzinfo is None else self.starts_at.astimezone(timezone.utc).replace(tzinfo=None)
+        ends_at = self.ends_at if self.ends_at.tzinfo is None else self.ends_at.astimezone(timezone.utc).replace(tzinfo=None)
+        if starts_at >= ends_at:
+            raise ValueError("starts_at must be earlier than ends_at")
+        return self
+
+
+class EventPhaseRead(EventPhaseWrite):
+    id: int
+
+    model_config = {"from_attributes": True}
+
+
+class PhaseCapabilitiesRead(BaseModel):
+    song_pool_edit: bool = False
+    draw: bool = False
+    submission: bool = False
+    swap: bool = False
+    normal_submission_public: bool = False
+    author_guess: bool = False
+    quality_vote: bool = False
+    answers_visible: bool = False
+
+
+class EventPhasesUpdate(BaseModel):
+    phase_mode: Literal["auto", "manual"] = "auto"
+    manual_phase: EventPhaseName | None = None
+    phases: list[EventPhaseWrite]
+
+    @model_validator(mode="after")
+    def validate_manual_phase(self):
+        if self.phase_mode == "manual" and self.manual_phase is None:
+            raise ValueError("manual_phase is required in manual mode")
+        if self.phase_mode == "auto" and self.manual_phase is not None:
+            raise ValueError("manual_phase must be null in auto mode")
+        return self
+
+
+class EventPhasesRead(BaseModel):
+    event_id: int
+    phase_mode: Literal["auto", "manual"]
+    manual_phase: EventPhaseName | None = None
+    active_phase: EventPhaseName
+    timezone: str = "Asia/Shanghai"
+    server_time: datetime
+    next_transition_at: datetime | None = None
+    phases: list[EventPhaseRead]
+    capabilities: PhaseCapabilitiesRead
+
+
 class SongCreate(BaseModel):
     song_name: str = Field(min_length=1, max_length=200)
     artist: str = Field(min_length=1, max_length=100)
@@ -109,6 +181,9 @@ class DrawAssignmentRead(BaseModel):
     id: int
     assigned_to: UserRead
     song: SongRead
+    status: str = "active"
+    draw_kind: str = "initial"
+    replaces_assignment_id: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -122,6 +197,10 @@ class StoredFileRead(BaseModel):
     review_note: str
     source_kind: str = ""
     track: str = "normal"
+    track_duration_seconds: float | None = None
+    is_long_track: bool = False
+    public_package_ready: bool = False
+    validation: dict[str, bool] = Field(default_factory=dict)
     source_song: SongRead | None = None
     user: UserRead | None = None
     created_at: datetime
@@ -141,7 +220,47 @@ class SubmissionTargetsResponse(BaseModel):
 
 
 class SubmissionTrackUpdate(BaseModel):
-    track: str = Field(pattern="^(normal|j)$")
+    track: str = Field(pattern="^(normal|j|exhibition)$")
+
+
+class SwapSelectionUpdate(BaseModel):
+    assignment_ids: list[int] = Field(min_length=1, max_length=3)
+
+    @field_validator("assignment_ids")
+    @classmethod
+    def assignment_ids_are_unique(cls, value: list[int]) -> list[int]:
+        if len(set(value)) != len(value):
+            raise ValueError("assignment_ids must be unique")
+        return value
+
+
+class SwapItemRead(BaseModel):
+    id: int
+    position: int
+    original_assignment: DrawAssignmentRead
+    replacement_assignment: DrawAssignmentRead | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class SwapOverviewRead(BaseModel):
+    round_id: int | None = None
+    round_number: int | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    round_status: str | None = None
+    request_id: int | None = None
+    request_status: str | None = None
+    error_message: str = ""
+    items: list[SwapItemRead] = Field(default_factory=list)
+
+
+class SwapValidationRead(BaseModel):
+    valid: bool
+    request_count: int = 0
+    item_count: int = 0
+    available_song_count: int = 0
+    errors: list[str] = Field(default_factory=list)
 
 
 class DownloadPreparation(BaseModel):
@@ -190,6 +309,41 @@ class GuessChartRead(BaseModel):
     my_votes: list[str] = []
 
     model_config = {"from_attributes": True}
+
+
+class PublicGuessChartRead(BaseModel):
+    id: int
+    title: str
+    author: str
+    level: str
+    lane: str
+    guess_group_key: str
+    source_submission_type: str
+    source_level_slot: str
+    cover_path: str
+    is_self_selected: bool
+    plays: int
+    created_at: datetime
+    track_duration_seconds: float | None = None
+    is_long_track: bool = False
+    can_download: bool = True
+    can_vote: bool = False
+    can_comment: bool = False
+    can_author_guess: bool = False
+    love_votes: int = 0
+    funny_votes: int = 0
+    my_votes: list[str] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class RevealedGuessChartRead(PublicGuessChartRead):
+    designer: str
+
+
+class AdminGuessChartRead(GuessChartRead):
+    track_duration_seconds: float | None = None
+    is_long_track: bool = False
 
 
 class VoteRequest(BaseModel):

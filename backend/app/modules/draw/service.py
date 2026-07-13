@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import DrawAssignment, JTrackSubmission, Song, Submission, User
+from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
 
 
@@ -16,7 +17,7 @@ SELF_DRAW_RETRY_DELAY_SECONDS = 0.04
 
 def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
     event = get_current_event(db)
-    _assert_draw_is_mutable(db, event.id, event.settings.submissions_open)
+    _assert_draw_is_mutable(db, event)
     assert_song_pool_complete(
         db,
         event.id,
@@ -53,7 +54,13 @@ def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
                 break
             song = candidates[cursor % len(candidates)]
             pool.remove(song)
-            assignment = DrawAssignment(event_id=event.id, assigned_to_id=participant.id, song_id=song.id)
+            assignment = DrawAssignment(
+                event_id=event.id,
+                assigned_to_id=participant.id,
+                song_id=song.id,
+                status="active",
+                draw_kind="initial",
+            )
             db.add(assignment)
             created.append(assignment)
             cursor += 1
@@ -94,7 +101,7 @@ def draw_for_user(db: Session, user: User) -> list[DrawAssignment]:
 def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
     _begin_sqlite_immediate_transaction(db)
     event = get_current_event(db)
-    _assert_draw_is_mutable(db, event.id, event.settings.submissions_open)
+    _assert_draw_is_mutable(db, event)
     assert_song_pool_complete(
         db,
         event.id,
@@ -114,6 +121,7 @@ def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
             select(DrawAssignment.song_id).where(
                 DrawAssignment.event_id == event.id,
                 DrawAssignment.assigned_to_id != user_id,
+                DrawAssignment.status == "active",
             )
         ).all()
     )
@@ -124,9 +132,20 @@ def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
     draw_count = min(max(event.settings.draw_songs_per_participant, 1), len(available))
     chosen_song_ids = _choose_song_ids(available, user_id, draw_count)
 
-    db.execute(delete(DrawAssignment).where(DrawAssignment.event_id == event.id, DrawAssignment.assigned_to_id == user_id))
+    db.execute(
+        delete(DrawAssignment).where(
+            DrawAssignment.event_id == event.id,
+            DrawAssignment.assigned_to_id == user_id,
+        )
+    )
     assignments = [
-        DrawAssignment(event_id=event.id, assigned_to_id=user_id, song_id=song_id)
+        DrawAssignment(
+            event_id=event.id,
+            assigned_to_id=user_id,
+            song_id=song_id,
+            status="active",
+            draw_kind="initial",
+        )
         for song_id in chosen_song_ids
     ]
     db.add_all(assignments)
@@ -157,11 +176,11 @@ def _is_retryable_operational_error(exc: OperationalError) -> bool:
     return any(fragment in message for fragment in ("database is locked", "deadlock", "lock timeout", "could not serialize"))
 
 
-def _assert_draw_is_mutable(db: Session, event_id: int, submissions_open: bool) -> None:
-    if submissions_open:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="投稿已开放，不能重新抽签")
-    has_submission = db.scalar(select(Submission.id).where(Submission.event_id == event_id).limit(1))
-    has_legacy_j = db.scalar(select(JTrackSubmission.id).where(JTrackSubmission.event_id == event_id).limit(1))
+def _assert_draw_is_mutable(db: Session, event) -> None:
+    if not get_phase_status(db, event).can("draw"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前不在抽签阶段")
+    has_submission = db.scalar(select(Submission.id).where(Submission.event_id == event.id).limit(1))
+    has_legacy_j = db.scalar(select(JTrackSubmission.id).where(JTrackSubmission.event_id == event.id).limit(1))
     if has_submission or has_legacy_j:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已有投稿文件，请先清空投稿后再重新抽签")
 
@@ -175,6 +194,7 @@ def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssign
             selectinload(DrawAssignment.song).selectinload(Song.submitter).selectinload(User.roles),
         )
         .where(DrawAssignment.event_id == event.id)
+        .where(DrawAssignment.status == "active")
         .order_by(DrawAssignment.created_at.desc())
     )
     if user_id:

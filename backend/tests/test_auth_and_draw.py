@@ -65,6 +65,14 @@ def assignment_count_for(user_code: str) -> int:
         return len(db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id, DrawAssignment.assigned_to_id == user.id)).all())
 
 
+def set_manual_draw() -> None:
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "draw"
+        db.commit()
+
+
 def test_register_login_and_me(client: TestClient):
     register_user(client, "player1")
 
@@ -132,6 +140,7 @@ def test_admin_role_management_keeps_an_active_admin(client: TestClient):
 
 
 def test_self_draw_requires_auth_and_participant(client: TestClient):
+    set_manual_draw()
     response = client.post("/api/v1/draw/me")
     assert response.status_code == 401
 
@@ -141,6 +150,7 @@ def test_self_draw_requires_auth_and_participant(client: TestClient):
 
 
 def test_draw_requires_every_active_account_including_admin_to_fill_song_pool(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     register_user(client, "viewer1", "audience")
     with SessionLocal() as db:
@@ -192,6 +202,7 @@ def test_opening_submissions_requires_every_active_account_to_fill_song_pool(cli
 
 
 def test_participant_self_draw_creates_assignment(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     register_user(client, "player2")
     add_song_for("player2", "other-song")
@@ -207,6 +218,7 @@ def test_participant_self_draw_creates_assignment(client: TestClient):
 
 
 def test_global_redraw_includes_admin_participants(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     add_song_for("admin", "admin-song")
     add_song_for("player1", "player-song")
@@ -223,6 +235,7 @@ def test_global_redraw_includes_admin_participants(client: TestClient):
 
 
 def test_self_redraw_replaces_existing_assignment(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     register_user(client, "player2")
     register_user(client, "player3")
@@ -240,6 +253,7 @@ def test_self_redraw_replaces_existing_assignment(client: TestClient):
 
 
 def test_self_draws_do_not_duplicate_songs_between_participants(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     register_user(client, "player2")
     add_song_for("player1", "player1-song")
@@ -257,6 +271,7 @@ def test_self_draws_do_not_duplicate_songs_between_participants(client: TestClie
 
 
 def test_self_draw_prefers_non_self_song(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     register_user(client, "player2")
     add_song_for("player1", "self-song")
@@ -270,6 +285,7 @@ def test_self_draw_prefers_non_self_song(client: TestClient):
 
 
 def test_self_draw_empty_or_exhausted_pool_returns_error(client: TestClient):
+    set_manual_draw()
     register_user(client, "player1")
     login_user(client, "player1")
     empty = client.post("/api/v1/draw/me")
@@ -292,6 +308,7 @@ def test_self_draw_empty_or_exhausted_pool_returns_error(client: TestClient):
 
 
 def test_ten_users_can_refresh_repeatedly_without_duplicate_or_extra_assignments(client: TestClient):
+    set_manual_draw()
     user_codes = [f"player{i}" for i in range(10)]
     for user_code in user_codes:
         register_user(client, user_code)

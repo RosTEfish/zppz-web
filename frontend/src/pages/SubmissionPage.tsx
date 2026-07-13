@@ -1,99 +1,37 @@
 import { useState } from "react";
-import { Alert, Box, Button, Card, CardContent, Chip, FormControlLabel, IconButton, Paper, Snackbar, Stack, Switch, Tooltip, Typography } from "@mui/material";
-import { Check, RefreshCw, Trash2, Upload } from "lucide-react";
-import { api, formatMB, formatTime, type SubmissionTargetRead, type Track } from "../api/v1";
+import { Alert, Box, Button, Card, CardContent, Chip, IconButton, Paper, Snackbar, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import { Check, Clock3, FileCheck2, RefreshCw, Trash2, Upload } from "lucide-react";
+import { api, formatDuration, formatMB, formatTime, type StoredFileRead, type SubmissionTargetRead, type Track } from "../api/v1";
 import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
 import { useAuth } from "../contexts/AuthContext";
 
-
 export default function SubmissionPage() {
   const targets = useResource(api.submissionTargets, []);
+  const submissions = useResource(api.mySubmissions, []);
   const [trackChoices, setTrackChoices] = useState<Record<number, Track>>({});
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | "exhibition" | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const { user } = useAuth();
   if (user?.identity !== "participant") return <Stack spacing={3}><PageHeader icon={Upload} title="投稿" /><Alert severity="info">仅参赛者账号开放谱面投稿。</Alert></Stack>;
+  const exhibitions = submissions.data?.filter((item) => item.track === "exhibition") ?? [];
 
   function choice(target: SubmissionTargetRead): Track { return trackChoices[target.song.id] || target.submission?.track || "normal"; }
-  function chooseTrack(songId: number, nextTrack: Track) {
-    setTrackChoices((current) => {
-      if (nextTrack === "normal") return { ...current, [songId]: "normal" };
-      return Object.fromEntries(
-        (targets.data?.targets || []).map((target) => [target.song.id, target.song.id === songId ? "j" : "normal"]),
-      );
-    });
-  }
-  async function changeTrack(target: SubmissionTargetRead, nextTrack: Track) {
-    if (!target.submission || target.submission.track === nextTrack) return;
-    setBusyId(target.song.id); setError("");
-    try {
-      await api.updateSubmissionTrack(target.submission.id, nextTrack);
-      setMessage(nextTrack === "j" ? "已切换为 J 赛道" : "已切换为普通赛道");
-      await targets.reload();
-      setTrackChoices({});
-    } catch (err) {
-      setTrackChoices({});
-      await targets.reload();
-      setError(err instanceof Error ? err.message : "赛道切换失败");
-    } finally { setBusyId(null); }
-  }
-  async function upload(target: SubmissionTargetRead, file?: File) {
-    if (!file) return;
-    setBusyId(target.song.id); setError("");
-    try {
-      if (target.submission) await api.replaceSubmission(target.submission.id, choice(target), file);
-      else await api.uploadSubmission(target.song.id, choice(target), file);
-      setMessage(target.submission ? "投稿已替换" : "投稿已上传");
-      await targets.reload();
-      setTrackChoices({});
-    } catch (err) { setError(err instanceof Error ? err.message : "上传失败"); } finally { setBusyId(null); }
-  }
-  async function remove(target: SubmissionTargetRead) {
-    if (!target.submission || !window.confirm(`确认删除《${target.song.song_name}》的投稿？`)) return;
-    setBusyId(target.song.id);
-    try { await api.deleteSubmission(target.submission.id); await targets.reload(); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } finally { setBusyId(null); }
-  }
+  function chooseTrack(songId: number, nextTrack: Track) { setTrackChoices((current) => nextTrack === "j" ? Object.fromEntries((targets.data?.targets || []).map((target) => [target.song.id, target.song.id === songId ? "j" : "normal"])) : { ...current, [songId]: "normal" }); }
+  async function changeTrack(target: SubmissionTargetRead, nextTrack: Track) { if (!target.submission || target.submission.track === nextTrack) return; setBusyId(target.song.id); setError(""); try { await api.updateSubmissionTrack(target.submission.id, nextTrack); setMessage(nextTrack === "j" ? "已切换为 J 投稿" : "已切换为普通投稿"); await Promise.all([targets.reload(), submissions.reload()]); setTrackChoices({}); } catch (err) { setTrackChoices({}); setError(err instanceof Error ? err.message : "类型切换失败"); } finally { setBusyId(null); } }
+  async function upload(target: SubmissionTargetRead, file?: File) { if (!file) return; setBusyId(target.song.id); setError(""); try { if (target.submission) await api.replaceSubmission(target.submission.id, choice(target), file); else await api.uploadSubmission(target.song.id, choice(target), file); setMessage("解析与公开包重打包完成"); await Promise.all([targets.reload(), submissions.reload()]); setTrackChoices({}); } catch (err) { setError(err instanceof Error ? err.message : "上传校验失败，原投稿未受影响"); } finally { setBusyId(null); } }
+  async function uploadExhibition(file?: File) { if (!file) return; setBusyId("exhibition"); setError(""); try { await api.uploadExhibition(file); setMessage("场外投稿已解析并生成公开包"); await submissions.reload(); } catch (err) { setError(err instanceof Error ? err.message : "场外投稿校验失败"); } finally { setBusyId(null); } }
+  async function remove(file: StoredFileRead, songId?: number) { if (!window.confirm(`确认删除“${file.file_name}”？`)) return; setBusyId(songId ?? "exhibition"); try { await api.deleteSubmission(file.id); await Promise.all([targets.reload(), submissions.reload()]); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } finally { setBusyId(null); } }
 
-  return (
-    <Stack spacing={3}>
-      <PageHeader icon={Upload} title="候选投稿" meta={`${targets.data?.targets.filter((item) => item.submission).length ?? 0} / ${targets.data?.targets.length ?? 0} 已完成`} />
-      {targets.data && !targets.data.is_open ? <Alert severity="warning">抽签阶段尚未结束，投稿入口暂未开放。</Alert> : null}
-      {error ? <Alert severity="error">{error}</Alert> : null}
-      <ResourceState loading={targets.loading} error={targets.error} empty={targets.data && !targets.data.targets.length ? "没有可投稿的候选曲目" : undefined} />
-      {targets.data?.targets.length ? (
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>
-          {targets.data.targets.map((target) => {
-            const submitted = target.submission;
-            const selectedTrack = choice(target);
-            return (
-              <Card variant="outlined" key={target.song.id}>
-                <CardContent>
-                  <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start", gap: 2 }}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
-                        <Typography variant="h3" sx={{ overflowWrap: "anywhere" }}>{target.song.song_name}</Typography>
-                        <Chip size="small" color={target.source_kind === "self" ? "primary" : "secondary"} label={target.source_kind === "self" ? "自选" : "抽中"} />
-                      </Stack>
-                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>{target.song.artist}</Typography>
-                    </Box>
-                    {submitted ? <Chip size="small" color="success" icon={<Check size={14} />} label="已投稿" /> : <Chip size="small" variant="outlined" label="待投稿" />}
-                  </Stack>
-                  {submitted ? <Paper variant="outlined" sx={{ p: 1.5, mt: 2, bgcolor: "background.default" }}><Typography variant="body2" noWrap title={submitted.file_name} sx={{ fontWeight: 650 }}>{submitted.file_name}</Typography><Typography variant="caption" color="text.secondary">{formatMB(submitted.file_size)} · {formatTime(submitted.created_at)}</Typography></Paper> : null}
-                  <Stack direction={{ xs: "column", sm: "row" }} sx={{ mt: 2, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between", gap: 1.5 }}>
-                    <FormControlLabel control={<Switch checked={selectedTrack === "j"} onChange={(e) => { const nextTrack = e.target.checked ? "j" : "normal"; chooseTrack(target.song.id, nextTrack); if (submitted) void changeTrack(target, nextTrack); }} disabled={!targets.data?.is_open || busyId !== null} />} label="J 赛道" />
-                    <Stack direction="row" spacing={1}>
-                      <Button component="label" variant={submitted ? "outlined" : "contained"} startIcon={submitted ? <RefreshCw size={16} /> : <Upload size={16} />} disabled={!targets.data?.is_open || busyId === target.song.id}>{submitted ? "替换" : "上传"}<input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { void upload(target, event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button>
-                      {submitted ? <Tooltip title="删除"><IconButton color="error" disabled={!targets.data?.is_open || busyId === target.song.id} onClick={() => void remove(target)}><Trash2 size={18} /></IconButton></Tooltip> : null}
-                    </Stack>
-                  </Stack>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </Box>
-      ) : null}
-      <Snackbar open={Boolean(message)} autoHideDuration={2500} onClose={() => setMessage("")} message={message} />
-    </Stack>
-  );
+  return <Stack spacing={3}><PageHeader icon={Upload} title="投稿" meta={`${targets.data?.targets.filter((item) => item.submission).length ?? 0} 个正赛 / J 投稿，${exhibitions.length} 个场外投稿`} />{targets.data && !targets.data.is_open ? <Alert severity="warning">当前阶段未开放普通与 J 投稿。</Alert> : null}{error ? <Alert severity="error" aria-live="polite">{error}</Alert> : null}<ResourceState loading={targets.loading} error={targets.error} />{targets.data?.targets.length ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>{targets.data.targets.map((target) => <SubmissionCard key={target.song.id} target={target} selectedTrack={choice(target)} disabled={!targets.data?.is_open || busyId !== null} busy={busyId === target.song.id} onTrack={(track) => { chooseTrack(target.song.id, track); if (target.submission) void changeTrack(target, track); }} onUpload={(file) => void upload(target, file)} onRemove={() => target.submission && void remove(target.submission, target.song.id)} />)}</Box> : null}<Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, borderStyle: "dashed" }}><Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}><Box><Typography variant="h3">场外投稿</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>无需关联曲目，数量不限；上传成功后立即公开，不参与作者竞猜。</Typography></Box><Button component="label" variant="contained" startIcon={<Upload size={16} />} disabled={!targets.data?.is_open || busyId !== null}>{busyId === "exhibition" ? "上传、解析并重打包中…" : "上传场外包"}<input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { void uploadExhibition(event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button></Stack>{exhibitions.length ? <Stack spacing={1} sx={{ mt: 2 }}>{exhibitions.map((file) => <FileSummary key={file.id} file={file} actions={<Tooltip title="删除场外投稿"><IconButton aria-label={`删除 ${file.file_name}`} color="error" disabled={busyId !== null} onClick={() => void remove(file)}><Trash2 size={17} /></IconButton></Tooltip>} />)}</Stack> : null}</Paper><Snackbar open={Boolean(message)} autoHideDuration={3000} onClose={() => setMessage("")} message={message} slotProps={{ content: { "aria-live": "polite" } }} /></Stack>;
+}
+
+function SubmissionCard({ target, selectedTrack, disabled, busy, onTrack, onUpload, onRemove }: { target: SubmissionTargetRead; selectedTrack: Track; disabled: boolean; busy: boolean; onTrack: (track: "normal" | "j") => void; onUpload: (file?: File) => void; onRemove: () => void }) {
+  const submitted = target.submission;
+  return <Card variant="outlined"><CardContent><Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start", gap: 2 }}><Box sx={{ minWidth: 0 }}><Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}><Typography variant="h3" sx={{ overflowWrap: "anywhere" }}>{target.song.song_name}</Typography><Chip size="small" color={target.source_kind === "self" ? "primary" : "secondary"} label={target.source_kind === "self" ? "自选" : "抽中"} /></Stack><Typography color="text.secondary" sx={{ mt: 0.5 }}>{target.song.artist}</Typography></Box>{submitted ? <Chip size="small" color="success" icon={<Check size={14} />} label="已投稿" /> : <Chip size="small" variant="outlined" label="待投稿" />}</Stack>{submitted ? <FileSummary file={submitted} /> : null}<Stack direction={{ xs: "column", sm: "row" }} sx={{ mt: 2, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between", gap: 1.5 }}><ToggleButtonGroup size="small" exclusive value={selectedTrack} aria-label="投稿类型" onChange={(_, value: "normal" | "j" | null) => { if (value) onTrack(value); }}><ToggleButton value="normal">普通</ToggleButton><ToggleButton value="j">J</ToggleButton></ToggleButtonGroup><Stack direction="row" spacing={1}><Button component="label" variant={submitted ? "outlined" : "contained"} startIcon={submitted ? <RefreshCw size={16} /> : <Upload size={16} />} disabled={disabled}>{busy ? "上传、解析并重打包中…" : submitted ? "替换" : "上传"}<input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { onUpload(event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button>{submitted ? <Tooltip title="删除"><IconButton aria-label={`删除 ${target.song.song_name} 投稿`} color="error" disabled={disabled} onClick={onRemove}><Trash2 size={18} /></IconButton></Tooltip> : null}</Stack></Stack></CardContent></Card>;
+}
+
+function FileSummary({ file, actions }: { file: StoredFileRead; actions?: React.ReactNode }) {
+  const checks = file.validation;
+  return <Paper variant="outlined" sx={{ p: 1.5, mt: 2, bgcolor: "background.default" }}><Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}><Box sx={{ minWidth: 0 }}><Typography variant="body2" noWrap title={file.file_name} sx={{ fontWeight: 700 }}>{file.file_name}</Typography><Typography variant="caption" color="text.secondary">{formatMB(file.file_size)} · {formatTime(file.created_at)}</Typography></Box>{actions}</Stack><Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: "wrap", alignItems: "center" }}><Chip size="small" icon={<Clock3 size={13} />} label={formatDuration(file.track_duration_seconds)} /><Chip size="small" color={file.public_package_ready ? "success" : "default"} icon={<FileCheck2 size={13} />} label={file.public_package_ready ? "公开包就绪" : "等待公开包"} />{checks ? Object.entries({ maidata: "maidata", track: "track", background: "背景", duration: "时长" }).map(([key, label]) => <Chip key={key} size="small" variant="outlined" color={checks[key as keyof typeof checks] ? "success" : "error"} label={`${label} ${checks[key as keyof typeof checks] ? "✓" : "×"}`} />) : null}</Stack></Paper>;
 }
