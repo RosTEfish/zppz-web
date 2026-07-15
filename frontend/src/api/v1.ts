@@ -1,5 +1,5 @@
 export type Track = "normal" | "j" | "exhibition";
-export type EventPhaseName = "registration" | "draw" | "submission_1" | "swap" | "submission_2" | "guess" | "reveal" | "closed";
+export type EventPhaseName = "registration" | "draw" | "submission_1" | "swap" | "submission_2" | "guess";
 
 export interface PhaseCapabilities {
   song_pool_edit: boolean;
@@ -9,7 +9,6 @@ export interface PhaseCapabilities {
   normal_submission_public: boolean;
   author_guess: boolean;
   quality_vote: boolean;
-  answers_visible: boolean;
 }
 
 export interface EventPhaseWindow {
@@ -21,7 +20,7 @@ export interface EventPhaseWindow {
 export interface EventPhasesRead {
   phase_mode: "auto" | "manual";
   manual_phase?: EventPhaseName | null;
-  active_phase: EventPhaseName;
+  active_phase: EventPhaseName | null;
   phases: EventPhaseWindow[];
   capabilities: PhaseCapabilities;
   next_transition_at?: string | null;
@@ -147,7 +146,7 @@ export interface DrawAssignmentRead {
 
 export interface SwapMeRead {
   is_open: boolean;
-  active_phase: EventPhaseName;
+  active_phase: EventPhaseName | null;
   max_selections: number;
   round?: { id: number; status: string; starts_at: string; ends_at: string; finalized_at?: string | null } | null;
   request?: { id: number; status: string; assignment_ids: number[] } | null;

@@ -149,12 +149,12 @@ export default function GuessPage() {
       <ResourceState loading={charts.loading} error={charts.error} empty={!allCharts.length ? "暂无谱面" : undefined} />
       {allCharts.length ? <GuessFilterPanel levels={levels} level={levelFilter} lane={laneFilter} selfSelected={selfFilter} onLevelChange={(value) => { setLevelFilter(value); clearSelection(); }} onLaneChange={(value) => { setLaneFilter(value); clearSelection(); }} onSelfChange={(value) => { setSelfFilter(value); clearSelection(); }} onReset={resetFilters} /> : null}
       {filteredCharts.length ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>{filteredCharts.map((chart) => <GuessChartCard key={chart.id} chart={chart} selecting={selecting} selected={selected.has(chart.id)} candidates={candidates} candidateLabels={candidateLabels} canGuess={canGuess} guessedUserId={guessedByChart.get(chart.id)} guessBusy={busyGuessGroup === chartGroupIdentity(chart)} onOpen={open} onGuess={saveDesignerGuess} />)}</Box> : allCharts.length ? <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center" }}><Typography color="text.secondary">没有符合当前筛选条件的谱面</Typography><Button variant="outlined" sx={{ mt: 2 }} onClick={resetFilters}>清除筛选</Button></Paper> : null}
-      <GuessDetailDialog chart={active} designerGuesses={designerGuesses.data} candidateLabels={candidateLabels} voteQuota={voteQuota.data} guessedUserId={active ? guessedByChart.get(active.id) : null} guessBusy={Boolean(active && busyGuessGroup === chartGroupIdentity(active))} canVote={phases?.capabilities.quality_vote ?? true} canComment={phases?.capabilities.quality_vote ?? true} onGuess={saveDesignerGuess} onClose={() => setActive(null)} onChanged={(next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }} onQuotaChanged={voteQuota.setData} />
+      <GuessDetailDialog chart={active} designerGuesses={designerGuesses.data} candidateLabels={candidateLabels} voteQuota={voteQuota.data} guessedUserId={active ? guessedByChart.get(active.id) : null} guessBusy={Boolean(active && busyGuessGroup === chartGroupIdentity(active))} canVote={phases?.capabilities.quality_vote ?? true} canComment={phases?.capabilities.quality_vote ?? true} canReadHistory={phases?.capabilities.normal_submission_public ?? false} onGuess={saveDesignerGuess} onClose={() => setActive(null)} onChanged={(next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }} onQuotaChanged={voteQuota.setData} />
     </Stack>
   );
 }
 
-function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota, guessedUserId, guessBusy, canVote, canComment, onGuess, onClose, onChanged, onQuotaChanged }: { chart: GuessChartRead | null; designerGuesses: DesignerGuessOverview | null; candidateLabels: ReadonlyMap<number, string>; voteQuota: LoveVoteQuotaRead | null; guessedUserId?: number | null; guessBusy: boolean; canVote: boolean; canComment: boolean; onGuess: (chart: GuessChartRead, userId: number | null) => void; onClose: () => void; onChanged: (chart: GuessChartRead) => void; onQuotaChanged: (quota: LoveVoteQuotaRead | null) => void }) {
+function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota, guessedUserId, guessBusy, canVote, canComment, canReadHistory, onGuess, onClose, onChanged, onQuotaChanged }: { chart: GuessChartRead | null; designerGuesses: DesignerGuessOverview | null; candidateLabels: ReadonlyMap<number, string>; voteQuota: LoveVoteQuotaRead | null; guessedUserId?: number | null; guessBusy: boolean; canVote: boolean; canComment: boolean; canReadHistory: boolean; onGuess: (chart: GuessChartRead, userId: number | null) => void; onClose: () => void; onChanged: (chart: GuessChartRead) => void; onQuotaChanged: (quota: LoveVoteQuotaRead | null) => void }) {
   const [comments, setComments] = useState<GuessCommentRead[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
@@ -163,8 +163,8 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
     if (!chart) return;
     setComments([]);
     setError("");
-    if (canComment && chart.can_comment !== false) void api.comments(chart.id).then(setComments).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
-  }, [canComment, chart?.can_comment, chart?.id]);
+    if (canReadHistory) void api.comments(chart.id).then(setComments).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
+  }, [canReadHistory, chart?.id]);
   if (!chart) return null;
   const isExhibition = chart.source_submission_type === "exhibition" || chart.lane === "exhibition";
   const candidates = designerGuesses?.candidates ?? EMPTY_DESIGNER_CANDIDATES;

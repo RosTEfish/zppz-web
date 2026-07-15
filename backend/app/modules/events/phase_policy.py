@@ -17,8 +17,6 @@ PHASES = (
     "swap",
     "submission_2",
     "guess",
-    "reveal",
-    "closed",
 )
 
 
@@ -31,7 +29,6 @@ class PhaseCapabilities:
     normal_submission_public: bool = False
     author_guess: bool = False
     quality_vote: bool = False
-    answers_visible: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -39,7 +36,7 @@ class PhaseCapabilities:
 
 @dataclass(frozen=True)
 class PhaseStatus:
-    active_phase: str
+    active_phase: str | None
     capabilities: PhaseCapabilities
     next_transition_at: datetime | None = None
 
@@ -60,9 +57,10 @@ CAPABILITIES: dict[str, PhaseCapabilities] = {
         author_guess=True,
         quality_vote=True,
     ),
-    "reveal": PhaseCapabilities(normal_submission_public=True, answers_visible=True),
-    "closed": PhaseCapabilities(),
 }
+
+INACTIVE_CAPABILITIES = PhaseCapabilities()
+POST_GUESS_CAPABILITIES = PhaseCapabilities(normal_submission_public=True)
 
 
 def _utc_naive(value: datetime) -> datetime:
@@ -102,6 +100,7 @@ def get_phase_status(
         (
             (row, _utc_naive(row.starts_at), _utc_naive(row.ends_at))
             for row in event.phases
+            if row.phase in PHASES
         ),
         key=lambda item: (item[1], item[2], item[0].id or 0),
     )
@@ -113,7 +112,7 @@ def get_phase_status(
     if not rows:
         return PhaseStatus("registration", CAPABILITIES["registration"])
 
-    active_phase = "closed"
+    active_phase: str | None = None
     if current_time < rows[0][1]:
         active_phase = "registration"
     else:
@@ -131,7 +130,13 @@ def get_phase_status(
     next_transition = min(future_boundaries) if future_boundaries else None
     if next_transition is not None:
         next_transition = next_transition.replace(tzinfo=timezone.utc)
-    return PhaseStatus(active_phase, CAPABILITIES[active_phase], next_transition)
+    if active_phase is not None:
+        capabilities = CAPABILITIES[active_phase]
+    elif any(row.phase == "guess" and ends_at <= current_time for row, _, ends_at in rows):
+        capabilities = POST_GUESS_CAPABILITIES
+    else:
+        capabilities = INACTIVE_CAPABILITIES
+    return PhaseStatus(active_phase, capabilities, next_transition)
 
 
 def phase_status_payload(status: PhaseStatus) -> dict[str, Any]:

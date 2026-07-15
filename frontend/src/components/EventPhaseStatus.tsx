@@ -10,9 +10,19 @@ export const PHASE_LABELS: Record<EventPhaseName, string> = {
   swap: "换曲",
   submission_2: "征稿二阶段",
   guess: "猜谱",
-  reveal: "揭晓",
-  closed: "已结束",
 };
+
+export function isGuessEnded(phases: EventPhasesRead, now?: number): boolean {
+  if (phases.active_phase !== null) return false;
+  const referenceTime = now ?? (phases.server_time ? new Date(phases.server_time).getTime() : Date.now());
+  const guessWindow = phases.phases.find((item) => item.phase === "guess");
+  return Boolean(guessWindow && new Date(guessWindow.ends_at).getTime() <= referenceTime);
+}
+
+export function phaseStatusLabel(phases: EventPhasesRead, now?: number): string {
+  if (phases.active_phase) return PHASE_LABELS[phases.active_phase];
+  return isGuessEnded(phases, now) ? "猜谱已截止" : "暂无进行中的阶段";
+}
 
 export function formatCountdown(target?: string | null, now = Date.now()): string {
   if (!target) return "暂无下一阶段时间";
@@ -37,11 +47,11 @@ export function PhaseHeadline({ phases }: { phases: EventPhasesRead }) {
     const timer = window.setInterval(() => setNow(Date.now() + clockOffset), 1000);
     return () => window.clearInterval(timer);
   }, [clockOffset]);
-  const currentWindow = phases.phases.find((item) => item.phase === phases.active_phase);
+  const currentWindow = phases.active_phase ? phases.phases.find((item) => item.phase === phases.active_phase) : undefined;
   const target = phases.next_transition_at || currentWindow?.ends_at;
   return (
     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" } }}>
-      <Chip color="primary" label={`当前：${PHASE_LABELS[phases.active_phase]}`} sx={{ fontWeight: 750 }} />
+      <Chip color={phases.active_phase ? "primary" : "default"} label={phases.active_phase ? `当前：${phaseStatusLabel(phases, now)}` : phaseStatusLabel(phases, now)} sx={{ fontWeight: 750 }} />
       {phases.phase_mode === "manual" ? <Chip color="warning" variant="outlined" label="管理员手动接管" /> : null}
       <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", color: "text.secondary" }}>
         <Clock3 size={16} aria-hidden="true" />
@@ -54,13 +64,15 @@ export function PhaseHeadline({ phases }: { phases: EventPhasesRead }) {
 export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
   const ordered = useMemo(() => phases.phases, [phases.phases]);
   const currentIndex = ordered.findIndex((item) => item.phase === phases.active_phase);
+  const referenceTime = phases.server_time ? new Date(phases.server_time).getTime() : Date.now();
   return (
     <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, overflow: "hidden" }}>
       <Typography variant="overline" color="text.secondary">赛事时间轴 · 北京时间</Typography>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: `repeat(${Math.max(ordered.length, 1)}, minmax(90px, 1fr))` }, gap: 1, mt: 1 }}>
         {ordered.map((item, index) => {
           const active = item.phase === phases.active_phase;
-          return <Box key={item.phase} sx={{ minWidth: 0, opacity: index < currentIndex ? 0.56 : 1 }}><LinearProgress variant="determinate" value={index <= currentIndex ? 100 : 0} color={active ? "primary" : "inherit"} sx={{ height: active ? 5 : 3, mb: 0.75 }} /><Typography variant="caption" sx={{ display: "block", fontWeight: active ? 800 : 650 }}>{PHASE_LABELS[item.phase]}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.ends_at).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" })}</Typography></Box>;
+          const completed = new Date(item.ends_at).getTime() <= referenceTime;
+          return <Box key={item.phase} sx={{ minWidth: 0, opacity: completed && !active ? 0.56 : 1 }}><LinearProgress variant="determinate" value={active || completed || index < currentIndex ? 100 : 0} color={active ? "primary" : "inherit"} sx={{ height: active ? 5 : 3, mb: 0.75 }} /><Typography variant="caption" sx={{ display: "block", fontWeight: active ? 800 : 650 }}>{PHASE_LABELS[item.phase]}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.ends_at).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" })}</Typography></Box>;
         })}
       </Box>
     </Paper>

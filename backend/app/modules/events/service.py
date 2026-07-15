@@ -115,6 +115,7 @@ def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
                 "ends_at": _utc_aware(row.ends_at),
             }
             for row in sorted(event.phases, key=lambda item: (item.starts_at, item.ends_at))
+            if row.phase in PHASES
         ],
         **status_payload,
     }
@@ -123,11 +124,27 @@ def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
 def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
     event = get_current_event(db)
     rows = _validate_phase_rows(payload)
-    event.phases.clear()
-    event.phases.extend(
-        EventPhase(event_id=event.id, phase=phase, starts_at=starts_at, ends_at=ends_at)
-        for phase, starts_at, ends_at in rows
+    db.scalar(
+        select(EventSetting)
+        .where(EventSetting.event_id == event.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
+    db.expire(event, ["phases"])
+    existing_by_phase = {row.phase: row for row in event.phases}
+    requested_phases = {phase for phase, _, _ in rows}
+    for row in list(event.phases):
+        if row.phase not in requested_phases:
+            event.phases.remove(row)
+    for phase, starts_at, ends_at in rows:
+        row = existing_by_phase.get(phase)
+        if row is None:
+            event.phases.append(
+                EventPhase(event_id=event.id, phase=phase, starts_at=starts_at, ends_at=ends_at)
+            )
+        else:
+            row.starts_at = starts_at
+            row.ends_at = ends_at
     event.settings.phase_mode = payload.phase_mode
     event.settings.manual_phase = payload.manual_phase if payload.phase_mode == "manual" else None
     db.flush()
@@ -138,14 +155,6 @@ def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
     if open_swap_round and swap_window:
         open_swap_round.starts_at = swap_window[1]
         open_swap_round.ends_at = swap_window[2]
-    if get_phase_status(db, event).can("submission"):
-        assert_submission_ready(
-            db,
-            event.id,
-            participant_limit=event.settings.participant_song_limit,
-            audience_limit=event.settings.audience_song_limit,
-            draw_songs_per_participant=event.settings.draw_songs_per_participant,
-        )
     db.commit()
     event = get_current_event(db)
     return get_phase_schedule(db, event)

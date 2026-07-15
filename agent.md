@@ -28,6 +28,12 @@
 
 ## Deployment Notes
 
+- Production deployment is fully automated through GitHub Actions. A push to `main` runs `.github/workflows/deploy.yml`, which verifies the project and invokes `scripts/deploy_remote.sh`; do not design required release steps that depend on the user manually logging in over SSH.
+- Any change involving Alembic migrations, database preparation, dependencies, bundled assets, environment variables, systemd, Nginx, or startup order must also be checked against the CI/CD workflow and remote deployment script. Update those files when the new release cannot deploy safely with the existing automation.
+- Database migrations and other one-time preparation must run through `python -m app.prepare` before the new service is restarted. Application startup only checks that the schema is current; it must not be relied on to perform migrations in each worker.
+- Keep deployment preparation non-interactive and idempotent. GitHub Actions should validate the full Alembic chain on a fresh temporary database and execute `python -m app.prepare` twice so repeated automatic deployments remain safe.
+- A successful local implementation is not complete if CI/CD cannot carry it to production automatically. Final verification for deployment-affecting work must include the relevant GitHub Actions commands and the ordering `verify -> upload -> prepare/migrate -> restart -> health check`.
+- Manual server commands may be documented only as recovery procedures, not as the normal deployment path.
 - The server systemd service is `zppz-web.service`.
 - Service command:
   - `uvicorn app.main:app --host 127.0.0.1 --port 8000`

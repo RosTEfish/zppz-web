@@ -11,8 +11,6 @@ EventPhaseName = Literal[
     "swap",
     "submission_2",
     "guess",
-    "reveal",
-    "closed",
 ]
 
 
@@ -126,7 +124,6 @@ class PhaseCapabilitiesRead(BaseModel):
     normal_submission_public: bool = False
     author_guess: bool = False
     quality_vote: bool = False
-    answers_visible: bool = False
 
 
 class EventPhasesUpdate(BaseModel):
@@ -147,7 +144,7 @@ class EventPhasesRead(BaseModel):
     event_id: int
     phase_mode: Literal["auto", "manual"]
     manual_phase: EventPhaseName | None = None
-    active_phase: EventPhaseName
+    active_phase: EventPhaseName | None = None
     timezone: str = "Asia/Shanghai"
     server_time: datetime
     next_transition_at: datetime | None = None
@@ -348,10 +345,6 @@ class PublicGuessChartRead(BaseModel):
     love_vote_bucket: Literal["below_14", "at_least_14"]
 
     model_config = {"from_attributes": True}
-
-
-class RevealedGuessChartRead(PublicGuessChartRead):
-    designer: str
 
 
 class AdminGuessChartRead(GuessChartRead):

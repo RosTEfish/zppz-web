@@ -44,8 +44,19 @@ jobs:
         working-directory: backend
         run: |
           python -m pip install --disable-pip-version-check -r requirements-dev.txt
-          python -m ruff check app tests
+          python -m ruff check app tests alembic
           python -m pytest -q
+
+      - name: Verify deployment preparation
+        working-directory: backend
+        env:
+          DATA_DIR: ${{ runner.temp }}/zppz-verify-data
+          DATABASE_URL: sqlite:///${{ runner.temp }}/zppz-verify.db
+        run: |
+          set -euo pipefail
+          python -m app.prepare
+          python -m app.prepare
+          python -m alembic current
 
   deploy:
     needs: verify

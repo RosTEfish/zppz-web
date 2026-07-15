@@ -55,7 +55,6 @@ from app.schemas import (
     DownloadPreparation,
     GuessChartCreate,
     PublicGuessChartRead,
-    RevealedGuessChartRead,
     AdminGuessChartRead,
     GuessCommentRead,
     GuessAvailabilityRead,
@@ -237,7 +236,7 @@ def chart_cover(chart_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/charts", response_model=list[RevealedGuessChartRead | PublicGuessChartRead])
+@router.get("/charts", response_model=list[PublicGuessChartRead])
 def charts(user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
     phase_status = get_phase_status(db, event)
@@ -249,7 +248,7 @@ def charts(user: User | None = Depends(get_optional_user), db: Session = Depends
     return _public_chart_payloads(db, rows, user.id if user else None, phase_status)
 
 
-@router.get("/charts/{chart_id}", response_model=RevealedGuessChartRead | PublicGuessChartRead)
+@router.get("/charts/{chart_id}", response_model=PublicGuessChartRead)
 def chart_detail(chart_id: int, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     chart = _visible_chart(db, event, chart_id)
@@ -301,7 +300,8 @@ def unvote(payload: VoteRequest, user: User = Depends(get_current_user), db: Ses
 @router.get("/charts/{chart_id}/comments", response_model=list[GuessCommentRead])
 def comments(chart_id: int, db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
-    _require_quality_vote_phase(db, event)
+    if not get_phase_status(db, event).can("normal_submission_public"):
+        raise HTTPException(status_code=409, detail="当前阶段不能查看评论")
     _visible_chart(db, event, chart_id)
     return [
         {"id": item.id, "content": item.content, "user": user_payload(item.user), "created_at": item.created_at}
@@ -331,7 +331,8 @@ def designer_guess_overview(
 ) -> dict:
     event = get_current_event(db)
     phase_status = get_phase_status(db, event)
-    can_view = bool(user and phase_status.can("author_guess"))
+    can_view = bool(user and phase_status.can("normal_submission_public"))
+    can_guess = bool(user and phase_status.can("author_guess"))
     if not can_view:
         # Hidden normal chart IDs are part of the embargo boundary too.
         return {"can_guess": False, "candidates": [], "states": []}
@@ -342,7 +343,7 @@ def designer_guess_overview(
             .order_by(GuessChart.id.asc())
         ).all()
     )
-    candidates = _selected_author_candidates(db, event.id) if can_view else []
+    candidates = _selected_author_candidates(db, event.id)
     guessed_by_group: dict[str, int] = {}
     if user and charts:
         charts_by_id = {chart.id: chart for chart in charts}
@@ -361,7 +362,7 @@ def designer_guess_overview(
             if chart:
                 guessed_by_group[_chart_group_identity(chart)] = row.guessed_user_id
     return {
-        "can_guess": can_view,
+        "can_guess": can_guess,
         "candidates": [{"user_id": row[0], "display_id": row[1]} for row in candidates],
         "states": [
             {
@@ -384,7 +385,13 @@ def author_guess_state(
     chart = _visible_chart(db, event, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
-    can_view = bool(user and chart.source_submission_type == "normal" and get_phase_status(db, event).can("author_guess"))
+    phase_status = get_phase_status(db, event)
+    can_view = bool(
+        user
+        and chart.source_submission_type == "normal"
+        and phase_status.can("normal_submission_public")
+    )
+    can_guess = bool(can_view and phase_status.can("author_guess"))
     candidates = _selected_author_candidates(db, event.id) if can_view else []
     group_ids = _group_chart_ids(db, chart)
     current = None
@@ -395,7 +402,7 @@ def author_guess_state(
             .order_by(GuessAuthorGuess.updated_at.desc())
         )
     return {
-        "can_guess": can_view,
+        "can_guess": can_guess,
         "candidates": [{"user_id": row[0], "display_id": row[1]} for row in candidates],
         "my_guess_user_id": current.guessed_user_id if current else None,
     }

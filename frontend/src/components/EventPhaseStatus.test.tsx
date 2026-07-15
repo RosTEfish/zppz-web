@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventPhasesRead } from "../api/v1";
-import { formatCountdown, PhaseHeadline } from "./EventPhaseStatus";
+import { formatCountdown, PHASE_LABELS, PhaseHeadline } from "./EventPhaseStatus";
 
 const capabilities = {
   song_pool_edit: false,
@@ -11,7 +11,6 @@ const capabilities = {
   normal_submission_public: true,
   author_guess: true,
   quality_vote: true,
-  answers_visible: false,
 };
 
 describe("event phase status", () => {
@@ -40,5 +39,38 @@ describe("event phase status", () => {
 
     expect(screen.getByText("01:00:00")).toBeInTheDocument();
     expect(screen.getByText("01:00:00").closest("[aria-live='polite']")).toBeInTheDocument();
+  });
+
+  it("shows a non-phase read-only status after the guess deadline", () => {
+    const phases: EventPhasesRead = {
+      phase_mode: "auto",
+      active_phase: null,
+      server_time: "2026-01-02T03:00:00Z",
+      next_transition_at: null,
+      phases: [
+        {
+          phase: "guess",
+          starts_at: "2026-01-02T01:00:00Z",
+          ends_at: "2026-01-02T02:00:00Z",
+        },
+      ],
+      capabilities: {
+        ...capabilities,
+        author_guess: false,
+        quality_vote: false,
+      },
+    };
+
+    render(<PhaseHeadline phases={phases} />);
+
+    expect(screen.getByText("猜谱已截止")).toBeInTheDocument();
+    expect(Object.keys(PHASE_LABELS)).toEqual([
+      "registration",
+      "draw",
+      "submission_1",
+      "swap",
+      "submission_2",
+      "guess",
+    ]);
   });
 });

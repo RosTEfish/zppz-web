@@ -15,6 +15,7 @@ from app.models import (
     GuessAuthorCandidate,
     GuessAuthorGuess,
     GuessChart,
+    GuessComment,
     GuessVote,
     Song,
     SwapRequest,
@@ -140,11 +141,90 @@ def test_phase_policy_auto_boundaries_and_manual_override():
         assert automatic.next_transition_at == now + timedelta(hours=1)
 
         event.settings.phase_mode = "manual"
-        event.settings.manual_phase = "reveal"
+        event.settings.manual_phase = "guess"
         overridden = get_phase_status(db, event, now=now)
-        assert overridden.active_phase == "reveal"
-        assert overridden.capabilities.answers_visible is True
+        assert overridden.active_phase == "guess"
+        assert overridden.capabilities.normal_submission_public is True
+        assert overridden.capabilities.author_guess is True
         assert overridden.next_transition_at is None
+
+        event.settings.phase_mode = "auto"
+        event.settings.manual_phase = None
+        gap = get_phase_status(db, event, now=now + timedelta(hours=1, minutes=30))
+        assert gap.active_phase is None
+        assert not any(gap.capabilities.as_dict().values())
+
+        after_guess = get_phase_status(db, event, now=now + timedelta(hours=4))
+        assert after_guess.active_phase is None
+        assert after_guess.capabilities.normal_submission_public is True
+        assert after_guess.capabilities.author_guess is False
+        assert after_guess.capabilities.quality_vote is False
+
+
+def test_phase_schedule_is_idempotent_and_restore_auto_is_always_available(client: TestClient):
+    login(client, "admin", "change-me-please")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    windows = [
+        {
+            "phase": "registration",
+            "starts_at": (now - timedelta(hours=2)).isoformat(),
+            "ends_at": (now - timedelta(hours=1)).isoformat(),
+        },
+        {
+            "phase": "guess",
+            "starts_at": (now + timedelta(hours=1)).isoformat(),
+            "ends_at": (now + timedelta(hours=2)).isoformat(),
+        },
+    ]
+    manual_payload = {
+        "phase_mode": "manual",
+        "manual_phase": "submission_1",
+        "phases": windows,
+    }
+
+    first = client.put("/api/v1/admin/event/phases", json=manual_payload)
+    assert first.status_code == 200, first.text
+    first_ids = {row["phase"]: row["id"] for row in first.json()["phases"]}
+
+    repeated = client.put("/api/v1/admin/event/phases", json=manual_payload)
+    assert repeated.status_code == 200, repeated.text
+    assert {row["phase"]: row["id"] for row in repeated.json()["phases"]} == first_ids
+
+    restored = client.put(
+        "/api/v1/admin/event/phases",
+        json={"phase_mode": "auto", "manual_phase": None, "phases": windows},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["phase_mode"] == "auto"
+    assert restored.json()["manual_phase"] is None
+    assert {row["phase"]: row["id"] for row in restored.json()["phases"]} == first_ids
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event
+        rows = list(db.scalars(select(EventPhase).where(EventPhase.event_id == event.id)))
+        assert len(rows) == len(windows)
+
+
+@pytest.mark.parametrize("removed_phase", ["reveal", "closed"])
+def test_phase_schedule_rejects_removed_phase_names(client: TestClient, removed_phase: str):
+    login(client, "admin", "change-me-please")
+    now = datetime.now(timezone.utc)
+    response = client.put(
+        "/api/v1/admin/event/phases",
+        json={
+            "phase_mode": "manual",
+            "manual_phase": removed_phase,
+            "phases": [
+                {
+                    "phase": removed_phase,
+                    "starts_at": now.isoformat(),
+                    "ends_at": (now + timedelta(hours=1)).isoformat(),
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422
 
 
 def test_phase_policy_auto_without_schedule_defaults_to_registration():
@@ -275,6 +355,82 @@ def test_audience_can_guess_normal_but_not_j_and_anonymous_cannot_write(client: 
         json={"guessed_user_id": candidate_id},
     )
     assert rejected.status_code == 403
+
+
+def test_guess_history_remains_read_only_after_guess_deadline(client: TestClient):
+    register(client, "candidate-history")
+    register(client, "viewer-history", identity="audience")
+    normal_id, _ = create_chart_pair()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        candidate = db.scalar(select(User).where(User.user_code == "candidate-history"))
+        viewer = db.scalar(select(User).where(User.user_code == "viewer-history"))
+        assert event and event.settings and candidate and viewer
+        db.add(GuessAuthorCandidate(event_id=event.id, user_id=candidate.id, display_id="P99"))
+        db.add(GuessVote(chart_id=normal_id, user_id=viewer.id, vote_type="love"))
+        db.add(GuessComment(chart_id=normal_id, user_id=viewer.id, content="kept comment"))
+        db.add(
+            GuessAuthorGuess(
+                chart_id=normal_id,
+                user_id=viewer.id,
+                guessed_user_id=candidate.id,
+            )
+        )
+        now = datetime.utcnow()
+        db.add(
+            EventPhase(
+                event_id=event.id,
+                phase="guess",
+                starts_at=now - timedelta(hours=2),
+                ends_at=now - timedelta(hours=1),
+            )
+        )
+        event.settings.phase_mode = "auto"
+        event.settings.manual_phase = None
+        db.commit()
+        candidate_id = candidate.id
+
+    login(client, "viewer-history")
+    phases = client.get("/api/v1/event/phases")
+    assert phases.status_code == 200
+    assert phases.json()["active_phase"] is None
+    assert phases.json()["capabilities"]["normal_submission_public"] is True
+    assert phases.json()["capabilities"]["quality_vote"] is False
+
+    charts = client.get("/api/v1/guess-game/charts")
+    assert charts.status_code == 200
+    normal = next(row for row in charts.json() if row["id"] == normal_id)
+    assert normal["love_votes"] == 1
+    assert normal["my_votes"] == ["love"]
+    assert normal["can_vote"] is False
+    assert normal["can_comment"] is False
+    assert normal["can_author_guess"] is False
+
+    comments = client.get(f"/api/v1/guess-game/charts/{normal_id}/comments")
+    assert comments.status_code == 200
+    assert [row["content"] for row in comments.json()] == ["kept comment"]
+    guesses = client.get("/api/v1/guess-game/designer-guesses")
+    assert guesses.status_code == 200
+    assert guesses.json()["can_guess"] is False
+    assert guesses.json()["candidates"] == [{"user_id": candidate_id, "display_id": "P99"}]
+    state = next(row for row in guesses.json()["states"] if row["chart_id"] == normal_id)
+    assert state["guessed_user_id"] == candidate_id
+
+    vote_payload = {"chart_id": normal_id, "vote_type": "love"}
+    assert client.post("/api/v1/guess-game/vote", json=vote_payload).status_code == 409
+    assert client.request("DELETE", "/api/v1/guess-game/vote", json=vote_payload).status_code == 409
+    assert client.post(
+        f"/api/v1/guess-game/charts/{normal_id}/comments",
+        json={"content": "new comment"},
+    ).status_code == 409
+    guess_payload = {"guessed_user_id": candidate_id}
+    assert client.put(
+        f"/api/v1/guess-game/charts/{normal_id}/designer-guess",
+        json=guess_payload,
+    ).status_code == 409
+    assert client.delete(
+        f"/api/v1/guess-game/charts/{normal_id}/designer-guess"
+    ).status_code == 409
 
 
 def test_swap_finalize_is_idempotent_and_never_returns_same_or_self_submitted_song(client: TestClient):

@@ -30,8 +30,6 @@ PHASES = (
     "swap",
     "submission_2",
     "guess",
-    "reveal",
-    "closed",
 )
 
 
@@ -189,6 +187,41 @@ def _create_0008_legacy_schema(database_url: str) -> None:
     legacy_engine.dispose()
 
 
+def _create_0009_phase_schema(database_url: str) -> None:
+    legacy_engine = sa.create_engine(database_url)
+    metadata = sa.MetaData()
+    sa.Table("events", metadata, sa.Column("id", sa.Integer(), primary_key=True))
+    sa.Table(
+        "event_settings",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("event_id", sa.Integer(), nullable=False),
+        sa.Column("phase_mode", sa.String(10), nullable=False, server_default="auto"),
+        sa.Column("manual_phase", sa.String(30)),
+    )
+    sa.Table(
+        "event_phases",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("event_id", sa.Integer(), nullable=False),
+        sa.Column("phase", sa.String(30), nullable=False),
+        sa.Column("starts_at", sa.DateTime(), nullable=False),
+        sa.Column("ends_at", sa.DateTime(), nullable=False),
+    )
+    sa.Table(
+        "alembic_version",
+        metadata,
+        sa.Column("version_num", sa.String(32), primary_key=True),
+    )
+    metadata.create_all(legacy_engine)
+    with legacy_engine.begin() as connection:
+        connection.execute(
+            sa.text("INSERT INTO alembic_version (version_num) VALUES (:revision)"),
+            {"revision": "0009_remove_legacy_phase_settings"},
+        )
+    legacy_engine.dispose()
+
+
 def test_0009_sqlite_upgrade_maps_legacy_state_and_preserves_phase_managed_events(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -279,4 +312,90 @@ def test_0009_sqlite_upgrade_maps_legacy_state_and_preserves_phase_managed_event
         ).one()
     assert LEGACY_PHASE_FIELDS.issubset(restored_columns)
     assert restored_defaults == (False, True)
+    migrated_engine.dispose()
+
+
+def test_0010_sqlite_upgrade_removes_retired_phases_and_releases_manual_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite:///{(tmp_path / 'retired-phases.db').as_posix()}"
+    _create_0009_phase_schema(database_url)
+    legacy_engine = sa.create_engine(database_url)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with legacy_engine.begin() as connection:
+        for event_id, mode, manual_phase in (
+            (1, "manual", "reveal"),
+            (2, "manual", "closed"),
+            (3, "manual", "guess"),
+            (4, "auto", None),
+        ):
+            connection.execute(sa.text("INSERT INTO events (id) VALUES (:id)"), {"id": event_id})
+            connection.execute(
+                sa.text(
+                    """
+                    INSERT INTO event_settings (id, event_id, phase_mode, manual_phase)
+                    VALUES (:id, :id, :mode, :manual_phase)
+                    """
+                ),
+                {"id": event_id, "mode": mode, "manual_phase": manual_phase},
+            )
+        for row_id, event_id, phase in (
+            (1, 1, "reveal"),
+            (2, 1, "guess"),
+            (3, 2, "closed"),
+            (4, 3, "submission_2"),
+        ):
+            connection.execute(
+                sa.text(
+                    """
+                    INSERT INTO event_phases (id, event_id, phase, starts_at, ends_at)
+                    VALUES (:id, :event_id, :phase, :starts_at, :ends_at)
+                    """
+                ),
+                {
+                    "id": row_id,
+                    "event_id": event_id,
+                    "phase": phase,
+                    "starts_at": now - timedelta(hours=1),
+                    "ends_at": now + timedelta(hours=1),
+                },
+            )
+    legacy_engine.dispose()
+
+    backend_root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    config = _migration_config(backend_root)
+    command.upgrade(config, "0010_remove_reveal_closed_phases")
+
+    migrated_engine = sa.create_engine(database_url)
+    with migrated_engine.connect() as connection:
+        settings = {
+            row.event_id: (row.phase_mode, row.manual_phase)
+            for row in connection.execute(
+                sa.text(
+                    "SELECT event_id, phase_mode, manual_phase FROM event_settings ORDER BY event_id"
+                )
+            )
+        }
+        phase_rows = list(
+            connection.execute(
+                sa.text("SELECT event_id, phase FROM event_phases ORDER BY id")
+            )
+        )
+    assert settings == {
+        1: ("auto", None),
+        2: ("auto", None),
+        3: ("manual", "guess"),
+        4: ("auto", None),
+    }
+    assert phase_rows == [(1, "guess"), (3, "submission_2")]
+
+    command.downgrade(config, "0009_remove_legacy_phase_settings")
+    with migrated_engine.connect() as connection:
+        assert list(
+            connection.execute(
+                sa.text("SELECT event_id, phase FROM event_phases ORDER BY id")
+            )
+        ) == [(1, "guess"), (3, "submission_2")]
     migrated_engine.dispose()
