@@ -1,15 +1,21 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import { Megaphone, X } from "lucide-react";
 import { AnnouncementMarkdown } from "./AnnouncementMarkdown";
 import { announcementSignature, announcementStorageKey } from "./announcementState";
 
 
-export default function AnnouncementDialog({ eventId, markdown }: { eventId: number; markdown: string }) {
+interface AnnouncementDialogProps {
+  eventId: number;
+  markdown: string;
+  open: boolean;
+  onClose: () => void;
+}
+
+export default function AnnouncementDialog({ eventId, markdown, open, onClose }: AnnouncementDialogProps) {
   const content = markdown.trim();
   const signature = useMemo(() => announcementSignature(content), [content]);
   const storageKey = announcementStorageKey(eventId);
-  const [open, setOpen] = useState(true);
 
   function acknowledge() {
     try {
@@ -17,7 +23,7 @@ export default function AnnouncementDialog({ eventId, markdown }: { eventId: num
     } catch {
       // Private browsing can deny storage; closing should still work for this page view.
     }
-    setOpen(false);
+    onClose();
   }
 
   return (

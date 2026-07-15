@@ -60,7 +60,7 @@ export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>, depe
 
 
 export function LoadingBlock() {
-  return <Box sx={{ py: 10, display: "grid", placeItems: "center" }}><CircularProgress size={30} /></Box>;
+  return <Box sx={{ minHeight: "calc(100vh - 88px)", py: 10, display: "grid", placeItems: "center" }}><CircularProgress size={30} /></Box>;
 }
 
 

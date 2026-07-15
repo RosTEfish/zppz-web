@@ -1,0 +1,3 @@
+# przppz.club
+
+ZPPZ Arena is an event platform for music chart submissions, draws, and interaction.

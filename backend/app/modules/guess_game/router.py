@@ -4,13 +4,14 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
+from app.core.cache import set_public_api_cache
 from app.core.security import get_current_user, get_optional_user, require_role, user_payload
 from app.db.session import get_db
 from app.models import (
@@ -127,7 +128,8 @@ def _public_chart_payloads(
 
 
 @router.get("/availability", response_model=GuessAvailabilityRead)
-def guess_availability(db: Session = Depends(get_db)) -> dict:
+def guess_availability(response: Response, db: Session = Depends(get_db)) -> dict:
+    set_public_api_cache(response)
     event = get_current_event(db)
     phase_status = get_phase_status(db, event)
     stmt = select(GuessChart.id).where(GuessChart.event_id == event.id)

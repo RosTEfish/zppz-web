@@ -154,6 +154,7 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看公告" }));
     const firstDialog = await screen.findByRole("dialog", { name: "赛事公告" });
     expect(within(firstDialog).getByRole("heading", { name: "重要公告" })).toBeInTheDocument();
     expect(within(firstDialog).getAllByRole("listitem")).toHaveLength(2);
@@ -163,8 +164,13 @@ describe("Material application shell", () => {
 
     cleanup();
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "重要公告" })).toBeInTheDocument();
+    const readSummary = await screen.findByRole("button", { name: "查看公告" });
+    expect(readSummary).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "赛事公告" })).not.toBeInTheDocument();
+    fireEvent.click(readSummary);
+    const reopenedDialog = await screen.findByRole("dialog", { name: "赛事公告" });
+    fireEvent.click(within(reopenedDialog).getByRole("button", { name: "我知道了" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "赛事公告" })).not.toBeInTheDocument());
 
     cleanup();
     currentEvent = {
@@ -172,6 +178,7 @@ describe("Material application shell", () => {
       settings: { ...currentEvent.settings, announcement_text: "## 重要公告\n\n公告已更新。" },
     };
     render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看公告" }));
     const updatedDialog = await screen.findByRole("dialog", { name: "赛事公告" });
     expect(within(updatedDialog).getByText("公告已更新。")).toBeInTheDocument();
   });

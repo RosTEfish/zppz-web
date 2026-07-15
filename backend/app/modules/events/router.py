@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.core.security import require_role
+from app.core.cache import set_public_api_cache
 from app.db.session import get_db
 from app.models import User
 from app.modules.events.service import (
@@ -18,12 +19,14 @@ admin_router = APIRouter(tags=["admin-events"])
 
 
 @router.get("/events/current", response_model=EventRead)
-def current_event(db: Session = Depends(get_db)):
+def current_event(response: Response, db: Session = Depends(get_db)):
+    set_public_api_cache(response)
     return get_current_event(db)
 
 
 @router.get("/event/phases", response_model=EventPhasesRead)
-def event_phases(db: Session = Depends(get_db)):
+def event_phases(response: Response, db: Session = Depends(get_db)):
+    set_public_api_cache(response)
     return get_phase_schedule(db)
 
 

@@ -1,8 +1,9 @@
-import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { CircleUserRound, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { LoadingBlock } from "./components/PagePrimitives";
+import HomePageSkeleton from "./components/HomePageSkeleton";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
 import beianIcon from "./assets/beian.png";
@@ -54,7 +55,7 @@ function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
   const { user, isLoggedIn, isAdmin, isPoolEditor, logout } = useAuth();
-  const { event, phases, guessGameAvailable } = useConfig();
+  const { event, phases, guessGameAvailable, loading: configLoading } = useConfig();
   const navigate = useNavigate();
   const showGuessEntry = isAdmin || isPoolEditor || guessGameAvailable;
   const managerPath = isAdmin ? "/admin/overview" : "/admin/songs";
@@ -63,6 +64,32 @@ function AppShell() {
     () => event ? shouldShowAnnouncement(event.id, announcement) : false,
     [announcement, event?.id],
   );
+  const [announcementMounted, setAnnouncementMounted] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const homepageReady = Boolean(event && !configLoading);
+  const openAnnouncement = useCallback(() => {
+    setAnnouncementMounted(true);
+    setAnnouncementOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!event || !announcement || !showAnnouncement || !homepageReady) return;
+    let cancelled = false;
+    const openWhenIdle = () => {
+      if (!cancelled) openAnnouncement();
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(openWhenIdle, { timeout: 1800 });
+    const timeoutId = idleId === undefined ? window.setTimeout(openWhenIdle, 1800) : undefined;
+    return () => {
+      cancelled = true;
+      if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [announcement, event, homepageReady, openAnnouncement, showAnnouncement]);
 
   useEffect(() => setDrawerOpen(false), [location.pathname]);
 
@@ -103,9 +130,9 @@ function AppShell() {
       <Drawer variant={mobile ? "temporary" : "permanent"} open={mobile ? drawerOpen : true} onClose={() => setDrawerOpen(false)} ModalProps={{ keepMounted: true }} sx={{ width: DRAWER_WIDTH, flexShrink: 0, "& .MuiDrawer-paper": { width: DRAWER_WIDTH, boxSizing: "border-box" } }}>{drawer}</Drawer>
       <Box component="main" sx={{ ml: mobile ? 0 : `${DRAWER_WIDTH}px`, pt: 8, minWidth: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
         <Container maxWidth="xl" sx={{ py: { xs: 2, md: 3 }, width: "100%", flex: 1 }}>
-          <Suspense fallback={<LoadingBlock />}>
+          <Suspense fallback={location.pathname === "/" ? <HomePageSkeleton /> : <LoadingBlock />}>
             <Routes>
-              <Route path="/" element={<HomePage />} />
+              <Route path="/" element={<HomePage onOpenAnnouncement={openAnnouncement} />} />
               <Route path="/login" element={<AuthPage />} />
               <Route path="/songs" element={<RequireLogin><SongPoolPage /></RequireLogin>} />
               <Route path="/draw" element={<RequireLogin><DrawPage /></RequireLogin>} />
@@ -117,9 +144,9 @@ function AppShell() {
             </Routes>
           </Suspense>
         </Container>
-        <SiteFooter />
+        {location.pathname !== "/" || homepageReady ? <SiteFooter /> : null}
       </Box>
-      {event && showAnnouncement ? <Suspense fallback={null}><AnnouncementDialog key={`${event.id}:${announcementSignature(announcement)}`} eventId={event.id} markdown={announcement} /></Suspense> : null}
+      {event && announcementMounted && (showAnnouncement || announcementOpen) ? <Suspense fallback={null}><AnnouncementDialog key={`${event.id}:${announcementSignature(announcement)}`} eventId={event.id} markdown={announcement} open={announcementOpen} onClose={() => setAnnouncementOpen(false)} /></Suspense> : null}
     </Box>
   );
 }

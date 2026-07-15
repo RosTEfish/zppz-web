@@ -6,7 +6,7 @@ from time import perf_counter
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
@@ -32,6 +32,10 @@ from app.modules.users.router import router as users_router
 
 settings = get_settings()
 logger = logging.getLogger("app.requests")
+FRONTEND_HTML_CACHE_CONTROL = "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
+TEXT_RESOURCE_CACHE_CONTROL = "public, max-age=300"
+ROBOTS_TXT_FALLBACK = "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin/\n"
+LLMS_TXT_FALLBACK = "# przppz.club\n\nZPPZ Arena is an event platform for music chart submissions, draws, and interaction.\n"
 
 
 @asynccontextmanager
@@ -129,8 +133,26 @@ if frontend_assets.exists():
 def frontend_index():
     index_file = frontend_dist / "index.html"
     if index_file.exists():
-        return FileResponse(index_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        return FileResponse(index_file, headers={"Cache-Control": FRONTEND_HTML_CACHE_CONTROL})
     return {"message": "Frontend build not found. Run `cd frontend && npm run build`."}
+
+
+def _frontend_text_file(filename: str, fallback: str):
+    text_file = frontend_dist / filename
+    headers = {"Cache-Control": TEXT_RESOURCE_CACHE_CONTROL}
+    if text_file.exists():
+        return FileResponse(text_file, media_type="text/plain", headers=headers)
+    return PlainTextResponse(fallback, headers=headers)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    return _frontend_text_file("robots.txt", ROBOTS_TXT_FALLBACK)
+
+
+@app.get("/llms.txt", include_in_schema=False)
+def llms_txt():
+    return _frontend_text_file("llms.txt", LLMS_TXT_FALLBACK)
 
 
 @app.get("/{path:path}")
@@ -139,5 +161,5 @@ def frontend_fallback(path: str):
         return {"detail": "Not found"}
     index_file = frontend_dist / "index.html"
     if index_file.exists():
-        return FileResponse(index_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        return FileResponse(index_file, headers={"Cache-Control": FRONTEND_HTML_CACHE_CONTROL})
     return {"message": "Frontend build not found. Run `cd frontend && npm run build`."}

@@ -1,16 +1,25 @@
-import { lazy, Suspense } from "react";
 import { Alert, Box, Button, Card, CardActionArea, Paper, Stack, Typography } from "@mui/material";
 import { BookOpenText, ChevronRight, FileDown, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { Link } from "react-router-dom";
 import { isGuessEnded, phaseStatusLabel, PhaseHeadline, PhaseTimeline } from "../components/EventPhaseStatus";
+import HomePageSkeleton from "../components/HomePageSkeleton";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
-const AnnouncementMarkdown = lazy(() => import("../components/AnnouncementMarkdown").then((module) => ({ default: module.AnnouncementMarkdown })));
+function announcementPreview(markdown: string) {
+  const text = markdown
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/[\[\]`*_>#-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 180 ? `${text.slice(0, 180)}…` : text;
+}
 
-export default function HomePage() {
-  const { event, phases, guessGameAvailable } = useConfig();
+export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: () => void }) {
+  const { event, phases, guessGameAvailable, loading } = useConfig();
   const { user, isLoggedIn, isAdmin, isPoolEditor } = useAuth();
+  if (loading || !event) return <HomePageSkeleton />;
+
   const guessEnded = phases ? isGuessEnded(phases) : false;
   const stages = [
     { label: "曲池", value: `${event?.settings.participant_song_limit ?? "-"} 首上限`, icon: Music2, to: "/songs" },
@@ -21,11 +30,18 @@ export default function HomePage() {
   const nextAction = !isLoggedIn ? "登录或注册后选择参赛者 / 观众身份" : guessEnded ? "猜谱已截止，可查看谱面与已有互动记录" : user?.identity === "participant" ? (phases?.capabilities.swap ? "检查抽签结果并提交换曲申请" : phases?.capabilities.submission ? "上传或检查你的投稿包" : phases?.capabilities.author_guess ? "浏览普通稿并提交作者竞猜" : "关注下一阶段开放时间") : phases?.capabilities.author_guess ? "观众也可以参与普通稿作者竞猜" : "关注赛程，猜谱阶段即可参与互动";
   return (
     <Stack spacing={3}>
-      <Paper sx={{ p: { xs: 2.5, md: 4 }, borderLeft: 5, borderColor: "primary.main" }}>
+      <Paper sx={{ p: { xs: 2.5, md: 4 }, minHeight: { xs: 292, md: 246 }, borderLeft: 5, borderColor: "primary.main" }}>
         <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
-        <Typography variant="h1" sx={{ mt: 0.5 }}>{event?.name || "赛事进行中"}</Typography>
+        <Typography variant="h1" sx={{ mt: 0.5 }}>{event.name}</Typography>
         {phases ? <Box sx={{ mt: 2 }}><PhaseHeadline phases={phases} /></Box> : null}
-        {event?.settings.announcement_text ? <Box sx={{ mt: 1.5, maxWidth: 760, color: "text.secondary", "& .announcement-markdown": { color: "inherit" } }}><Suspense fallback={null}><AnnouncementMarkdown>{event.settings.announcement_text}</AnnouncementMarkdown></Suspense></Box> : null}
+        {event.settings.announcement_text ? (
+          <Paper variant="outlined" sx={{ mt: 1.5, p: 1.25, maxWidth: 760, color: "text.secondary", display: "flex", gap: 1, alignItems: "center", justifyContent: "space-between" }}>
+            <Typography variant="body2" sx={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+              {announcementPreview(event.settings.announcement_text)}
+            </Typography>
+            <Button size="small" onClick={onOpenAnnouncement} sx={{ flexShrink: 0 }}>查看公告</Button>
+          </Paper>
+        ) : null}
         <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2.5, flexWrap: "wrap" }}>
           {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />}>进入赛事</Button> : null}
           <Button component="a" href="/api/v1/assets/rule/view" target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<BookOpenText size={18} />}>查看规则</Button>
