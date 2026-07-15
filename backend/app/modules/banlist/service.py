@@ -6,7 +6,6 @@ import unicodedata
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from difflib import SequenceMatcher
 from io import BytesIO
 from threading import Lock
 from typing import Protocol
@@ -14,6 +13,7 @@ from typing import Protocol
 from fastapi import HTTPException, status
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+from rapidfuzz import fuzz
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
@@ -21,7 +21,9 @@ from app.models import BanEntry, BanImport
 
 
 MAX_BAN_FILE_BYTES = 10 * 1024 * 1024
-MATCH_TITLE_THRESHOLD = 92.0
+# Keep the automatic check tolerant of small title typos and stylized
+# characters while still requiring a strong artist match.
+MATCH_TITLE_THRESHOLD = 85.0
 MATCH_ARTIST_THRESHOLD = 70.0
 MATCH_TITLE_EXACT_ARTIST_THRESHOLD = 80.0
 SEARCH_LIMIT = 50
@@ -206,7 +208,7 @@ def import_issues(record: BanImport) -> list[str]:
 def similarity(left: str, right: str) -> float:
     if not left or not right:
         return 0.0
-    return round(SequenceMatcher(None, left, right).ratio() * 100, 1)
+    return round(float(fuzz.WRatio(left, right)), 1)
 
 
 def _match(entry: BanEntry, match_type: str, score: float | None, reason: str) -> dict:

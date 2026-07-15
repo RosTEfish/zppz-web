@@ -1,4 +1,5 @@
 from io import BytesIO
+from unittest.mock import patch
 
 from openpyxl import Workbook
 import pytest
@@ -8,6 +9,7 @@ from app import models  # noqa: F401
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.models import BanImport, Event, Song, User
+from app.modules.banlist.service import similarity
 from sqlalchemy import select
 from app.main import app
 
@@ -42,6 +44,8 @@ def workbook_bytes() -> bytes:
     sheet.cell(2, 7, "备注")
     sheet.cell(3, 5, "Second Song")
     sheet.cell(3, 6, "Second Artist")
+    sheet.cell(4, 5, "Chaotic Ørder")
+    sheet.cell(4, 6, "TAG VS Kai")
     sheet.cell(1, 9, "#3 - Devour")
     sheet.cell(2, 9, "曲名")
     sheet.cell(2, 10, "作者")
@@ -51,6 +55,16 @@ def workbook_bytes() -> bytes:
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
+
+
+def test_similarity_uses_rapidfuzz_wratio_and_rounds() -> None:
+    with patch("app.modules.banlist.service.fuzz.WRatio", return_value=87.654) as wratio:
+        assert similarity("normalized-title", "normalized-artist") == 87.7
+        wratio.assert_called_once_with("normalized-title", "normalized-artist")
+
+    with patch("app.modules.banlist.service.fuzz.WRatio") as wratio:
+        assert similarity("", "non-empty") == 0.0
+        wratio.assert_not_called()
 
 
 def register(client, user_code: str, identity: str = "participant") -> None:
@@ -78,7 +92,7 @@ def test_ban_import_preview_publish_and_matching(client):
     )
     assert uploaded.status_code == 200, uploaded.text
     preview = uploaded.json()
-    assert preview["entry_count"] == 3
+    assert preview["entry_count"] == 4
     assert preview["issues"] == []
     assert {entry["round"] for entry in preview["entries"]} == {"#1 - Pure", "#2 - Pure Plus", "#3 - Devour"}
 
@@ -100,6 +114,32 @@ def test_ban_import_preview_publish_and_matching(client):
     review = client.post("/api/v1/banlist/check", json={"title": "Ban Sng", "artist": "Artist"})
     assert review.status_code == 200
     assert review.json()["status"] == "review"
+
+    # The manual search scores this pair at 95%, so the automatic check must
+    # not report the same complete input as clear just because the title has
+    # one stylized character.
+    stylized_title = client.post(
+        "/api/v1/banlist/check",
+        json={"title": "chaotic order", "artist": "tag vs kai"},
+    )
+    assert stylized_title.status_code == 200
+    assert stylized_title.json()["status"] == "review"
+    assert stylized_title.json()["matches"][0]["score"] == 95.0
+
+    stylized_search = client.get(
+        "/api/v1/banlist/search",
+        params={"title": "chaotic order", "artist": "tag vs kai"},
+    )
+    assert stylized_search.status_code == 200
+    assert stylized_search.json()["items"][0]["score"] == 95.0
+
+    lower_threshold = client.post(
+        "/api/v1/banlist/check",
+        json={"title": "chaotic ordr", "artist": "tag vs kai"},
+    )
+    assert lower_threshold.status_code == 200
+    assert lower_threshold.json()["status"] == "review"
+    assert lower_threshold.json()["matches"][0]["score"] == 92.2
 
     search = client.get("/api/v1/banlist/search", params={"title": "Second"})
     assert search.status_code == 200
