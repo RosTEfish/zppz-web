@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Card, CardActionArea, Paper, Stack, Typography } from "@mui/material";
-import { BookOpenText, ChevronRight, FileDown, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
+import { BookOpenText, ChevronRight, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { Link } from "react-router-dom";
 import { isGuessEnded, phaseStatusLabel, PhaseHeadline, PhaseTimeline } from "../components/EventPhaseStatus";
 import HomePageSkeleton from "../components/HomePageSkeleton";
@@ -45,7 +45,6 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
         <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2.5, flexWrap: "wrap" }}>
           {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />}>进入赛事</Button> : null}
           <Button component="a" href="/api/v1/assets/rule/view" target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<BookOpenText size={18} />}>查看规则</Button>
-          <Button component="a" href="/api/v1/assets/banlist/download" variant="outlined" startIcon={<FileDown size={18} />}>往期 Ban 曲列表</Button>
         </Stack>
       </Paper>
       {phases ? <PhaseTimeline phases={phases} /> : null}

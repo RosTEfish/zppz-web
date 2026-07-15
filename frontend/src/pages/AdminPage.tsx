@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Gauge, Music2, Settings, Users, Sparkles, CalendarClock, Archive, Vote, BarChart3 } from "lucide-react";
+import { Gauge, Music2, Settings, Users, Sparkles, CalendarClock, Archive, Vote, BarChart3, FileWarning } from "lucide-react";
 import { Paper, Stack, Tab, Tabs } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { LoadingBlock, PageHeader } from "../components/PagePrimitives";
@@ -8,7 +8,7 @@ import { adminTabLoaders } from "./admin/adminTabLoaders";
 
 const ADMIN_TABS = [
   ["overview", "总览", Gauge], ["settings", "设置", Settings], ["users", "用户", Users], ["songs", "曲池", Music2],
-  ["draw", "抽签", Sparkles], ["phases", "阶段与换曲", CalendarClock], ["submissions", "投稿", Archive], ["guess", "猜谱", Vote], ["stats", "统计", BarChart3],
+  ["draw", "抽签", Sparkles], ["phases", "阶段与换曲", CalendarClock], ["submissions", "投稿", Archive], ["guess", "猜谱", Vote], ["stats", "统计", BarChart3], ["banlist", "Ban 曲", FileWarning],
 ] as const;
 
 const AdminOverview = lazy(adminTabLoaders.overview);
@@ -20,6 +20,7 @@ const AdminPhasesAndSwap = lazy(adminTabLoaders.phases);
 const AdminSubmissions = lazy(adminTabLoaders.submissions);
 const AdminGuess = lazy(adminTabLoaders.guess);
 const AdminStats = lazy(adminTabLoaders.stats);
+const AdminBanlist = lazy(adminTabLoaders.banlist);
 
 const CONTENT: Record<string, React.LazyExoticComponent<() => React.JSX.Element>> = {
   overview: AdminOverview,
@@ -31,6 +32,7 @@ const CONTENT: Record<string, React.LazyExoticComponent<() => React.JSX.Element>
   submissions: AdminSubmissions,
   guess: AdminGuess,
   stats: AdminStats,
+  banlist: AdminBanlist,
 };
 
 export default function AdminPage() {

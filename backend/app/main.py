@@ -14,6 +14,8 @@ from app.db.bootstrap import check_schema_current
 from app.modules.admin.router import router as admin_router
 from app.modules.assets.router import router as assets_router
 from app.modules.auth.router import router as auth_router
+from app.modules.banlist.router import admin_router as admin_banlist_router
+from app.modules.banlist.router import router as banlist_router
 from app.modules.bootstrap_api.router import router as bootstrap_router
 from app.modules.draw.router import admin_router as admin_draw_router
 from app.modules.draw.router import router as draw_router
@@ -104,6 +106,7 @@ for router in (
     bootstrap_router,
     events_router,
     assets_router,
+    banlist_router,
     song_pool_router,
     draw_router,
     submissions_router,
@@ -117,6 +120,7 @@ for router in (
     admin_submissions_router,
     admin_swap_router,
     admin_guess_game_router,
+    admin_banlist_router,
 ):
     app.include_router(router, prefix=settings.api_prefix)
 

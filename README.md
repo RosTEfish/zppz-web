@@ -8,7 +8,7 @@
 - `frontend/`：React + TypeScript + Vite 前端。
 - `infra/`：Nginx 配置。
 - `scripts/deploy_remote.sh`：GitHub Actions 远程部署脚本。
-- `bg/`、`ruleDetail/`、`banlist/`：赛事静态资源，会在部署准备命令 `python -m app.prepare` 中同步到数据目录。
+- `bg/`、`ruleDetail/`、`banlist/`：赛事静态资源，会在部署流水线的自动准备阶段同步到数据目录。
 
 ## 本地前端
 
@@ -39,11 +39,7 @@ docker compose up --build
 
 ## 部署
 
-推送到 `main` 后，`.github/workflows/deploy.yml` 会先完成前后端验证，再通过 SSH 部署到服务器。部署脚本会在重启服务前执行一次 `python -m app.prepare`，负责数据库迁移、默认数据初始化、谱面元数据回填和捆绑资源同步。服务器上的 systemd 服务会按 `WEB_CONCURRENCY` 运行：
-
-```text
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers $WEB_CONCURRENCY
-```
+推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源，然后重启 systemd 服务并执行健康检查。健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
 
 更多说明见 `REFACTOR_V2.md`。
 

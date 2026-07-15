@@ -135,6 +135,7 @@ function AppShell() {
               <Route path="/" element={<HomePage onOpenAnnouncement={openAnnouncement} />} />
               <Route path="/login" element={<AuthPage />} />
               <Route path="/songs" element={<RequireLogin><SongPoolPage /></RequireLogin>} />
+              <Route path="/banlist" element={<Navigate to="/songs?view=ban-check" replace />} />
               <Route path="/draw" element={<RequireLogin><DrawPage /></RequireLogin>} />
               <Route path="/submissions" element={<RequireLogin><SubmissionPage /></RequireLogin>} />
               <Route path="/guess" element={<GuessPage />} />

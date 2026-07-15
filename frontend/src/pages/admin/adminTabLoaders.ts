@@ -8,6 +8,7 @@ export const adminTabLoaders = {
   submissions: () => import("./AdminSubmissions"),
   guess: () => import("./AdminGuess"),
   stats: () => import("./AdminStats"),
+  banlist: () => import("./AdminBanlist"),
 };
 
 export type AdminTab = keyof typeof adminTabLoaders;

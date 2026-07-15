@@ -35,6 +35,11 @@ class Settings:
     admin_seed_code = os.getenv("ADMIN_SEED_CODE", "admin")
     admin_seed_password = os.getenv("ADMIN_SEED_PASSWORD", "change-me")
     secure_cookies = os.getenv("SECURE_COOKIES", "false").lower() in {"1", "true", "yes", "on"}
+    ban_external_provider = os.getenv("BAN_EXTERNAL_PROVIDER", "disabled")
+    ban_external_api_url = os.getenv("BAN_EXTERNAL_API_URL", "")
+    ban_external_api_key = os.getenv("BAN_EXTERNAL_API_KEY", "")
+    ban_external_timeout_ms = int(os.getenv("BAN_EXTERNAL_TIMEOUT_MS", "2000"))
+    ban_external_cache_ttl_seconds = int(os.getenv("BAN_EXTERNAL_CACHE_TTL_SECONDS", "604800"))
 
 
 @lru_cache

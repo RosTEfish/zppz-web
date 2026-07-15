@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
 import { Pencil, Save, Trash2 } from "lucide-react";
 import type { SongPayload, SongRead } from "../api/v1";
+import { BanCheckPanel, canSubmitWithBanCheck, useBanCheck } from "./BanCheckPanel";
 
 
 const EMPTY_SONG: SongPayload = { song_name: "", artist: "", song_type: "A", remark: "" };
@@ -23,8 +24,14 @@ export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, sele
 export function SongDialog({ song, onClose, onSave }: { song: SongRead | null; onClose: () => void; onSave: (payload: SongPayload) => Promise<void> }) {
   const [form, setForm] = useState<SongPayload>(EMPTY_SONG);
   const [error, setError] = useState("");
-  useEffect(() => { if (song) setForm({ song_name: song.song_name, artist: song.artist, song_type: song.song_type, remark: song.remark }); }, [song]);
-  return <Dialog open={Boolean(song)} onClose={onClose} fullWidth maxWidth="sm"><DialogTitle>编辑曲目</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField label="曲名" value={form.song_name} onChange={(e) => setForm({ ...form, song_name: e.target.value })} /><TextField label="曲师" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} /><FormControl><InputLabel>分类</InputLabel><Select label="分类" value={form.song_type} onChange={(e) => setForm({ ...form, song_type: e.target.value })}><MenuItem value="A">A</MenuItem><MenuItem value="B">B</MenuItem><MenuItem value="C">C</MenuItem></Select></FormControl><TextField label="备注" multiline minRows={2} value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} />{error ? <Alert severity="error">{error}</Alert> : null}</Stack></DialogContent><DialogActions><Button onClick={onClose}>取消</Button><Button variant="contained" startIcon={<Save size={16} />} onClick={() => void onSave(form).catch((err) => setError(err instanceof Error ? err.message : "保存失败"))}>保存</Button></DialogActions></Dialog>;
+  const banCheck = useBanCheck(form.song_name, form.artist);
+  useEffect(() => {
+    if (song) {
+      setForm({ song_name: song.song_name, artist: song.artist, song_type: song.song_type, remark: song.remark });
+      setError("");
+    }
+  }, [song]);
+  return <Dialog open={Boolean(song)} onClose={onClose} fullWidth maxWidth="sm"><DialogTitle>编辑曲目</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField label="曲名" value={form.song_name} onChange={(e) => setForm({ ...form, song_name: e.target.value })} /><TextField label="曲师" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} /><BanCheckPanel state={banCheck} compact /><FormControl><InputLabel>分类</InputLabel><Select label="分类" value={form.song_type} onChange={(e) => setForm({ ...form, song_type: e.target.value })}><MenuItem value="A">A</MenuItem><MenuItem value="B">B</MenuItem><MenuItem value="C">C</MenuItem></Select></FormControl><TextField label="备注" multiline minRows={2} value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} />{error ? <Alert severity="error">{error}</Alert> : null}</Stack></DialogContent><DialogActions><Button onClick={onClose}>取消</Button><Button variant="contained" disabled={!canSubmitWithBanCheck(banCheck)} startIcon={<Save size={16} />} onClick={() => void onSave({ ...form, acknowledge_ban_warning: banCheck.acknowledged }).catch((err) => setError(err instanceof Error ? err.message : "保存失败"))}>保存</Button></DialogActions></Dialog>;
 }
 
 

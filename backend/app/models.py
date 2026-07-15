@@ -123,6 +123,78 @@ class Song(Base, TimestampMixin):
     submitter: Mapped[User] = relationship()
 
 
+class BanImport(Base, TimestampMixin):
+    __tablename__ = "ban_imports"
+    __table_args__ = (Index("ix_ban_imports_status_published_at", "status", "published_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_sha256: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    entry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    issue_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preview_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    uploaded_by: Mapped[User | None] = relationship()
+    entries: Mapped[list["BanEntry"]] = relationship(back_populates="ban_import", cascade="all, delete-orphan")
+
+
+class BanEntry(Base, TimestampMixin):
+    __tablename__ = "ban_entries"
+    __table_args__ = (
+        Index("ix_ban_entries_import_normalized", "import_id", "normalized_song_name", "normalized_artist"),
+        Index("ix_ban_entries_import_round", "import_id", "round_label"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("ban_imports.id", ondelete="CASCADE"), index=True, nullable=False)
+    round_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    song_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    artist: Mapped[str] = mapped_column(String(200), nullable=False)
+    remark: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    normalized_song_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    normalized_artist: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    ban_import: Mapped[BanImport] = relationship(back_populates="entries")
+    aliases: Mapped[list["BanAlias"]] = relationship(back_populates="entry", cascade="all, delete-orphan")
+
+
+class BanAlias(Base, TimestampMixin):
+    __tablename__ = "ban_aliases"
+    __table_args__ = (
+        UniqueConstraint("entry_id", "normalized_song_name", "normalized_artist", name="uq_ban_alias_entry_keys"),
+        Index("ix_ban_aliases_normalized", "normalized_song_name", "normalized_artist"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("ban_entries.id", ondelete="CASCADE"), index=True, nullable=False)
+    song_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    artist: Mapped[str] = mapped_column(String(200), nullable=False)
+    normalized_song_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    normalized_artist: Mapped[str] = mapped_column(String(200), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), default="admin", nullable=False)
+    confirmed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    entry: Mapped[BanEntry] = relationship(back_populates="aliases")
+    confirmed_by: Mapped[User | None] = relationship()
+
+
+class BanExternalEvidence(Base, TimestampMixin):
+    __tablename__ = "ban_external_evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("ban_imports.id", ondelete="CASCADE"), index=True, nullable=False)
+    entry_id: Mapped[int | None] = mapped_column(ForeignKey("ban_entries.id", ondelete="SET NULL"), index=True, nullable=True)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    query_text: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+
+
 class DrawAssignment(Base, TimestampMixin):
     __tablename__ = "draw_assignments"
     __table_args__ = (

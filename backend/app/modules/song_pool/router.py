@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.security import get_current_user, require_role
 from app.db.session import get_db
 from app.models import Song, Submission, User
+from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song
 from app.modules.events.service import assert_song_limit, get_current_event
 from app.modules.events.phase_policy import get_phase_status
@@ -37,7 +38,8 @@ def create_song(payload: SongCreate, user: User = Depends(get_current_user), db:
     if not get_phase_status(db, event).can("song_pool_edit"):
         raise HTTPException(status_code=409, detail="当前阶段不能提交曲池")
     assert_song_limit(db, user.id, user.identity)
-    song = Song(event_id=event.id, submitted_by_id=user.id, **payload.model_dump())
+    enforce_song_allowed(db, payload.song_name, payload.artist, payload.acknowledge_ban_warning)
+    song = Song(event_id=event.id, submitted_by_id=user.id, **payload.model_dump(exclude={"acknowledge_ban_warning"}))
     db.add(song)
     db.commit()
     db.refresh(song)
@@ -53,7 +55,8 @@ def update_my_song(song_id: int, payload: SongCreate, user: User = Depends(get_c
     song = db.scalar(select(Song).where(Song.id == song_id, Song.event_id == event.id, Song.submitted_by_id == user.id))
     if not song:
         raise HTTPException(status_code=404, detail="曲目不存在")
-    for key, value in payload.model_dump().items():
+    enforce_song_allowed(db, payload.song_name, payload.artist, payload.acknowledge_ban_warning)
+    for key, value in payload.model_dump(exclude={"acknowledge_ban_warning"}).items():
         setattr(song, key, value)
     db.commit()
     db.refresh(song)
@@ -131,7 +134,8 @@ def admin_update_song(song_id: int, payload: SongCreate, _: User = Depends(requi
     song = db.scalar(select(Song).where(Song.id == song_id, Song.event_id == event.id))
     if not song:
         raise HTTPException(status_code=404, detail="曲目不存在")
-    for key, value in payload.model_dump().items():
+    enforce_song_allowed(db, payload.song_name, payload.artist, payload.acknowledge_ban_warning)
+    for key, value in payload.model_dump(exclude={"acknowledge_ban_warning"}).items():
         setattr(song, key, value)
     db.commit()
     db.refresh(song)

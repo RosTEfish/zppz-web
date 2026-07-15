@@ -105,6 +105,48 @@ export interface SongPayload {
   artist: string;
   song_type: string;
   remark: string;
+  acknowledge_ban_warning?: boolean;
+}
+
+export type BanCheckStatus = "exact" | "review" | "clear" | "unavailable";
+
+export interface BanMatchRead {
+  entry_id: number;
+  title: string;
+  artist: string;
+  round: string;
+  note: string;
+  match_type: "exact" | "fuzzy" | "alias" | string;
+  score?: number | null;
+  reason: string;
+}
+
+export interface BanCheckRead {
+  status: BanCheckStatus;
+  matches: BanMatchRead[];
+  import_id?: number | null;
+}
+
+export interface BanSearchRead {
+  items: BanMatchRead[];
+  import_id?: number | null;
+}
+
+export interface BanImportRead {
+  id: number;
+  file_name: string;
+  file_sha256: string;
+  status: "draft" | "published" | "superseded" | string;
+  entry_count: number;
+  issue_count: number;
+  uploaded_by_id?: number | null;
+  published_at?: string | null;
+  created_at: string;
+}
+
+export interface BanImportPreviewRead extends BanImportRead {
+  entries: Array<{ id: number; round: string; title: string; artist: string; note: string }>;
+  issues: string[];
 }
 
 export interface StoredFileRead {
@@ -390,11 +432,12 @@ async function downloadPrepared(metadataPath: string): Promise<void> {
   triggerBrowserDownload(await apiRequest<DownloadPreparation>(metadataPath));
 }
 
-function submissionForm(file: File, songId?: number, track?: Track): FormData {
+function submissionForm(file: File, songId?: number, track?: Track, acknowledgeBanWarning = false): FormData {
   const form = new FormData();
   form.set("file", file);
   if (songId !== undefined) form.set("song_id", String(songId));
   if (track) form.set("track", track);
+  if (acknowledgeBanWarning) form.set("acknowledge_ban_warning", "true");
   return form;
 }
 
@@ -425,6 +468,22 @@ export const api = {
     form.set("file", file);
     return apiRequest<{ message: string; updated: number }>("/admin/song-pool/import.csv", { method: "POST", body: form });
   },
+  checkBan: (title: string, artist: string, signal?: AbortSignal) => apiRequest<BanCheckRead>("/banlist/check", { method: "POST", body: JSON.stringify({ title, artist }), signal }),
+  searchBan: (title: string, artist: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (title.trim()) params.set("title", title.trim());
+    if (artist.trim()) params.set("artist", artist.trim());
+    return apiRequest<BanSearchRead>(`/banlist/search?${params.toString()}`, { signal });
+  },
+  adminBanlistImports: (signal?: AbortSignal) => apiRequest<BanImportRead[]>("/admin/banlist", { signal }),
+  importBanlist: (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return apiRequest<BanImportPreviewRead>("/admin/banlist/import", { method: "POST", body: form });
+  },
+  previewBanlist: (id: number) => apiRequest<BanImportPreviewRead>(`/admin/banlist/${id}/preview`),
+  publishBanlist: (id: number) => apiRequest<BanImportRead>(`/admin/banlist/${id}/publish`, { method: "POST" }),
+  addBanAlias: (entry_id: number, title: string, artist: string) => apiRequest<{ message: string; entry_id: number }>("/admin/banlist/aliases", { method: "POST", body: JSON.stringify({ entry_id, title, artist }) }),
 
   myDraw: (signal?: AbortSignal) => apiRequest<DrawAssignmentRead[]>("/draw/results", { signal }),
   drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
@@ -440,9 +499,9 @@ export const api = {
 
   submissionTargets: (signal?: AbortSignal) => apiRequest<SubmissionTargetsResponse>("/submissions/targets", { signal }),
   mySubmissions: (signal?: AbortSignal) => apiRequest<StoredFileRead[]>("/submissions", { signal }),
-  uploadSubmission: (songId: number, track: Track, file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track) }),
-  uploadExhibition: (file: File) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, undefined, "exhibition") }),
-  replaceSubmission: (id: number, track: Track, file: File) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
+  uploadSubmission: (songId: number, track: Track, file: File, acknowledgeBanWarning = false) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track, acknowledgeBanWarning) }),
+  uploadExhibition: (file: File, acknowledgeBanWarning = false) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, undefined, "exhibition", acknowledgeBanWarning) }),
+  replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track, acknowledgeBanWarning) }),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   adminSubmissions: (track?: Track | "all", signal?: AbortSignal) => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`, { signal }),

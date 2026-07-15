@@ -13,3 +13,4 @@ py7zr==0.22.0
 rarfile==4.2
 zipstream-ng==1.9.2
 mutagen==1.47.0
+openpyxl==3.1.5

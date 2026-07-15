@@ -157,6 +157,65 @@ class SongCreate(BaseModel):
     artist: str = Field(min_length=1, max_length=100)
     song_type: str = Field(default="A", max_length=1)
     remark: str = Field(default="", max_length=500)
+    acknowledge_ban_warning: bool = False
+
+
+class BanCheckRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    artist: str = Field(min_length=1, max_length=200)
+
+
+class BanMatchRead(BaseModel):
+    entry_id: int
+    title: str
+    artist: str
+    round: str
+    note: str = ""
+    match_type: str
+    score: float | None = None
+    reason: str
+
+
+class BanCheckResponse(BaseModel):
+    status: str
+    matches: list[BanMatchRead] = Field(default_factory=list)
+    import_id: int | None = None
+
+
+class BanSearchResponse(BaseModel):
+    items: list[BanMatchRead] = Field(default_factory=list)
+    import_id: int | None = None
+
+
+class BanEntryRead(BaseModel):
+    id: int
+    round: str
+    title: str
+    artist: str
+    note: str = ""
+
+
+class BanImportRead(BaseModel):
+    id: int
+    file_name: str
+    file_sha256: str
+    status: str
+    entry_count: int
+    issue_count: int
+    uploaded_by_id: int | None = None
+    published_at: datetime | None = None
+    created_at: datetime
+
+
+class BanImportPreview(BanImportRead):
+    entries: list[BanEntryRead] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
+class BanAliasCreate(BaseModel):
+    entry_id: int
+    title: str = Field(min_length=1, max_length=200)
+    artist: str = Field(min_length=1, max_length=200)
 
 
 class SongRead(BaseModel):

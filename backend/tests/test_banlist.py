@@ -1,0 +1,161 @@
+from io import BytesIO
+
+from openpyxl import Workbook
+import pytest
+from fastapi.testclient import TestClient
+
+from app import models  # noqa: F401
+from app.db.bootstrap import seed_defaults
+from app.db.session import Base, SessionLocal, engine
+from app.models import BanImport, Event, Song, User
+from sqlalchemy import select
+from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def reset_db():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        seed_defaults(db)
+
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def workbook_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.cell(1, 1, "#1 - Pure")
+    sheet.cell(2, 1, "曲名")
+    sheet.cell(2, 2, "作者")
+    sheet.cell(2, 3, "备注")
+    sheet.cell(3, 1, "Ban Song")
+    sheet.cell(3, 2, "Artist")
+    sheet.cell(3, 3, "历史备注")
+    sheet.cell(1, 5, "#2 - Pure Plus")
+    sheet.cell(2, 5, "曲名")
+    sheet.cell(2, 6, "作者")
+    sheet.cell(2, 7, "备注")
+    sheet.cell(3, 5, "Second Song")
+    sheet.cell(3, 6, "Second Artist")
+    sheet.cell(1, 9, "#3 - Devour")
+    sheet.cell(2, 9, "曲名")
+    sheet.cell(2, 10, "作者")
+    sheet.cell(2, 11, "备注")
+    sheet.cell(3, 9, "Third Song")
+    sheet.cell(3, 10, "Third Artist")
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def register(client, user_code: str, identity: str = "participant") -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"user_code": user_code, "qq_id": user_code, "password": "secret123", "identity": identity},
+    )
+    assert response.status_code == 201, response.text
+
+
+def login(client, user_code: str, password: str = "secret123") -> None:
+    response = client.post("/api/v1/auth/login", json={"user_code": user_code, "password": password})
+    assert response.status_code == 200, response.text
+
+
+def login_admin(client) -> None:
+    login(client, "admin", "change-me-please")
+
+
+def test_ban_import_preview_publish_and_matching(client):
+    login_admin(client)
+    uploaded = client.post(
+        "/api/v1/admin/banlist/import",
+        files={"file": ("ban.xlsx", workbook_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    preview = uploaded.json()
+    assert preview["entry_count"] == 3
+    assert preview["issues"] == []
+    assert {entry["round"] for entry in preview["entries"]} == {"#1 - Pure", "#2 - Pure Plus", "#3 - Devour"}
+
+    published = client.post(f"/api/v1/admin/banlist/{preview['id']}/publish")
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+
+    register(client, "checker")
+    login(client, "checker")
+    exact = client.post("/api/v1/banlist/check", json={"title": "Ban Song", "artist": "Artist"})
+    assert exact.status_code == 200
+    assert exact.json()["status"] == "exact"
+    assert exact.json()["matches"][0]["round"] == "#1 - Pure"
+
+    normalized = client.post("/api/v1/banlist/check", json={"title": "Ban-Song", "artist": "artist"})
+    assert normalized.status_code == 200
+    assert normalized.json()["status"] == "exact"
+
+    review = client.post("/api/v1/banlist/check", json={"title": "Ban Sng", "artist": "Artist"})
+    assert review.status_code == 200
+    assert review.json()["status"] == "review"
+
+    search = client.get("/api/v1/banlist/search", params={"title": "Second"})
+    assert search.status_code == 200
+    assert search.json()["items"][0]["title"] == "Second Song"
+
+
+def test_ban_check_requires_login_and_song_pool_rechecks(client):
+    unauthenticated = client.post("/api/v1/banlist/check", json={"title": "Ban Song", "artist": "Artist"})
+    assert unauthenticated.status_code == 401
+
+    login_admin(client)
+    uploaded = client.post(
+        "/api/v1/admin/banlist/import",
+        files={"file": ("ban.xlsx", workbook_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    import_id = uploaded.json()["id"]
+    assert client.post(f"/api/v1/admin/banlist/{import_id}/publish").status_code == 200
+
+    register(client, "pool-user")
+    login(client, "pool-user")
+    blocked = client.post(
+        "/api/v1/song-pool/me",
+        json={"song_name": "Ban Song", "artist": "Artist", "song_type": "A", "remark": ""},
+    )
+    assert blocked.status_code == 409
+    assert "命中往届 Ban 曲" in blocked.json()["detail"]
+
+    review_blocked = client.post(
+        "/api/v1/song-pool/me",
+        json={"song_name": "Ban Sng", "artist": "Artist", "song_type": "A", "remark": ""},
+    )
+    assert review_blocked.status_code == 409
+
+    allowed = client.post(
+        "/api/v1/song-pool/me",
+        json={"song_name": "Ban Sng", "artist": "Artist", "song_type": "A", "remark": "", "acknowledge_ban_warning": True},
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        user = db.scalar(select(User).where(User.user_code == "pool-user"))
+        assert event is not None and user is not None
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_1"
+        db.add(Song(event_id=event.id, submitted_by_id=user.id, song_name="Ban Song", artist="Artist", song_type="A", remark=""))
+        db.commit()
+        song_id = db.scalar(select(Song.id).where(Song.song_name == "Ban Song", Song.submitted_by_id == user.id))
+
+    blocked_submission = client.post(
+        "/api/v1/submissions",
+        data={"song_id": str(song_id), "track": "normal"},
+        files={"file": ("ignored.zip", b"not parsed because Ban is checked first", "application/zip")},
+    )
+    assert blocked_submission.status_code == 409
+    assert "命中往届 Ban 曲" in blocked_submission.json()["detail"]
+
+    with SessionLocal() as db:
+        assert db.scalar(select(BanImport).where(BanImport.status == "published")) is not None

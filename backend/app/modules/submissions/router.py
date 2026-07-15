@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.security import get_current_user, require_role
 from app.db.session import get_db
 from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission, User
+from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song, serialize_submission
 from app.modules.downloads import (
     DownloadEntry,
@@ -171,7 +172,10 @@ def _create_submission(
     source_kind: str,
     track: str,
     file: UploadFile,
+    acknowledge_ban_warning: bool = False,
 ) -> Submission:
+    if song is not None:
+        enforce_song_allowed(db, song.song_name, song.artist, acknowledge_ban_warning)
     existing = db.scalar(
         select(Submission).where(
             Submission.event_id == event_id,
@@ -230,6 +234,7 @@ def _replace_submission(
     *,
     track: str | None = None,
     source_kind: str | None = None,
+    acknowledge_ban_warning: bool = False,
 ) -> Submission:
     next_track = _normalize_track(track, row.track)
     new_storage_path, size = save_upload(file, f"events/{row.event_id}/submissions/{row.user_id}")
@@ -354,6 +359,7 @@ def upload_submission(
     song_id: int | None = Form(None),
     track: str = Form("normal"),
     file: UploadFile = File(...),
+    acknowledge_ban_warning: bool = Form(False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -375,6 +381,7 @@ def upload_submission(
         source_kind=source_kind,
         track=normalized_track,
         file=file,
+        acknowledge_ban_warning=acknowledge_ban_warning,
     )
     return serialize_submission(row)
 
@@ -384,6 +391,7 @@ def replace_submission(
     submission_id: int,
     file: UploadFile = File(...),
     track: str | None = Form(None),
+    acknowledge_ban_warning: bool = Form(False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -401,7 +409,16 @@ def replace_submission(
         song, source_kind = None, "exhibition"
     else:
         song, source_kind = _eligible_song(db, event.id, user, row.source_song_id)
-    row = _replace_submission(db, row, file, track=track, source_kind=source_kind)
+    if song is not None:
+        enforce_song_allowed(db, song.song_name, song.artist, acknowledge_ban_warning)
+    row = _replace_submission(
+        db,
+        row,
+        file,
+        track=track,
+        source_kind=source_kind,
+        acknowledge_ban_warning=acknowledge_ban_warning,
+    )
     row.user = user
     row.source_song = song
     return serialize_submission(row)

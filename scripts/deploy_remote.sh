@@ -19,8 +19,60 @@ releases_dir="$deploy_state_dir/releases"
 pip_cache_dir="$deploy_state_dir/pip-cache"
 archive_path="$incoming_dir/$RELEASE_NAME.tar.gz"
 release_dir="$releases_dir/$RELEASE_NAME"
+rollback_archive="$deploy_state_dir/rollback-$RELEASE_NAME.tar.gz"
 venv_dir="$app_dir/.venv"
 env_file="$app_dir/.env"
+
+if [[ "$app_dir" != /* || "$app_dir" == "/" ]]; then
+  echo "DEPLOY_PATH must be an absolute path other than /." >&2
+  exit 1
+fi
+
+rollback_enabled=0
+rollback_in_progress=0
+
+restore_live_release() {
+  local path
+
+  for path in "$app_dir"/* "$app_dir"/.[!.]* "$app_dir"/..?*; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    case "$path" in
+      "$deploy_state_dir"|"$venv_dir"|"$app_dir/venv"|"$app_dir/uploads"|"$app_dir/logs"|"$app_dir/data"|"$env_file")
+        continue
+        ;;
+    esac
+    rm -rf -- "$path"
+  done
+
+  tar -xzf "$rollback_archive" -C "$app_dir"
+}
+
+rollback_on_exit() {
+  local status=$?
+  trap - EXIT
+
+  if [ "$rollback_enabled" -eq 1 ] && [ "$rollback_in_progress" -eq 0 ]; then
+    rollback_in_progress=1
+    echo "Deployment failed; restoring the previous application files." >&2
+    set +e
+    if [ -f "$rollback_archive" ]; then
+      restore_live_release
+      sudo -n systemctl restart "$SERVICE_NAME"
+      if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo "The previous release could not be restarted automatically." >&2
+        systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
+        journalctl -u "$SERVICE_NAME" --no-pager -n 160 >&2 || true
+      fi
+    else
+      echo "No previous application snapshot was available for rollback." >&2
+    fi
+    rm -f -- "$rollback_archive"
+  fi
+
+  exit "$status"
+}
+
+trap rollback_on_exit EXIT
 
 if [ ! -f "$archive_path" ]; then
   echo "Release archive not found: $archive_path" >&2
@@ -106,7 +158,7 @@ echo "Detected app kind: fastapi-v2"
 
 if [ ! -w "$app_dir" ]; then
   echo "Deploy user '$RUN_USER' cannot write to $app_dir." >&2
-  echo "Run this once on the server: sudo chown -R $RUN_USER:$RUN_GROUP $app_dir" >&2
+  echo "The deployment target has incorrect ownership or permissions; update the server's deployment prerequisites." >&2
   exit 1
 fi
 
@@ -127,9 +179,29 @@ unwritable_path="$(
 
 if [ -n "$unwritable_path" ]; then
   echo "Deploy user '$RUN_USER' cannot overwrite existing path: $unwritable_path" >&2
-  echo "Run this once on the server: sudo chown -R $RUN_USER:$RUN_GROUP $app_dir" >&2
+  echo "The deployment target has incorrect ownership or permissions; update the server's deployment prerequisites." >&2
   exit 1
 fi
+
+# Keep a code-only snapshot so a failed dependency install, preparation step,
+# service restart, or health check does not leave the host on a half-written
+# release. Persistent data, uploads, logs, the virtualenv, and .env remain in
+# place and are deliberately excluded from this snapshot.
+tar -C "$app_dir" \
+  --exclude='./.deploy' \
+  --exclude='./.venv' \
+  --exclude='./venv' \
+  --exclude='./uploads' \
+  --exclude='./logs' \
+  --exclude='./data' \
+  --exclude='./.env' \
+  --exclude='./node_modules' \
+  --exclude='./frontend/node_modules' \
+  --exclude='./*.db' \
+  --exclude='./*.sqlite' \
+  --exclude='./*.sqlite3' \
+  -czf "$rollback_archive" .
+rollback_enabled=1
 
 # Copy the built release into the live application directory. Runtime data lives
 # outside the archive and is preserved in place.
@@ -261,7 +333,9 @@ then
   exit 1
 fi
 
+rollback_enabled=0
 rm -f "$archive_path"
+rm -f "$rollback_archive"
 
 if [ "$KEEP_RELEASES" -gt 0 ]; then
   mapfile -t old_releases < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | awk '{print $2}' | tail -n +"$((KEEP_RELEASES + 1))")
