@@ -1,8 +1,11 @@
 from pathlib import Path
+import logging
 import shutil
+from threading import Lock
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.models import StorageDeletion
@@ -14,6 +17,9 @@ ARCHIVE_CONTENT_TYPES = {
     ".7z": "application/x-7z-compressed",
     ".rar": "application/vnd.rar",
 }
+
+logger = logging.getLogger(__name__)
+_STORAGE_CLEANUP_LOCK = Lock()
 
 
 def archive_content_type(filename: str) -> str:
@@ -44,10 +50,17 @@ def enqueue_storage_deletion(db, object_key: str | None) -> None:
         db.add(StorageDeletion(object_key=object_key))
 
 
-def drain_storage_deletions(db) -> int:
+def drain_storage_deletions(db, *, limit: int = 200) -> int:
     store = get_object_store()
     deleted = 0
-    rows = db.query(StorageDeletion).order_by(StorageDeletion.id.asc()).limit(200).all()
+    rows = list(
+        db.scalars(
+            select(StorageDeletion)
+            .order_by(StorageDeletion.id.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        ).all()
+    )
     for row in rows:
         try:
             store.delete(row.object_key)
@@ -59,6 +72,22 @@ def drain_storage_deletions(db) -> int:
             deleted += 1
     db.commit()
     return deleted
+
+
+def drain_storage_deletions_in_background() -> int:
+    """Drain a bounded deletion batch without retaining a request-scoped session."""
+    if not _STORAGE_CLEANUP_LOCK.acquire(blocking=False):
+        return 0
+    try:
+        from app.db.session import SessionLocal
+
+        with SessionLocal() as db:
+            return drain_storage_deletions(db)
+    except Exception:
+        logger.exception("Background object-storage cleanup failed")
+        return 0
+    finally:
+        _STORAGE_CLEANUP_LOCK.release()
 
 
 def validate_extension(filename: str) -> None:

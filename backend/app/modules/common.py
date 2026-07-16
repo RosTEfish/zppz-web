@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -64,7 +65,7 @@ def _chart_payload(
         "source_submission_type": chart.source_submission_type,
         "source_level_slot": chart.source_level_slot,
         "cover_path": (
-            f"/api/v1/guess-game/charts/{chart.id}/cover"
+            f"/api/v1/guess-game/charts/{chart.id}/cover?v={Path(chart.cover_path).stem}"
             if chart.cover_path
             else ""
         ),

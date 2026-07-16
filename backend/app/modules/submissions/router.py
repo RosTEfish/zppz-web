@@ -7,7 +7,7 @@ import tempfile
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -47,6 +47,7 @@ from app.modules.submissions.service import (
     archive_content_type,
     delete_stored_file,
     drain_storage_deletions,
+    drain_storage_deletions_in_background,
     enqueue_storage_deletion,
     save_upload,
     validate_upload_metadata,
@@ -571,10 +572,16 @@ async def upload_intent_local_content(
     return None
 
 
-def _complete_intent(intent: SubmissionUploadIntent, user: User, db: Session) -> Submission:
+def _complete_intent(
+    intent: SubmissionUploadIntent,
+    user: User,
+    db: Session,
+    background_tasks: BackgroundTasks,
+) -> Submission:
     if intent.result_submission_id:
         result = db.scalar(select(Submission).options(*_submission_options()).where(Submission.id == intent.result_submission_id))
         if result:
+            background_tasks.add_task(drain_storage_deletions_in_background)
             return result
     if intent.status == "failed":
         raise HTTPException(status_code=422, detail=intent.error_message or "上传校验失败")
@@ -708,16 +715,13 @@ def _complete_intent(intent: SubmissionUploadIntent, user: User, db: Session) ->
             pass
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    try:
-        store.delete(intent.object_key)
-    except Exception:
-        pass
+    enqueue_storage_deletion(db, intent.object_key)
     if old_storage_path and old_storage_path != row.storage_path:
         enqueue_storage_deletion(db, old_storage_path)
     if old_public_storage_path and old_public_storage_path != row.public_storage_path:
         enqueue_storage_deletion(db, old_public_storage_path)
     db.commit()
-    drain_storage_deletions(db)
+    background_tasks.add_task(drain_storage_deletions_in_background)
     db.refresh(row)
     row.user = db.get(User, row.user_id)
     row.source_song = song
@@ -727,17 +731,19 @@ def _complete_intent(intent: SubmissionUploadIntent, user: User, db: Session) ->
 @router.post("/upload-intents/{intent_id}/complete", response_model=StoredFileRead)
 def complete_submission_upload_intent(
     intent_id: str,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != user.id or intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return serialize_submission(_complete_intent(intent, user, db))
+    return serialize_submission(_complete_intent(intent, user, db, background_tasks))
 
 
 @router.post("", response_model=StoredFileRead, deprecated=True)
 def upload_submission(
+    background_tasks: BackgroundTasks,
     song_id: int | None = Form(None),
     track: str = Form("normal"),
     file: UploadFile = File(...),
@@ -770,12 +776,13 @@ def upload_submission(
         is_admin=False,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submission(_complete_intent(intent, user, db))
+    return serialize_submission(_complete_intent(intent, user, db, background_tasks))
 
 
 @router.post("/{submission_id}/replace", response_model=StoredFileRead, deprecated=True)
 def replace_submission(
     submission_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     track: str | None = Form(None),
     acknowledge_ban_warning: bool = Form(False),
@@ -813,7 +820,7 @@ def replace_submission(
         is_admin=False,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submission(_complete_intent(intent, user, db))
+    return serialize_submission(_complete_intent(intent, user, db, background_tasks))
 
 
 @router.patch("/{submission_id}/track", response_model=StoredFileRead)
@@ -954,13 +961,14 @@ def create_admin_submission_upload_intent(
 @admin_router.post("/upload-intents/{intent_id}/complete", response_model=StoredFileRead)
 def complete_admin_submission_upload_intent(
     intent_id: str,
+    background_tasks: BackgroundTasks,
     admin: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != admin.id or not intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return serialize_submission(_complete_intent(intent, admin, db))
+    return serialize_submission(_complete_intent(intent, admin, db, background_tasks))
 
 
 @admin_router.post("/batch-delete", response_model=BatchDeleteResponse)
@@ -1006,6 +1014,7 @@ def admin_batch_delete_submissions(
 @admin_router.post("/{submission_id}/replace", response_model=StoredFileRead, deprecated=True)
 def admin_replace_submission(
     submission_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     track: str | None = Form(None),
     admin: User = Depends(require_role("admin", "pool_editor")),
@@ -1033,7 +1042,7 @@ def admin_replace_submission(
         is_admin=True,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submission(_complete_intent(intent, admin, db))
+    return serialize_submission(_complete_intent(intent, admin, db, background_tasks))
 
 
 @admin_router.delete("/{submission_id}")

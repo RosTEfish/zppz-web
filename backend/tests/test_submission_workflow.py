@@ -1,3 +1,4 @@
+import asyncio
 from io import BytesIO
 from pathlib import Path
 import re
@@ -5,6 +6,7 @@ import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -12,8 +14,10 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, Song, Submission, SubmissionUploadIntent, User
+from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, Song, StorageDeletion, Submission, SubmissionUploadIntent, User
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
+from app.modules.submissions import service as submission_service
+from app.modules.submissions.router import _complete_intent
 
 
 @pytest.fixture(autouse=True)
@@ -187,6 +191,88 @@ def test_upload_intent_rejects_mime_and_size_mismatches(client: TestClient):
     intent = created.json()
     mismatch = client.put(intent["upload_url"], content=payload, headers=intent["headers"])
     assert mismatch.status_code == 422
+
+
+def test_background_storage_cleanup_keeps_failures_and_retries(monkeypatch: pytest.MonkeyPatch):
+    class FakeStore:
+        def __init__(self):
+            self.fail = True
+            self.deleted: list[str] = []
+
+        def delete(self, object_key: str) -> None:
+            if self.fail:
+                raise OSError("temporary R2 failure")
+            self.deleted.append(object_key)
+
+    store = FakeStore()
+    monkeypatch.setattr(submission_service, "get_object_store", lambda: store)
+    with SessionLocal() as db:
+        db.add_all([StorageDeletion(object_key="old/source.zip"), StorageDeletion(object_key="old/public.zip")])
+        db.commit()
+
+    assert submission_service.drain_storage_deletions_in_background() == 0
+    with SessionLocal() as db:
+        rows = list(db.scalars(select(StorageDeletion).order_by(StorageDeletion.id)).all())
+        assert [row.attempts for row in rows] == [1, 1]
+        assert all("temporary R2 failure" in row.last_error for row in rows)
+
+    store.fail = False
+    assert submission_service.drain_storage_deletions_in_background() == 2
+    assert store.deleted == ["old/source.zip", "old/public.zip"]
+    with SessionLocal() as db:
+        assert db.scalar(select(StorageDeletion.id).limit(1)) is None
+
+
+def test_replacement_defers_pending_and_old_object_deletion_to_background(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    first = client.post(
+        "/api/v1/submissions",
+        data={"song_id": own_id, "track": "normal"},
+        files={"file": ("first.zip", archive_bytes("First"), "application/zip")},
+    )
+    assert first.status_code == 200, first.text
+    submission_id = first.json()["id"]
+    replacement = archive_bytes("Replacement")
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "submission_id": submission_id,
+            "track": "normal",
+            "file_name": "replacement.zip",
+            "file_size": len(replacement),
+            "content_type": "application/zip",
+        },
+    )
+    assert created.status_code == 200, created.text
+    intent_payload = created.json()
+    assert client.put(
+        intent_payload["upload_url"],
+        content=replacement,
+        headers=intent_payload["headers"],
+    ).status_code == 204
+
+    background_tasks = BackgroundTasks()
+    with SessionLocal() as db:
+        intent = db.get(SubmissionUploadIntent, intent_payload["id"])
+        user = db.scalar(select(User).where(User.user_code == "player"))
+        old_submission = db.get(Submission, submission_id)
+        assert intent and user and old_submission and old_submission.public_storage_path
+        old_keys = {old_submission.storage_path, old_submission.public_storage_path}
+        pending_key = intent.object_key
+        completed = _complete_intent(intent, user, db, background_tasks)
+        assert completed.id == submission_id
+        queued_keys = set(db.scalars(select(StorageDeletion.object_key)).all())
+        assert queued_keys == old_keys | {pending_key}
+        assert all((get_settings().data_dir / key).is_file() for key in queued_keys)
+        assert len(background_tasks.tasks) == 1
+
+    asyncio.run(background_tasks())
+    assert all(not (get_settings().data_dir / key).exists() for key in old_keys | {pending_key})
+    with SessionLocal() as db:
+        assert db.scalar(select(StorageDeletion.id).limit(1)) is None
 
 
 def test_targets_phase_gate_and_j_limit(client: TestClient):

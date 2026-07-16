@@ -223,7 +223,7 @@ def test_upload_creates_charts_and_serves_cover(client: TestClient):
     assert {row["source_level_slot"] for row in charts.json()} == {"4", "5"}
     cover_path = charts.json()[0]["cover_path"]
     assert cover_path.startswith("/api/v1/guess-game/charts/")
-    assert cover_path.endswith("/cover")
+    assert "/cover?v=" in cover_path
     assert client.get(cover_path).status_code == 200
 
 
@@ -254,7 +254,13 @@ def test_j_track_upload_and_delete_sync_charts(client: TestClient):
 
 def test_incremental_replace_preserves_matching_chart_interactions(client: TestClient):
     register(client)
-    first = upload(client, archive_bytes("&title=Old\n&artist=Artist\n&des=Old Designer\n&lv_4=13\n&lv_5=14"))
+    first = upload(
+        client,
+        archive_bytes(
+            "&title=Old\n&artist=Artist\n&des=Old Designer\n&lv_4=13\n&lv_5=14",
+            cover=b"old-cover",
+        ),
+    )
     assert first.status_code == 200, first.text
     submission_id = first.json()["id"]
 
@@ -263,12 +269,31 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         slot_four = db.scalar(select(GuessChart).where(GuessChart.source_level_slot == "4"))
         assert user and slot_four
         original_chart_id = slot_four.id
+        original_cover_file = get_settings().assets_dir / "guess-covers" / Path(slot_four.cover_path).name
+        assert original_cover_file.is_file()
         db.add(GuessVote(chart_id=slot_four.id, user_id=user.id, vote_type="love"))
         db.add(GuessComment(chart_id=slot_four.id, user_id=user.id, content="keep"))
         db.add(GuessAuthorGuess(chart_id=slot_four.id, user_id=user.id, guessed_user_id=user.id))
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "guess"
         db.commit()
 
-    replacement = archive_bytes("&title=Updated\n&artist=Artist\n&des=New Designer\n&des4=Slot Designer\n&lv_4=13+\n&lv_6=15")
+    first_public_chart = next(
+        chart for chart in client.get("/api/v1/guess-game/charts").json() if chart["id"] == original_chart_id
+    )
+    first_cover_url = first_public_chart["cover_path"]
+    assert client.get(first_cover_url).content == b"old-cover"
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.manual_phase = "submission_1"
+        db.commit()
+
+    replacement = archive_bytes(
+        "&title=Updated\n&artist=Artist\n&des=New Designer\n&des4=Slot Designer\n&lv_4=13+\n&lv_6=15",
+        cover=b"new-cover",
+    )
     response = client.post(
         f"/api/v1/submissions/{submission_id}/replace",
         files={"file": ("replacement.zip", replacement, "application/zip")},
@@ -285,6 +310,18 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         assert db.scalar(select(func.count()).select_from(GuessVote).where(GuessVote.chart_id == original_chart_id)) == 1
         assert db.scalar(select(func.count()).select_from(GuessComment).where(GuessComment.chart_id == original_chart_id)) == 1
         assert db.scalar(select(func.count()).select_from(GuessAuthorGuess).where(GuessAuthorGuess.chart_id == original_chart_id)) == 1
+        assert len({chart.cover_path for chart in charts.values()}) == 1
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.manual_phase = "guess"
+        db.commit()
+
+    replaced_public_chart = next(
+        chart for chart in client.get("/api/v1/guess-game/charts").json() if chart["id"] == original_chart_id
+    )
+    replaced_cover_url = replaced_public_chart["cover_path"]
+    assert replaced_cover_url != first_cover_url
+    assert client.get(replaced_cover_url).content == b"new-cover"
+    assert not original_cover_file.exists()
 
 
 def test_invalid_upload_and_replace_leave_no_partial_state(client: TestClient):
