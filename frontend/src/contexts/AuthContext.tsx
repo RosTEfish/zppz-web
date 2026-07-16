@@ -5,6 +5,7 @@ interface AuthContextType {
   user: UserRead | null;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isOwner: boolean;
   isPoolEditor: boolean;
   loading: boolean;
   login: (id: string, password: string) => Promise<{ user: UserRead }>;
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isLoggedIn: Boolean(user),
       isAdmin: Boolean(user?.is_admin),
+      isOwner: Boolean(user?.is_owner),
       isPoolEditor: Boolean(user?.is_pool_editor),
       loading,
       login,

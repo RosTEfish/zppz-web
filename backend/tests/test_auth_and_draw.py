@@ -1,5 +1,6 @@
 import os
 from collections import Counter
+import json
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["ADMIN_SEED_PASSWORD"] = "change-me-please"
@@ -8,10 +9,12 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
-from app.db.bootstrap import seed_defaults  # noqa: E402
+from app.core.config import get_settings  # noqa: E402
+from app.db.bootstrap import seed_defaults, sync_permissions_file  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
+from app.manage import set_owner  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import DrawAssignment, Event, Song, User  # noqa: E402
+from app.models import DrawAssignment, Event, Role, Song, User  # noqa: E402
 from app.modules.events.service import get_current_event  # noqa: E402
 
 
@@ -103,8 +106,9 @@ def test_rule_can_be_viewed_inline(client: TestClient):
     assert banlist.content.startswith(b"PK")
 
 
-def test_admin_role_management_keeps_an_active_admin(client: TestClient):
+def test_owner_cli_and_role_management_keeps_an_active_admin(client: TestClient):
     register_user(client, "deputy")
+    register_user(client, "member")
     response = client.post("/api/v1/auth/login", json={"user_code": "admin", "password": "change-me-please"})
     assert response.status_code == 200, response.text
 
@@ -118,9 +122,18 @@ def test_admin_role_management_keeps_an_active_admin(client: TestClient):
         "is_active": True,
     }
 
+    assert admin["is_owner"] is False
     blocked = client.put(f"/api/v1/admin/users/{admin['id']}", json=admin_payload)
-    assert blocked.status_code == 409
-    assert blocked.json()["detail"] == "至少需要保留一名启用中的管理员"
+    assert blocked.status_code == 403
+    blocked_status = client.put(
+        f"/api/v1/admin/users/{admin['id']}",
+        json={
+            **admin_payload,
+            "roles": admin["roles"],
+            "is_active": False,
+        },
+    )
+    assert blocked_status.status_code == 403
 
     promoted = client.put(
         f"/api/v1/admin/users/{deputy['id']}",
@@ -131,12 +144,131 @@ def test_admin_role_management_keeps_an_active_admin(client: TestClient):
             "is_active": True,
         },
     )
+    assert promoted.status_code == 403, promoted.text
+
+    with SessionLocal() as db:
+        first = set_owner(db, "admin")
+        second = set_owner(db, "deputy")
+        assert first["user_code"] == "admin"
+        assert second["user_code"] == "deputy"
+        admin_db = db.scalar(select(User).where(User.user_code == "admin"))
+        deputy_db = db.scalar(select(User).where(User.user_code == "deputy"))
+        assert admin_db is not None and admin_db.has_role("admin") and not admin_db.has_role("owner")
+        assert deputy_db is not None and deputy_db.has_role("owner")
+        assert db.scalar(select(Role.name).where(Role.name == "owner")) == "owner"
+        assert len(db.scalars(select(User).join(User.roles).where(Role.name == "owner")).all()) == 1
+
+    login_user(client, "deputy")
+    users = client.get("/api/v1/admin/users").json()
+    owner = next(user for user in users if user["user_code"] == "deputy")
+    member = next(user for user in users if user["user_code"] == "member")
+    assert owner["is_owner"] is True
+    assert owner["is_admin"] is True
+    assert client.get("/api/v1/admin/stats").status_code == 200
+    assert client.get("/api/v1/admin/song-pool").status_code == 200
+
+    promoted = client.put(
+        f"/api/v1/admin/users/{member['id']}",
+        json={
+            "identity": member["identity"],
+            "roles": [*member["roles"], "admin"],
+            "display_name": member["display_name"],
+            "is_active": True,
+        },
+    )
     assert promoted.status_code == 200, promoted.text
     assert promoted.json()["is_admin"] is True
 
-    demoted = client.put(f"/api/v1/admin/users/{admin['id']}", json=admin_payload)
+    demoted = client.put(
+        f"/api/v1/admin/users/{member['id']}",
+        json={
+            "identity": member["identity"],
+            "roles": member["roles"],
+            "display_name": member["display_name"],
+            "is_active": True,
+        },
+    )
     assert demoted.status_code == 200, demoted.text
     assert demoted.json()["is_admin"] is False
+
+    owner_role_change = client.put(
+        f"/api/v1/admin/users/{owner['id']}",
+        json={
+            "identity": owner["identity"],
+            "roles": [role for role in owner["roles"] if role != "owner"],
+            "display_name": owner["display_name"],
+            "is_active": True,
+        },
+    )
+    assert owner_role_change.status_code == 403
+    owner_status_change = client.put(
+        f"/api/v1/admin/users/{owner['id']}",
+        json={
+            "identity": owner["identity"],
+            "roles": owner["roles"],
+            "display_name": owner["display_name"],
+            "is_active": False,
+        },
+    )
+    assert owner_status_change.status_code == 403
+
+
+def test_set_owner_is_idempotent_and_rejects_missing_or_inactive_users(client: TestClient):
+    register_user(client, "inactive-owner-target")
+    with SessionLocal() as db:
+        first = set_owner(db, "admin")
+        second = set_owner(db, "admin")
+        assert first["changed"] is True
+        assert second["changed"] is False
+
+        target = db.scalar(select(User).where(User.user_code == "inactive-owner-target"))
+        assert target is not None
+        target.is_active = False
+        db.commit()
+
+        with pytest.raises(ValueError, match="user not found"):
+            set_owner(db, "missing-owner-target")
+        with pytest.raises(ValueError, match="user is inactive"):
+            set_owner(db, "inactive-owner-target")
+
+        owner_codes = set(
+            db.scalars(select(User.user_code).join(User.roles).where(Role.name == "owner")).all()
+        )
+        assert owner_codes == {"admin"}
+
+
+def test_permissions_file_cannot_grant_or_revoke_owner(client: TestClient):
+    register_user(client, "owner-target")
+    register_user(client, "plain-target")
+    settings = get_settings()
+    permissions_path = settings.data_dir / "permissions.json"
+    original_permissions = permissions_path.read_bytes() if permissions_path.exists() else None
+    try:
+        with SessionLocal() as db:
+            set_owner(db, "owner-target")
+            permissions_path.write_text(
+                json.dumps(
+                    {
+                        "users": [
+                            {"user_code": "owner-target", "roles": ["participant"]},
+                            {"user_code": "plain-target", "roles": ["owner"]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            roles = {role.name: role for role in db.scalars(select(Role)).all()}
+            sync_permissions_file(db, roles)
+            owner = db.scalar(select(User).where(User.user_code == "owner-target"))
+            plain = db.scalar(select(User).where(User.user_code == "plain-target"))
+            assert owner is not None and owner.has_role("owner")
+            assert plain is not None and not plain.has_role("owner")
+    finally:
+        if original_permissions is None:
+            permissions_path.unlink(missing_ok=True)
+        else:
+            permissions_path.write_bytes(original_permissions)
 
 
 def test_self_draw_requires_auth_and_participant(client: TestClient):

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import ensure_roles, hash_password
+from app.core.security import OWNER_ROLE, ensure_roles, hash_password
 from app.db.session import Base, engine
 from app.models import Event, EventSetting, User
 
@@ -61,7 +61,17 @@ def sync_permissions_file(db: Session, roles: dict) -> None:
             user.is_active = bool(row["is_active"])
             changed = True
         if "roles" in row:
-            next_roles = [roles[name] for name in row.get("roles", []) if name in roles]
+            requested_roles = row.get("roles", [])
+            if not isinstance(requested_roles, list):
+                requested_roles = []
+            requested_names = {
+                str(name)
+                for name in requested_roles
+                if str(name) in roles and str(name) != OWNER_ROLE
+            }
+            if user.has_role(OWNER_ROLE):
+                requested_names.add(OWNER_ROLE)
+            next_roles = [role for name, role in roles.items() if name in requested_names]
             user.roles = next_roles
             changed = True
 

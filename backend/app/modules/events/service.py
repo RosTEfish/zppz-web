@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.security import has_admin_access
 from app.models import DrawAssignment, Event, EventPhase, EventSetting, Song, SwapRound, User
 from app.modules.events.phase_policy import PHASES, get_phase_status, phase_status_payload
 from app.schemas import EventPhasesUpdate, EventUpdate
@@ -235,7 +236,7 @@ def assert_submission_ready(
             .where(User.identity == "participant", User.is_active.is_(True))
             .order_by(User.user_code)
         ).all()
-        if not user.has_role("admin")
+        if not has_admin_access(user)
     ]
     assignment_counts = dict(
         db.execute(

@@ -42,6 +42,7 @@ export interface UserRead {
   display_name: string;
   roles: string[];
   is_admin: boolean;
+  is_owner: boolean;
   is_pool_editor: boolean;
   is_active?: boolean;
 }

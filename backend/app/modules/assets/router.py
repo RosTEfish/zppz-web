@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import get_optional_user
+from app.core.security import get_optional_user, has_admin_access
 from app.db.session import get_db
 from app.models import GuessChart, User
 from app.modules.events.phase_policy import get_phase_status
@@ -91,7 +91,7 @@ def guess_cover(
     if safe != file_name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}:
         raise HTTPException(status_code=404, detail="猜谱封面不存在")
     event = get_current_event(db)
-    manager = bool(user and (user.has_role("admin") or user.has_role("pool_editor")))
+    manager = bool(user and (has_admin_access(user) or user.has_role("pool_editor")))
     cover_path = f"/api/v1/assets/guess-covers/{safe}"
     source_types = set(
         db.scalars(

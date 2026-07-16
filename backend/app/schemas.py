@@ -26,6 +26,7 @@ class UserRead(BaseModel):
     display_name: str = ""
     roles: list[str] = []
     is_admin: bool = False
+    is_owner: bool = False
     is_pool_editor: bool = False
     is_active: bool = True
 

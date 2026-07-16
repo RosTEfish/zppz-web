@@ -12,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.security import ADMIN_ROLE, OWNER_ROLE
 from app.models import (
     DrawAssignment,
     Event,
@@ -97,7 +98,7 @@ def _delete_rows(db: Session, statement) -> int:
     return int(result.rowcount or 0)
 
 
-def _prune_permissions_file(admin_codes: set[str]) -> tuple[int, list[str]]:
+def _prune_permissions_file(privileged_codes: set[str]) -> tuple[int, list[str]]:
     path = get_settings().data_dir / "permissions.json"
     if not path.exists():
         return 0, []
@@ -109,7 +110,7 @@ def _prune_permissions_file(admin_codes: set[str]) -> tuple[int, list[str]]:
     rows = payload.get("users")
     if not isinstance(rows, list):
         return 0, ["权限配置未清理：users 不是数组"]
-    kept = [row for row in rows if isinstance(row, dict) and str(row.get("user_code") or "").strip() in admin_codes]
+    kept = [row for row in rows if isinstance(row, dict) and str(row.get("user_code") or "").strip() in privileged_codes]
     removed = len(rows) - len(kept)
     if removed == 0:
         return 0, []
@@ -208,7 +209,7 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
             select(User.id)
             .join(UserRole, UserRole.user_id == User.id)
             .join(Role, Role.id == UserRole.role_id)
-            .where(Role.name == "admin")
+            .where(Role.name.in_((ADMIN_ROLE, OWNER_ROLE)))
         ).all()
     )
     deleted["sessions"] = _delete_rows(db, delete(UserSession))
@@ -244,8 +245,14 @@ def reset_all_data(db: Session) -> dict:
             raise
 
         warnings = quarantine.finalize()
-        admin_codes = set(db.scalars(select(User.user_code).join(User.roles).where(Role.name == "admin")).all())
-        removed_permission_rows, permission_warnings = _prune_permissions_file(admin_codes)
+        privileged_codes = set(
+            db.scalars(
+                select(User.user_code)
+                .join(User.roles)
+                .where(Role.name.in_((ADMIN_ROLE, OWNER_ROLE)))
+            ).all()
+        )
+        removed_permission_rows, permission_warnings = _prune_permissions_file(privileged_codes)
         warnings.extend(permission_warnings)
         deleted["permissions_users"] = removed_permission_rows
         return {

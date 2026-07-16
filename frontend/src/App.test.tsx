@@ -719,8 +719,9 @@ describe("Material application shell", () => {
       qq_id: "1",
       identity: "participant",
       display_name: "赛事管理员",
-      roles: ["admin", "pool_editor", "participant"],
+      roles: ["owner", "admin", "pool_editor", "participant"],
       is_admin: true,
+      is_owner: true,
       is_pool_editor: true,
       is_active: true,
     };
@@ -732,6 +733,7 @@ describe("Material application shell", () => {
       display_name: "参赛者",
       roles: ["participant"],
       is_admin: false,
+      is_owner: false,
       is_pool_editor: false,
       is_active: true,
     };
@@ -745,7 +747,7 @@ describe("Material application shell", () => {
       if (path.endsWith("/admin/users/2") && init?.method === "PUT") {
         const body = JSON.parse(String(init.body)) as { roles: string[] };
         updateBodies.push(body);
-        return json({ ...member, roles: body.roles, is_admin: body.roles.includes("admin") });
+        return json({ ...member, roles: body.roles, is_admin: body.roles.includes("admin"), is_owner: false });
       }
       return json({ detail: "not found" }, 404);
     }));
@@ -755,5 +757,73 @@ describe("Material application shell", () => {
 
     await waitFor(() => expect(updateBodies).toHaveLength(1));
     expect(updateBodies[0].roles).toContain("admin");
+  });
+
+  it("disables administrator changes for a regular administrator", async () => {
+    window.history.pushState({}, "", "/admin/users");
+    const admin = {
+      id: 1,
+      user_code: "admin",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "赛事管理员",
+      roles: ["admin", "pool_editor", "participant"],
+      is_admin: true,
+      is_owner: false,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    const member = {
+      id: 2,
+      user_code: "member",
+      qq_id: "2",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_owner: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
+      if (path.endsWith("/auth/me")) return json({ user: admin });
+      if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/admin/users")) return json([member]);
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByRole("checkbox", { name: "管理员" })).toBeDisabled();
+  });
+
+  it("shows owner status without exposing an owner grant control", async () => {
+    window.history.pushState({}, "", "/admin/users");
+    const owner = {
+      id: 1,
+      user_code: "owner-account",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "最高权限账号",
+      roles: ["owner", "participant"],
+      is_admin: true,
+      is_owner: true,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: owner });
+      if (path.endsWith("/auth/me")) return json({ user: owner });
+      if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/admin/users")) return json([owner]);
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    expect(await screen.findByText("Owner / 最高权限")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "管理员" })).toBeDisabled();
+    expect(screen.queryByRole("checkbox", { name: "Owner / 最高权限" })).not.toBeInTheDocument();
   });
 });

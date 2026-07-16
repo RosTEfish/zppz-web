@@ -80,7 +80,7 @@ def create_reset_fixture() -> tuple[int, int, int, int]:
             password_hash=hash_password("secret123"),
             identity="participant",
             display_name="Second admin",
-            roles=[roles["admin"]],
+            roles=[roles["admin"], roles["owner"]],
         )
         player = User(
             user_code="player",
@@ -269,6 +269,7 @@ def test_reset_clears_business_data_preserves_admin_and_shared_resources(client:
         users = list(db.scalars(select(User).order_by(User.user_code)).all())
         assert {user.user_code for user in users} == {"admin", "admin-two"}
         assert all(user.has_role("admin") for user in users)
+        assert next(user for user in users if user.user_code == "admin-two").has_role("owner")
 
     settings = get_settings()
     events_dir = settings.uploads_dir / "events"

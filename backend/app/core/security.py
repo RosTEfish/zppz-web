@@ -19,6 +19,9 @@ _session_cleanup_lock = Lock()
 _last_session_cleanup = 0.0
 _SESSION_CLEANUP_INTERVAL_SECONDS = 15 * 60
 _SESSION_CLEANUP_BATCH_SIZE = 500
+OWNER_ROLE = "owner"
+ADMIN_ROLE = "admin"
+OWNER_INHERITED_ROLES = {ADMIN_ROLE, "pool_editor"}
 
 
 def hash_password(password: str) -> str:
@@ -133,8 +136,19 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
     return session.user if session.user.is_active else None
 
 
+def is_owner(user: User) -> bool:
+    return user.has_role(OWNER_ROLE)
+
+
+def has_admin_access(user: User) -> bool:
+    """Return whether a user has the administrative control surface."""
+    return is_owner(user) or user.has_role(ADMIN_ROLE)
+
+
 def require_role(*roles: str):
     def dependency(user: User = Depends(get_current_user)) -> User:
+        if is_owner(user) and any(role in OWNER_INHERITED_ROLES for role in roles):
+            return user
         if any(user.has_role(role) for role in roles):
             return user
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有权限执行此操作")
@@ -150,14 +164,16 @@ def user_payload(user: User) -> dict:
         "identity": user.identity,
         "display_name": user.display_name,
         "roles": [role.name for role in user.roles],
-        "is_admin": user.has_role("admin"),
-        "is_pool_editor": user.has_role("pool_editor"),
+        "is_admin": has_admin_access(user),
+        "is_owner": is_owner(user),
+        "is_pool_editor": user.has_role("pool_editor") or is_owner(user),
         "is_active": user.is_active,
     }
 
 
-def ensure_roles(db: Session) -> dict[str, Role]:
+def ensure_roles(db: Session, *, commit: bool = True) -> dict[str, Role]:
     role_defs = {
+        OWNER_ROLE: "Owner",
         "admin": "管理员",
         "pool_editor": "曲池编辑",
         "participant": "参赛者",
@@ -172,5 +188,7 @@ def ensure_roles(db: Session) -> dict[str, Role]:
             existing[name] = role
             changed = True
     if changed:
-        db.commit()
+        db.flush()
+        if commit:
+            db.commit()
     return existing
