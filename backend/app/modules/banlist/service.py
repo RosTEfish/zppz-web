@@ -27,6 +27,9 @@ MATCH_TITLE_THRESHOLD = 85.0
 MATCH_ARTIST_THRESHOLD = 70.0
 MATCH_TITLE_EXACT_ARTIST_THRESHOLD = 80.0
 SEARCH_LIMIT = 50
+TITLE_HEADERS = {"曲名", "songname", "title"}
+ARTIST_HEADERS = {"作者", "artist", "author"}
+REMARK_HEADERS = {"备注", "remark", "note"}
 
 
 class ExternalMetadataProvider(Protocol):
@@ -72,6 +75,29 @@ def _cell_text(value: object) -> str:
     return str(value).strip() if value is not None else ""
 
 
+def _discover_ban_blocks(rows: list[tuple[object, ...]]) -> list[tuple[int, str]]:
+    if len(rows) < 2:
+        return []
+    round_row = rows[0]
+    header_row = rows[1]
+    column_count = max(len(round_row), len(header_row))
+    blocks: list[tuple[int, str]] = []
+    for start in range(max(0, column_count - 2)):
+        round_label = _cell_text(round_row[start]) if start < len(round_row) else ""
+        headers = [
+            normalize_text(header_row[index]) if index < len(header_row) else ""
+            for index in range(start, start + 3)
+        ]
+        if (
+            round_label.startswith("#")
+            and headers[0] in TITLE_HEADERS
+            and headers[1] in ARTIST_HEADERS
+            and headers[2] in REMARK_HEADERS
+        ):
+            blocks.append((start, round_label))
+    return blocks
+
+
 def parse_ban_workbook(raw: bytes) -> tuple[list[ParsedBanEntry], list[str]]:
     if not raw:
         raise ValueError("Ban 曲 Excel 文件为空")
@@ -79,38 +105,34 @@ def parse_ban_workbook(raw: bytes) -> tuple[list[ParsedBanEntry], list[str]]:
         workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
     except (InvalidFileException, OSError, ValueError) as exc:
         raise ValueError("无法读取 Ban 曲 Excel 文件，请上传有效的 .xlsx 文件") from exc
-    worksheet = workbook.active
-    rows = list(worksheet.iter_rows(values_only=True))
-    entries: list[ParsedBanEntry] = []
-    issues: list[str] = []
-    blocks = ((0, "#1 - Pure"), (4, "#2 - Pure Plus"), (8, "#3 - Devour"))
-    headers = {"曲名", "song_name", "songname", "title"}
+    try:
+        worksheet = workbook.active
+        rows = list(worksheet.iter_rows(values_only=True))
+        blocks = _discover_ban_blocks(rows)
+        if not blocks:
+            raise ValueError("Excel 中未找到有效的 Ban 曲区块，请确认第 1 行为赛事名称，第 2 行为曲名、作者、备注")
 
-    for start, default_round in blocks:
-        current_round = default_round
-        seen_in_round: set[tuple[str, str]] = set()
-        for row_number, row in enumerate(rows, start=1):
-            cells = list(row) + [None] * max(0, start + 3 - len(row))
-            label = _cell_text(cells[start])
-            if label.startswith("#"):
-                current_round = label
-            title = _cell_text(cells[start])
-            artist = _cell_text(cells[start + 1])
-            remark = _cell_text(cells[start + 2])
-            if row_number <= 2 or title.casefold() in headers:
-                continue
-            if not title and not artist and not remark:
-                continue
-            if not title or not artist:
-                issues.append(f"第 {row_number} 行（{current_round}）缺少曲名或作者")
-                continue
-            key = (normalize_text(title), normalize_text(artist))
-            if key in seen_in_round:
-                issues.append(f"第 {row_number} 行（{current_round}）与同届已有曲目重复：{title} / {artist}")
-            seen_in_round.add(key)
-            entries.append(ParsedBanEntry(current_round, title, artist, remark, row_number))
-
-    workbook.close()
+        entries: list[ParsedBanEntry] = []
+        issues: list[str] = []
+        for start, round_label in blocks:
+            seen_in_round: set[tuple[str, str]] = set()
+            for row_number, row in enumerate(rows[2:], start=3):
+                cells = list(row) + [None] * max(0, start + 3 - len(row))
+                title = _cell_text(cells[start])
+                artist = _cell_text(cells[start + 1])
+                remark = _cell_text(cells[start + 2])
+                if not title and not artist and not remark:
+                    continue
+                if not title or not artist:
+                    issues.append(f"第 {row_number} 行（{round_label}）缺少曲名或作者")
+                    continue
+                key = (normalize_text(title), normalize_text(artist))
+                if key in seen_in_round:
+                    issues.append(f"第 {row_number} 行（{round_label}）与同届已有曲目重复：{title} / {artist}")
+                seen_in_round.add(key)
+                entries.append(ParsedBanEntry(round_label, title, artist, remark, row_number))
+    finally:
+        workbook.close()
     if not entries:
         raise ValueError("Excel 中没有解析到有效的 Ban 曲目")
     return entries, issues

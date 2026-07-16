@@ -1,4 +1,6 @@
+from collections import Counter
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 from openpyxl import Workbook
@@ -9,7 +11,7 @@ from app import models  # noqa: F401
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.models import BanImport, Event, Song, User
-from app.modules.banlist.service import similarity
+from app.modules.banlist.service import parse_ban_workbook, similarity
 from sqlalchemy import select
 from app.main import app
 
@@ -52,6 +54,13 @@ def workbook_bytes() -> bytes:
     sheet.cell(2, 11, "备注")
     sheet.cell(3, 9, "Third Song")
     sheet.cell(3, 10, "Third Artist")
+    sheet.cell(1, 13, "#4 - Devour plus")
+    sheet.cell(2, 13, "曲名")
+    sheet.cell(2, 14, "作者")
+    sheet.cell(2, 15, "备注")
+    sheet.cell(3, 13, "Fourth Song")
+    sheet.cell(3, 14, "Fourth Artist")
+    sheet.cell(3, 15, "Fourth Note")
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
@@ -65,6 +74,69 @@ def test_similarity_uses_rapidfuzz_wratio_and_rounds() -> None:
     with patch("app.modules.banlist.service.fuzz.WRatio") as wratio:
         assert similarity("", "non-empty") == 0.0
         wratio.assert_not_called()
+
+
+def test_parser_discovers_future_blocks_and_preserves_validation_issues() -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.cell(1, 17, "#5 - Future Round")
+    sheet.cell(2, 17, "song_name")
+    sheet.cell(2, 18, "artist")
+    sheet.cell(2, 19, "note")
+    sheet.cell(3, 17, "Future Song")
+    sheet.cell(3, 18, "Future Artist")
+    sheet.cell(3, 19, "Future Note")
+    sheet.cell(4, 17, "Future Song")
+    sheet.cell(4, 18, "Future Artist")
+    sheet.cell(5, 17, "Missing Artist")
+    output = BytesIO()
+    workbook.save(output)
+
+    entries, issues = parse_ban_workbook(output.getvalue())
+
+    assert [(entry.round_label, entry.song_name, entry.artist, entry.remark) for entry in entries] == [
+        ("#5 - Future Round", "Future Song", "Future Artist", "Future Note"),
+        ("#5 - Future Round", "Future Song", "Future Artist", ""),
+    ]
+    assert len(issues) == 2
+    assert any("缺少曲名或作者" in issue for issue in issues)
+    assert any("与同届已有曲目重复" in issue for issue in issues)
+
+
+def test_parser_rejects_empty_and_unrecognized_workbooks() -> None:
+    with pytest.raises(ValueError, match="文件为空"):
+        parse_ban_workbook(b"")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.cell(1, 1, "#1 - Invalid")
+    sheet.cell(2, 1, "不是曲名表头")
+    output = BytesIO()
+    workbook.save(output)
+
+    with pytest.raises(ValueError, match="未找到有效的 Ban 曲区块"):
+        parse_ban_workbook(output.getvalue())
+
+
+def test_bundled_number_four_workbook_parses_completely_and_is_downloadable(client) -> None:
+    workbook_path = next((Path(__file__).resolve().parents[2] / "banlist").glob("*#4*.xlsx"))
+    entries, issues = parse_ban_workbook(workbook_path.read_bytes())
+
+    assert issues == []
+    assert Counter(entry.round_label for entry in entries) == {
+        "#1 - Pure": 21,
+        "#2 - Pure Plus": 50,
+        "#3 - Devour": 47,
+        "#4 - Devour plus": 50,
+    }
+    assert len(entries) == 168
+
+    metadata = client.get("/api/v1/assets/banlist")
+    assert metadata.status_code == 200
+    assert metadata.json()["file_name"] == workbook_path.name
+    download = client.get("/api/v1/assets/banlist/download")
+    assert download.status_code == 200
+    assert download.content == workbook_path.read_bytes()
 
 
 def register(client, user_code: str, identity: str = "participant") -> None:
@@ -92,9 +164,14 @@ def test_ban_import_preview_publish_and_matching(client):
     )
     assert uploaded.status_code == 200, uploaded.text
     preview = uploaded.json()
-    assert preview["entry_count"] == 4
+    assert preview["entry_count"] == 5
     assert preview["issues"] == []
-    assert {entry["round"] for entry in preview["entries"]} == {"#1 - Pure", "#2 - Pure Plus", "#3 - Devour"}
+    assert {entry["round"] for entry in preview["entries"]} == {
+        "#1 - Pure",
+        "#2 - Pure Plus",
+        "#3 - Devour",
+        "#4 - Devour plus",
+    }
 
     published = client.post(f"/api/v1/admin/banlist/{preview['id']}/publish")
     assert published.status_code == 200, published.text
@@ -106,6 +183,16 @@ def test_ban_import_preview_publish_and_matching(client):
     assert exact.status_code == 200
     assert exact.json()["status"] == "exact"
     assert exact.json()["matches"][0]["round"] == "#1 - Pure"
+
+    fourth = client.post("/api/v1/banlist/check", json={"title": "Fourth Song", "artist": "Fourth Artist"})
+    assert fourth.status_code == 200
+    assert fourth.json()["status"] == "exact"
+    assert fourth.json()["matches"][0]["round"] == "#4 - Devour plus"
+
+    fourth_search = client.get("/api/v1/banlist/search", params={"title": "Fourth Song"})
+    assert fourth_search.status_code == 200
+    assert fourth_search.json()["items"][0]["title"] == "Fourth Song"
+    assert fourth_search.json()["items"][0]["round"] == "#4 - Devour plus"
 
     normalized = client.post("/api/v1/banlist/check", json={"title": "Ban-Song", "artist": "artist"})
     assert normalized.status_code == 200
