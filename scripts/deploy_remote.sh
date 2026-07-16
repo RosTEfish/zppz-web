@@ -125,6 +125,7 @@ esac
 merge_env_file="$(mktemp "$deploy_state_dir/.env.merge.XXXXXX")"
 chmod 600 "$merge_env_file"
 cp "$env_file" "$merge_env_file"
+storage_config_error=""
 while IFS='=' read -r name value; do
   [ -n "$name" ] || continue
   case "$name" in
@@ -136,12 +137,16 @@ while IFS='=' read -r name value; do
       mv "$next_env" "$merge_env_file"
       ;;
     *)
-      echo "Unexpected key in storage configuration: $name" >&2
-      rm -f -- "$merge_env_file" "$STORAGE_CONFIG_PATH"
-      exit 1
+      storage_config_error="Unexpected key in storage configuration: $name"
+      break
       ;;
   esac
 done < "$STORAGE_CONFIG_PATH"
+if [ -n "$storage_config_error" ]; then
+  echo "$storage_config_error" >&2
+  rm -f -- "$merge_env_file" "$STORAGE_CONFIG_PATH"
+  exit 1
+fi
 mv "$merge_env_file" "$env_file"
 chmod 600 "$env_file"
 rm -f -- "$STORAGE_CONFIG_PATH"
