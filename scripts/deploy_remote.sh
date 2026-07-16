@@ -22,6 +22,7 @@ release_dir="$releases_dir/$RELEASE_NAME"
 rollback_archive="$deploy_state_dir/rollback-$RELEASE_NAME.tar.gz"
 venv_dir="$app_dir/.venv"
 env_file="$app_dir/.env"
+legacy_database_path="$app_dir/backend/zppz_v2.db"
 
 if [[ "$app_dir" != /* || "$app_dir" == "/" ]]; then
   echo "DEPLOY_PATH must be an absolute path other than /." >&2
@@ -37,7 +38,7 @@ restore_live_release() {
   for path in "$app_dir"/* "$app_dir"/.[!.]* "$app_dir"/..?*; do
     [ -e "$path" ] || [ -L "$path" ] || continue
     case "$path" in
-      "$deploy_state_dir"|"$venv_dir"|"$app_dir/venv"|"$app_dir/uploads"|"$app_dir/logs"|"$app_dir/data"|"$env_file")
+      "$deploy_state_dir"|"$venv_dir"|"$app_dir/venv"|"$app_dir/uploads"|"$app_dir/logs"|"$app_dir/data"|"$env_file"|"$legacy_database_path")
         continue
         ;;
     esac
@@ -136,6 +137,20 @@ if [[ "$configured_database_url" == sqlite:////data/* ]]; then
   sed -i "s|^DATABASE_URL=.*$|DATABASE_URL=$migrated_database_url|" "$env_file"
 fi
 
+# A previous manual CLI invocation without the production environment could
+# create this relative SQLite file under backend/. It is not the persistent
+# database used by the service, but a root-owned copy can otherwise prevent
+# the release snapshot and writable-path check from completing. Keep it in
+# place for safety and exclude only this exact legacy path when the configured
+# database is the native deployment database.
+skip_legacy_database=0
+configured_database_url="$(sed -n 's/^DATABASE_URL=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
+expected_database_url="sqlite:///$app_dir/data/zppz_v2.db"
+if [ "$configured_database_url" = "$expected_database_url" ] && [ -f "$legacy_database_path" ] && [ ! -L "$legacy_database_path" ]; then
+  skip_legacy_database=1
+  echo "Ignoring legacy database outside DATA_DIR: $legacy_database_path"
+fi
+
 configured_workers="$(sed -n 's/^WEB_CONCURRENCY=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
 if [[ "$configured_workers" =~ ^[1-9][0-9]*$ ]]; then
   WEB_CONCURRENCY="$configured_workers"
@@ -171,9 +186,13 @@ find_prune_path_args=(
   -o -path "$app_dir/data" -o -path "$app_dir/data/*"
 )
 
+find_skip_args=( "(" "${find_prune_path_args[@]}" ")" -prune )
+if [ "$skip_legacy_database" -eq 1 ]; then
+  find_skip_args+=( -o -path "$legacy_database_path" -prune )
+fi
+
 unwritable_path="$(
-  find "$app_dir" \
-    \( "${find_prune_path_args[@]}" \) -prune \
+  find "$app_dir" "${find_skip_args[@]}" \
     -o ! -writable -print -quit
 )"
 
@@ -187,6 +206,10 @@ fi
 # service restart, or health check does not leave the host on a half-written
 # release. Persistent data, uploads, logs, the virtualenv, and .env remain in
 # place and are deliberately excluded from this snapshot.
+rollback_snapshot_excludes=()
+if [ "$skip_legacy_database" -eq 1 ]; then
+  rollback_snapshot_excludes+=(--exclude='./backend/zppz_v2.db')
+fi
 tar -C "$app_dir" \
   --exclude='./.deploy' \
   --exclude='./.venv' \
@@ -200,6 +223,7 @@ tar -C "$app_dir" \
   --exclude='./*.db' \
   --exclude='./*.sqlite' \
   --exclude='./*.sqlite3' \
+  "${rollback_snapshot_excludes[@]}" \
   -czf "$rollback_archive" .
 rollback_enabled=1
 
