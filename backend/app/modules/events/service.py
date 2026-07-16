@@ -19,7 +19,7 @@ def get_current_event(db: Session) -> Event:
             .where(Event.is_current.is_(True))
         )
     if not event:
-        event = Event(name="这谱谱这正赛", slug="zppz-current", is_current=True)
+        event = Event(name="这谱谱这 #5", slug="zppz-current", is_current=True)
         event.settings = EventSetting()
         db.add(event)
         db.commit()

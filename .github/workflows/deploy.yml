@@ -82,6 +82,7 @@ jobs:
       SERVER_PIP_INDEX_URL: ${{ vars.SERVER_PIP_INDEX_URL || 'https://pypi.tuna.tsinghua.edu.cn/simple' }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
+      RAW_OWNER_USER_CODE: ${{ vars.OWNER_USER_CODE }}
 
     steps:
       - name: Checkout
@@ -135,6 +136,12 @@ jobs:
           deploy_user="$(trim_one_line "$RAW_DEPLOY_USER")"
           deploy_port="$(trim_one_line "$DEPLOY_PORT")"
 
+          if [[ "$RAW_OWNER_USER_CODE" == *$'\n'* || "$RAW_OWNER_USER_CODE" == *$'\r'* ]]; then
+            echo "::error::OWNER_USER_CODE must be a single-line account code."
+            exit 1
+          fi
+          owner_user_code="$(trim_one_line "$RAW_OWNER_USER_CODE")"
+
           if [[ "$deploy_host" =~ [[:space:]/@] ]]; then
             echo "::error::DEPLOY_HOST must be a bare host or IP, for example 8.137.151.24. Do not include http://, user@, spaces, or extra lines."
             exit 1
@@ -150,10 +157,18 @@ jobs:
             exit 1
           fi
 
+          if [ "${#owner_user_code}" -gt 64 ]; then
+            echo "::error::OWNER_USER_CODE must not exceed 64 characters."
+            exit 1
+          fi
+
+          owner_user_code_b64="$(printf '%s' "$owner_user_code" | base64 -w 0)"
+
           {
             echo "DEPLOY_HOST=$deploy_host"
             echo "DEPLOY_USER=$deploy_user"
             echo "DEPLOY_PORT=$deploy_port"
+            echo "OWNER_USER_CODE_B64=$owner_user_code_b64"
           } >> "$GITHUB_ENV"
 
       - name: Prepare production storage configuration
@@ -255,7 +270,7 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes \
             -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_NAME='$RELEASE_NAME' SERVICE_NAME='$SERVICE_NAME' APP_PORT='$APP_PORT' KEEP_RELEASES='$KEEP_RELEASES' SERVER_PIP_INDEX_URL='$SERVER_PIP_INDEX_URL' STORAGE_CONFIG_PATH='$DEPLOY_PATH/.deploy/incoming/${RELEASE_NAME}.storage.env' bash -s" \
+            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_NAME='$RELEASE_NAME' SERVICE_NAME='$SERVICE_NAME' APP_PORT='$APP_PORT' KEEP_RELEASES='$KEEP_RELEASES' SERVER_PIP_INDEX_URL='$SERVER_PIP_INDEX_URL' STORAGE_CONFIG_PATH='$DEPLOY_PATH/.deploy/incoming/${RELEASE_NAME}.storage.env' OWNER_USER_CODE_B64='$OWNER_USER_CODE_B64' bash -s" \
             < scripts/deploy_remote.sh
 
       - name: Remove temporary credential files

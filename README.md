@@ -43,10 +43,12 @@ docker compose up --build
 
 生产部署要求在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
 
-- Variables：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`。
+- Variables：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`，以及可选的 `OWNER_USER_CODE`。
 - Secrets：`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`。
 
 `SERVER_PIP_INDEX_URL` 建议设为 `https://pypi.tuna.tsinghua.edu.cn/simple`。远程服务器升级 pip 和安装依赖时会先使用该镜像；失败后自动完整重试官方 `https://pypi.org/simple`。GitHub Actions 自身的验证仍使用官方 PyPI 和 npm 源。
+
+`OWNER_USER_CODE` 填写网站登录使用的账号 ID（`user_code`），而不是昵称、QQ 号或 GitHub 用户名。目标账号必须已经注册并处于启用状态；配置后，每次部署都会把该账号同步为唯一 Owner，并把原 Owner 保留为管理员。变量为空或未配置时，部署不会修改现有 Owner；变量非空但账号无效时，部署会失败并保留原 Owner。
 
 部署流水线会通过单独的权限文件把 R2 配置合并进服务器持久 `.env`，配置文件不会进入发布包。生产环境固定使用 `OBJECT_STORAGE_BACKEND=r2`，不会在配置缺失或权限检查失败时回退到本地存储。
 

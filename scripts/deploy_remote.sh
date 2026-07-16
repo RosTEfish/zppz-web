@@ -11,8 +11,21 @@ KEEP_RELEASES="${KEEP_RELEASES:-5}"
 WEB_CONCURRENCY="${WEB_CONCURRENCY:-1}"
 SERVER_PIP_INDEX_URL="${SERVER_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 STORAGE_CONFIG_PATH="${STORAGE_CONFIG_PATH:-}"
+OWNER_USER_CODE_B64="${OWNER_USER_CODE_B64:-}"
 RUN_USER="${RUN_USER:-$(id -un)}"
 RUN_GROUP="${RUN_GROUP:-$(id -gn)}"
+
+owner_user_code=""
+if [ -n "$OWNER_USER_CODE_B64" ]; then
+  if ! owner_user_code="$(printf '%s' "$OWNER_USER_CODE_B64" | base64 --decode)"; then
+    echo "OWNER_USER_CODE_B64 is not valid base64." >&2
+    exit 1
+  fi
+  if [ -z "$owner_user_code" ]; then
+    echo "OWNER_USER_CODE decoded to an empty account code." >&2
+    exit 1
+  fi
+fi
 
 app_dir="$DEPLOY_PATH"
 deploy_state_dir="$app_dir/.deploy"
@@ -316,6 +329,11 @@ service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --po
   cd "$service_workdir"
   "$venv_dir/bin/python" -m app.prepare
   "$venv_dir/bin/python" -m app.manage storage-check
+  if [ -n "$owner_user_code" ]; then
+    "$venv_dir/bin/python" -m app.manage set-owner --user-code "$owner_user_code"
+  else
+    echo "OWNER_USER_CODE is empty; keeping the current owner unchanged."
+  fi
 )
 
 service_file="/etc/systemd/system/$SERVICE_NAME.service"

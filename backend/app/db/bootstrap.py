@@ -114,7 +114,7 @@ def seed_defaults(db: Session) -> None:
     roles = ensure_roles(db)
     current_event = db.scalar(select(Event).where(Event.is_current.is_(True)))
     if not current_event:
-        current_event = Event(name="这谱谱这正赛", slug="zppz-current", is_current=True)
+        current_event = Event(name="这谱谱这 #5", slug="zppz-current", is_current=True)
         current_event.settings = EventSetting()
         db.add(current_event)
         db.commit()
