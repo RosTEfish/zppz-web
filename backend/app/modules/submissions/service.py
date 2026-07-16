@@ -5,6 +5,60 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 
 from app.core.config import get_settings
+from app.models import StorageDeletion
+from app.modules.object_storage import get_object_store
+
+
+ARCHIVE_CONTENT_TYPES = {
+    ".zip": "application/zip",
+    ".7z": "application/x-7z-compressed",
+    ".rar": "application/vnd.rar",
+}
+
+
+def archive_content_type(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    content_type = ARCHIVE_CONTENT_TYPES.get(suffix)
+    if not content_type:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型：{suffix or '无扩展名'}")
+    return content_type
+
+
+def validate_upload_metadata(filename: str, size: int, content_type: str) -> str:
+    settings = get_settings()
+    expected = archive_content_type(filename)
+    if size <= 0:
+        raise HTTPException(status_code=422, detail="文件不能为空")
+    if size > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"文件不能超过 {settings.max_upload_mb} MB")
+    if content_type != expected:
+        raise HTTPException(status_code=422, detail=f"文件 Content-Type 必须为 {expected}")
+    return Path(filename).suffix.lower()
+
+
+def enqueue_storage_deletion(db, object_key: str | None) -> None:
+    if not object_key:
+        return
+    existing = db.query(StorageDeletion).filter(StorageDeletion.object_key == object_key).first()
+    if not existing:
+        db.add(StorageDeletion(object_key=object_key))
+
+
+def drain_storage_deletions(db) -> int:
+    store = get_object_store()
+    deleted = 0
+    rows = db.query(StorageDeletion).order_by(StorageDeletion.id.asc()).limit(200).all()
+    for row in rows:
+        try:
+            store.delete(row.object_key)
+        except Exception as exc:
+            row.attempts += 1
+            row.last_error = str(exc)[:500]
+        else:
+            db.delete(row)
+            deleted += 1
+    db.commit()
+    return deleted
 
 
 def validate_extension(filename: str) -> None:

@@ -277,6 +277,18 @@ def write_public_package(event_id: int, submission_id: int, parsed: ParsedArchiv
     return str(target.relative_to(settings.data_dir)).replace("\\", "/")
 
 
+def build_public_package(target: Path, parsed: ParsedArchive) -> None:
+    """Build a neutral public ZIP at an explicit temporary or storage path."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{uuid4().hex}.tmp")
+    try:
+        with ZipFile(temporary, "w", ZIP_DEFLATED) as archive:
+            _copy_public_files(parsed, archive)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _copy_stream(source, destination) -> None:
     while chunk := source.read(1024 * 1024):
         destination.write(chunk)

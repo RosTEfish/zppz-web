@@ -30,6 +30,14 @@ class Settings:
     uploads_dir = data_dir / "uploads"
     assets_dir = data_dir / "assets"
     max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", "100"))
+    object_storage_backend = os.getenv("OBJECT_STORAGE_BACKEND", "local").strip().lower()
+    r2_account_id = os.getenv("R2_ACCOUNT_ID", "").strip()
+    r2_bucket_name = os.getenv("R2_BUCKET_NAME", "").strip()
+    r2_access_key_id = os.getenv("R2_ACCESS_KEY_ID", "").strip()
+    r2_secret_access_key = os.getenv("R2_SECRET_ACCESS_KEY", "").strip()
+    r2_upload_url_ttl_seconds = int(os.getenv("R2_UPLOAD_URL_TTL_SECONDS", "600"))
+    r2_download_url_ttl_seconds = int(os.getenv("R2_DOWNLOAD_URL_TTL_SECONDS", "300"))
+    upload_intent_ttl_seconds = int(os.getenv("UPLOAD_INTENT_TTL_SECONDS", "900"))
     configured_extensions = parse_allowed_extensions(os.getenv("ALLOWED_EXTENSIONS"))
     allowed_extensions = (configured_extensions & ARCHIVE_UPLOAD_EXTENSIONS) or ARCHIVE_UPLOAD_EXTENSIONS
     admin_seed_code = os.getenv("ADMIN_SEED_CODE", "admin")
@@ -40,6 +48,27 @@ class Settings:
     ban_external_api_key = os.getenv("BAN_EXTERNAL_API_KEY", "")
     ban_external_timeout_ms = int(os.getenv("BAN_EXTERNAL_TIMEOUT_MS", "2000"))
     ban_external_cache_ttl_seconds = int(os.getenv("BAN_EXTERNAL_CACHE_TTL_SECONDS", "604800"))
+
+    @property
+    def r2_endpoint(self) -> str:
+        return f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
+
+    def validate_object_storage(self) -> None:
+        if self.object_storage_backend not in {"local", "r2"}:
+            raise RuntimeError("OBJECT_STORAGE_BACKEND must be local or r2")
+        if self.object_storage_backend == "r2":
+            missing = [
+                name
+                for name, value in (
+                    ("R2_ACCOUNT_ID", self.r2_account_id),
+                    ("R2_BUCKET_NAME", self.r2_bucket_name),
+                    ("R2_ACCESS_KEY_ID", self.r2_access_key_id),
+                    ("R2_SECRET_ACCESS_KEY", self.r2_secret_access_key),
+                )
+                if not value
+            ]
+            if missing:
+                raise RuntimeError(f"missing R2 configuration: {', '.join(missing)}")
 
 
 @lru_cache

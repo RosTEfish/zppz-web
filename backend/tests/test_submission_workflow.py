@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, Song, Submission, User
+from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, Song, Submission, SubmissionUploadIntent, User
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 
 
@@ -110,6 +110,83 @@ def create_candidate_rows() -> tuple[int, int, int]:
         db.add(DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=assigned.id))
         db.commit()
         return event.id, own.id, assigned.id
+
+
+def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes("Direct R2 Flow")
+
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "direct.zip",
+            "file_size": len(payload),
+            "content_type": "application/zip",
+        },
+    )
+    assert created.status_code == 200, created.text
+    intent = created.json()
+    assert intent["method"] == "PUT"
+    assert intent["headers"] == {"Content-Type": "application/zip"}
+
+    uploaded = client.put(intent["upload_url"], content=payload, headers=intent["headers"])
+    assert uploaded.status_code == 204, uploaded.text
+    completed = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert completed.status_code == 200, completed.text
+    repeated = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert repeated.status_code == 200
+    assert repeated.json()["id"] == completed.json()["id"]
+
+    with SessionLocal() as db:
+        row = db.get(Submission, completed.json()["id"])
+        upload_intent = db.get(SubmissionUploadIntent, intent["id"])
+        assert row is not None and upload_intent is not None
+        assert row.storage_path.startswith(f"events/{row.event_id}/submissions/{row.id}/source/")
+        assert row.public_storage_path.startswith(f"events/{row.event_id}/submissions/{row.id}/public/")
+        assert row.public_file_size and row.public_file_size > 0
+        assert upload_intent.status == "completed"
+        assert not (get_settings().data_dir / upload_intent.object_key).exists()
+        assert (get_settings().data_dir / row.storage_path).read_bytes() == payload
+
+
+def test_upload_intent_rejects_mime_and_size_mismatches(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes()
+
+    wrong_mime = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "source.zip",
+            "file_size": len(payload),
+            "content_type": "application/octet-stream",
+        },
+    )
+    assert wrong_mime.status_code == 422
+
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "source.zip",
+            "file_size": len(payload) + 1,
+            "content_type": "application/zip",
+        },
+    )
+    assert created.status_code == 200
+    intent = created.json()
+    mismatch = client.put(intent["upload_url"], content=payload, headers=intent["headers"])
+    assert mismatch.status_code == 422
 
 
 def test_targets_phase_gate_and_j_limit(client: TestClient):

@@ -17,6 +17,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     environment:
       DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
       DATA_DIR: /data
@@ -26,6 +28,7 @@ services:
       CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000
       SECURE_COOKIES: "false"
       WEB_CONCURRENCY: "2"
+      OBJECT_STORAGE_BACKEND: local
       DB_POOL_SIZE: "5"
       DB_MAX_OVERFLOW: "5"
       DB_POOL_TIMEOUT: "30"
@@ -45,6 +48,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}
     ports:
       - "8080:80"
     depends_on:

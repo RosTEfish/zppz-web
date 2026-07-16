@@ -28,6 +28,7 @@ from app.models import (
     Role,
     Song,
     Submission,
+    SubmissionUploadIntent,
     SwapRequest,
     SwapRequestItem,
     SwapRound,
@@ -35,6 +36,7 @@ from app.models import (
     UserRole,
     UserSession,
 )
+from app.modules.submissions.service import drain_storage_deletions, enqueue_storage_deletion
 
 
 logger = logging.getLogger(__name__)
@@ -175,6 +177,11 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
     deleted["import_issues"] = (
         _delete_rows(db, delete(ImportIssue).where(ImportIssue.event_id.in_(event_ids))) if event_ids else 0
     )
+    deleted["submission_upload_intents"] = (
+        _delete_rows(db, delete(SubmissionUploadIntent).where(SubmissionUploadIntent.event_id.in_(event_ids)))
+        if event_ids
+        else 0
+    )
     deleted["submissions"] = (
         _delete_rows(db, delete(Submission).where(Submission.event_id.in_(event_ids))) if event_ids else 0
     )
@@ -237,6 +244,25 @@ def reset_all_data(db: Session) -> dict:
         quarantine = FileQuarantine()
         quarantine.stage()
         try:
+            submission_objects = list(
+                db.execute(
+                    select(Submission.storage_path, Submission.public_storage_path).where(
+                        Submission.event_id.in_(select(Event.id))
+                    )
+                ).all()
+            )
+            for storage_path, public_storage_path in submission_objects:
+                enqueue_storage_deletion(db, storage_path)
+                enqueue_storage_deletion(db, public_storage_path)
+            pending_objects = list(
+                db.scalars(
+                    select(SubmissionUploadIntent.object_key).where(
+                        SubmissionUploadIntent.event_id.in_(select(Event.id))
+                    )
+                ).all()
+            )
+            for object_key in pending_objects:
+                enqueue_storage_deletion(db, object_key)
             deleted = _reset_database(db, current_event_id)
             db.commit()
         except Exception:
@@ -245,6 +271,7 @@ def reset_all_data(db: Session) -> dict:
             raise
 
         warnings = quarantine.finalize()
+        drain_storage_deletions(db)
         privileged_codes = set(
             db.scalars(
                 select(User.user_code)

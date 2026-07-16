@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.security import OWNER_ROLE, ensure_roles
 from app.db.session import SessionLocal
 from app.models import Role, User
+from app.modules.object_storage import get_object_store
 
 
 class SetOwnerResult(TypedDict):
@@ -79,6 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     set_owner_parser = subparsers.add_parser("set-owner", help="grant the unique owner role")
     set_owner_parser.add_argument("--user-code", required=True, help="existing active account code")
+    subparsers.add_parser("storage-check", help="verify configured object storage read/write access")
     args = parser.parse_args(argv)
 
     if args.command == "set-owner":
@@ -90,6 +92,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"owner set to {result['user_code']}")
         if result["previous_owner_codes"]:
             print(f"previous owners demoted: {', '.join(result['previous_owner_codes'])}")
+        return 0
+
+    if args.command == "storage-check":
+        get_object_store().check()
+        print(f"object storage check passed ({get_object_store().backend})")
         return 0
 
     parser.error("unknown command")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from collections.abc import Iterable
 from urllib.parse import quote
 
 from fastapi import HTTPException
@@ -47,8 +48,9 @@ def parse_csv_ids(
 
 @dataclass(frozen=True)
 class DownloadEntry:
-    path: Path
+    path: Path | None
     archive_name: str
+    data: Iterable[bytes] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,7 +82,12 @@ def prepare_streaming_zip(
 ) -> PreparedZip:
     stream = ZipStream(compress_type=ZIP_STORED, sized=True)
     for entry in entries:
-        stream.add_path(entry.path, entry.archive_name)
+        if entry.path is not None:
+            stream.add_path(entry.path, entry.archive_name)
+        elif entry.data is not None:
+            stream.add(entry.data, entry.archive_name)
+        else:
+            raise ValueError("download entry requires a path or data")
     if report:
         stream.add(report, "_下载报告.txt")
     return PreparedZip(stream=stream, file_name=file_name, file_size=len(stream))

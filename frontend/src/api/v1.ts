@@ -91,6 +91,14 @@ export interface DownloadPreparation {
   file_size: number;
 }
 
+export interface SubmissionUploadIntent {
+  id: string;
+  upload_url: string;
+  method: "PUT";
+  headers: Record<string, string>;
+  expires_at: string;
+}
+
 export interface SongRead {
   id: number;
   song_name: string;
@@ -433,13 +441,57 @@ async function downloadPrepared(metadataPath: string): Promise<void> {
   triggerBrowserDownload(await apiRequest<DownloadPreparation>(metadataPath));
 }
 
-function submissionForm(file: File, songId?: number, track?: Track, acknowledgeBanWarning = false): FormData {
-  const form = new FormData();
-  form.set("file", file);
-  if (songId !== undefined) form.set("song_id", String(songId));
-  if (track) form.set("track", track);
-  if (acknowledgeBanWarning) form.set("acknowledge_ban_warning", "true");
-  return form;
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const ARCHIVE_CONTENT_TYPES: Record<string, string> = {
+  ".zip": "application/zip",
+  ".7z": "application/x-7z-compressed",
+  ".rar": "application/vnd.rar",
+};
+
+export function submissionContentType(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  const extension = dot >= 0 ? fileName.slice(dot).toLowerCase() : "";
+  const contentType = ARCHIVE_CONTENT_TYPES[extension];
+  if (!contentType) throw new Error("仅支持 ZIP、7Z 和 RAR 投稿压缩包");
+  return contentType;
+}
+
+function validateSubmissionFile(file: File): string {
+  const contentType = submissionContentType(file.name);
+  if (file.size <= 0) throw new Error("投稿文件不能为空");
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("投稿文件不能超过 100 MB");
+  return contentType;
+}
+
+async function putSubmissionFile(intent: SubmissionUploadIntent, file: File): Promise<void> {
+  const response = await fetch(intent.upload_url, {
+    method: intent.method,
+    headers: intent.headers,
+    body: file,
+    credentials: intent.upload_url.startsWith("/") ? "include" : "omit",
+  });
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(message || `对象存储上传失败（HTTP ${response.status}）`);
+  }
+}
+
+async function uploadSubmissionThroughIntent(
+  payload: Record<string, unknown>,
+  file: File,
+  adminSubmissionId?: number,
+): Promise<StoredFileRead> {
+  const content_type = validateSubmissionFile(file);
+  const metadata = { ...payload, file_name: file.name, file_size: file.size, content_type };
+  const base = adminSubmissionId === undefined
+    ? "/submissions/upload-intents"
+    : `/admin/submissions/${adminSubmissionId}/upload-intents`;
+  const intent = await apiRequest<SubmissionUploadIntent>(base, { method: "POST", body: JSON.stringify(metadata) });
+  await putSubmissionFile(intent, file);
+  const completePath = adminSubmissionId === undefined
+    ? `/submissions/upload-intents/${intent.id}/complete`
+    : `/admin/submissions/upload-intents/${intent.id}/complete`;
+  return apiRequest<StoredFileRead>(completePath, { method: "POST" });
 }
 
 export const api = {
@@ -500,13 +552,13 @@ export const api = {
 
   submissionTargets: (signal?: AbortSignal) => apiRequest<SubmissionTargetsResponse>("/submissions/targets", { signal }),
   mySubmissions: (signal?: AbortSignal) => apiRequest<StoredFileRead[]>("/submissions", { signal }),
-  uploadSubmission: (songId: number, track: Track, file: File, acknowledgeBanWarning = false) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, songId, track, acknowledgeBanWarning) }),
-  uploadExhibition: (file: File, acknowledgeBanWarning = false) => apiRequest<StoredFileRead>("/submissions", { method: "POST", body: submissionForm(file, undefined, "exhibition", acknowledgeBanWarning) }),
-  replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false) => apiRequest<StoredFileRead>(`/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track, acknowledgeBanWarning) }),
+  uploadSubmission: (songId: number, track: Track, file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ song_id: songId, track, acknowledge_ban_warning: acknowledgeBanWarning }, file),
+  uploadExhibition: (file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ track: "exhibition", acknowledge_ban_warning: acknowledgeBanWarning }, file),
+  replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ submission_id: id, track, acknowledge_ban_warning: acknowledgeBanWarning }, file),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   adminSubmissions: (track?: Track | "all", signal?: AbortSignal) => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`, { signal }),
-  replaceAdminSubmission: (id: number, file: File, track?: Track) => apiRequest<StoredFileRead>(`/admin/submissions/${id}/replace`, { method: "POST", body: submissionForm(file, undefined, track) }),
+  replaceAdminSubmission: (id: number, file: File, track?: Track) => uploadSubmissionThroughIntent({ track }, file, id),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
   batchDeleteAdminSubmissions: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/submissions/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   downloadAdminSubmission: (id: number) => downloadPrepared(`/admin/submissions/${id}/download-metadata`),

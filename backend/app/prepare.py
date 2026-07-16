@@ -7,7 +7,7 @@ from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults, upgra
 from app.models import BanImport, User
 from app.db.session import SessionLocal
 from app.modules.banlist.service import create_ban_import
-from app.modules.submissions.service import copy_asset_from_repo
+from app.modules.submissions.service import copy_asset_from_repo, drain_storage_deletions
 
 
 def sync_bundled_assets() -> None:
@@ -28,6 +28,7 @@ def prepare() -> None:
         seed_defaults(db)
         seed_bundled_banlist(db)
         backfill_guess_chart_metadata(db)
+        drain_storage_deletions(db)
     sync_bundled_assets()
 
 

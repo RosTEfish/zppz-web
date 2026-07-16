@@ -39,7 +39,34 @@ docker compose up --build
 
 ## 部署
 
-推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源，然后重启 systemd 服务并执行健康检查。健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
+推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源、检查 R2 读写权限，然后重启 systemd 服务并执行健康检查。R2 检查或健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
+
+生产部署要求在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
+
+- Variables：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`。
+- Secrets：`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`。
+
+`SERVER_PIP_INDEX_URL` 建议设为 `https://pypi.tuna.tsinghua.edu.cn/simple`。远程服务器升级 pip 和安装依赖时会先使用该镜像；失败后自动完整重试官方 `https://pypi.org/simple`。GitHub Actions 自身的验证仍使用官方 PyPI 和 npm 源。
+
+部署流水线会通过单独的权限文件把 R2 配置合并进服务器持久 `.env`，配置文件不会进入发布包。生产环境固定使用 `OBJECT_STORAGE_BACKEND=r2`，不会在配置缺失或权限检查失败时回退到本地存储。
+
+### R2 存储桶要求
+
+- 使用私有 Standard 存储桶，不开启 `r2.dev` 公共访问。
+- API Token 仅授予该存储桶 `Object Read & Write` 权限。
+- CORS 至少允许正式站点 Origin 使用 `PUT`、`GET`、`HEAD`，允许请求头 `Content-Type`，并暴露 `ETag`。本地开发需要时可额外允许 `http://localhost:3000`。
+- 为 `pending/` 前缀设置上传 1 天后删除的生命周期规则。
+
+浏览器先获取短期预签名 URL，再把 ZIP、7z 或 RAR 投稿直接 `PUT` 到 R2。后端完成接口会依据 R2 `HEAD` 结果核对大小和 MIME，下载到临时目录执行原有压缩包安全校验，并生成随机 Key 的原包与公开包。单文件下载使用短期预签名 `GET`；批量下载仍由后端流式组合 ZIP。
+
+可在服务器应用目录手工验证当前配置：
+
+```bash
+set -a
+. ./.env
+set +a
+./.venv/bin/python -m app.manage storage-check
+```
 
 更多说明见 `REFACTOR_V2.md`。
 

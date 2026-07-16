@@ -320,6 +320,7 @@ class Submission(Base, TimestampMixin):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     public_storage_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    public_file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     track_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     review_status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
@@ -331,6 +332,36 @@ class Submission(Base, TimestampMixin):
     @property
     def is_long_track(self) -> bool:
         return self.track_duration_seconds is not None and self.track_duration_seconds > 240
+
+
+class SubmissionUploadIntent(Base, TimestampMixin):
+    __tablename__ = "submission_upload_intents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    source_song_id: Mapped[int | None] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), nullable=True)
+    replace_submission_id: Mapped[int | None] = mapped_column(ForeignKey("submissions.id", ondelete="CASCADE"), nullable=True)
+    result_submission_id: Mapped[int | None] = mapped_column(ForeignKey("submissions.id", ondelete="SET NULL"), nullable=True)
+    track: Mapped[str] = mapped_column(String(20), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
+    acknowledge_ban_warning: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
+    error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+
+
+class StorageDeletion(Base, TimestampMixin):
+    __tablename__ = "storage_deletions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    object_key: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str] = mapped_column(String(500), default="", nullable=False)
 
 
 class JTrackSubmission(Base, TimestampMixin):

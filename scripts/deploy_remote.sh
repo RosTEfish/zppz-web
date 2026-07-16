@@ -9,6 +9,8 @@ APP_PORT="${APP_PORT:-8000}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
 WEB_CONCURRENCY="${WEB_CONCURRENCY:-1}"
+SERVER_PIP_INDEX_URL="${SERVER_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+STORAGE_CONFIG_PATH="${STORAGE_CONFIG_PATH:-}"
 RUN_USER="${RUN_USER:-$(id -un)}"
 RUN_GROUP="${RUN_GROUP:-$(id -gn)}"
 
@@ -51,6 +53,10 @@ restore_live_release() {
 rollback_on_exit() {
   local status=$?
   trap - EXIT
+
+  if [ -n "$STORAGE_CONFIG_PATH" ]; then
+    rm -f -- "$STORAGE_CONFIG_PATH"
+  fi
 
   if [ "$rollback_enabled" -eq 1 ] && [ "$rollback_in_progress" -eq 0 ]; then
     rollback_in_progress=1
@@ -102,6 +108,43 @@ DB_POOL_RECYCLE=1800
 SLOW_REQUEST_MS=500
 EOF
 fi
+
+if [ -z "$STORAGE_CONFIG_PATH" ] || [ ! -f "$STORAGE_CONFIG_PATH" ]; then
+  echo "Production object-storage configuration was not uploaded." >&2
+  exit 1
+fi
+
+case "$SERVER_PIP_INDEX_URL" in
+  https://*) ;;
+  *)
+    echo "SERVER_PIP_INDEX_URL must be an HTTPS URL." >&2
+    exit 1
+    ;;
+esac
+
+merge_env_file="$(mktemp "$deploy_state_dir/.env.merge.XXXXXX")"
+chmod 600 "$merge_env_file"
+cp "$env_file" "$merge_env_file"
+while IFS='=' read -r name value; do
+  [ -n "$name" ] || continue
+  case "$name" in
+    OBJECT_STORAGE_BACKEND|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY|R2_UPLOAD_URL_TTL_SECONDS|R2_DOWNLOAD_URL_TTL_SECONDS|UPLOAD_INTENT_TTL_SECONDS)
+      next_env="$(mktemp "$deploy_state_dir/.env.next.XXXXXX")"
+      grep -v "^${name}=" "$merge_env_file" > "$next_env" || true
+      printf '%s=%s\n' "$name" "$value" >> "$next_env"
+      chmod 600 "$next_env"
+      mv "$next_env" "$merge_env_file"
+      ;;
+    *)
+      echo "Unexpected key in storage configuration: $name" >&2
+      rm -f -- "$merge_env_file" "$STORAGE_CONFIG_PATH"
+      exit 1
+      ;;
+  esac
+done < "$STORAGE_CONFIG_PATH"
+mv "$merge_env_file" "$env_file"
+chmod 600 "$env_file"
+rm -f -- "$STORAGE_CONFIG_PATH"
 
 # The production .env is persistent and may have been edited or uploaded from
 # Windows. Bash treats the trailing carriage return in CRLF files as part of
@@ -234,10 +277,24 @@ rollback_enabled=1
 tar -C "$release_dir" -cf - . | tar --no-same-owner --no-same-permissions --delay-directory-restore --touch -C "$app_dir" -xf -
 
 "$PYTHON_BIN" -m venv "$venv_dir"
-PIP_CACHE_DIR="$pip_cache_dir" "$venv_dir/bin/python" -m pip install --disable-pip-version-check --upgrade pip
+
+pip_with_index() {
+  local index_url="$1"
+  shift
+  PIP_CACHE_DIR="$pip_cache_dir" "$venv_dir/bin/python" -m pip install \
+    --disable-pip-version-check --index-url "$index_url" "$@"
+}
+
+if ! pip_with_index "$SERVER_PIP_INDEX_URL" --upgrade pip; then
+  echo "Configured PyPI mirror failed while upgrading pip; retrying official PyPI." >&2
+  pip_with_index "https://pypi.org/simple" --upgrade pip
+fi
 
 mkdir -p "$app_dir/data/uploads" "$app_dir/data/assets"
-PIP_CACHE_DIR="$pip_cache_dir" "$venv_dir/bin/pip" install --disable-pip-version-check -r "$app_dir/backend/requirements.txt"
+if ! pip_with_index "$SERVER_PIP_INDEX_URL" -r "$app_dir/backend/requirements.txt"; then
+  echo "Configured PyPI mirror failed while installing requirements; retrying official PyPI." >&2
+  pip_with_index "https://pypi.org/simple" -r "$app_dir/backend/requirements.txt"
+fi
 "$venv_dir/bin/python" -m uvicorn --version
 service_workdir="$app_dir/backend"
 service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT --workers $WEB_CONCURRENCY"
@@ -253,6 +310,7 @@ service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --po
   export DATA_DIR="$app_dir/data"
   cd "$service_workdir"
   "$venv_dir/bin/python" -m app.prepare
+  "$venv_dir/bin/python" -m app.manage storage-check
 )
 
 service_file="/etc/systemd/system/$SERVICE_NAME.service"

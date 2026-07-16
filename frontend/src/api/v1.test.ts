@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, formatDuration, formatMB, formatTime } from "./v1";
+import { api, formatDuration, formatMB, formatTime, submissionContentType } from "./v1";
 
 describe("v1 API helpers", () => {
   afterEach(() => {
@@ -20,6 +20,64 @@ describe("v1 API helpers", () => {
     expect(formatDuration(240.001)).toBe("4:00");
     expect(formatDuration(252.9)).toBe("4:12");
     expect(formatDuration(null)).toBe("--:--");
+  });
+
+  it("maps submission extensions to stable signed content types", () => {
+    expect(submissionContentType("entry.ZIP")).toBe("application/zip");
+    expect(submissionContentType("entry.7z")).toBe("application/x-7z-compressed");
+    expect(submissionContentType("entry.rar")).toBe("application/vnd.rar");
+    expect(() => submissionContentType("entry.exe")).toThrow("仅支持 ZIP、7Z 和 RAR");
+  });
+
+  it("uploads submissions through a signed PUT before completing", async () => {
+    const calls: Array<{ path: string; method?: string; body?: BodyInit | null; headers?: HeadersInit }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      calls.push({ path, method: init?.method, body: init?.body, headers: init?.headers });
+      if (path.endsWith("/upload-intents")) {
+        return new Response(JSON.stringify({
+          id: "intent-1",
+          upload_url: "https://example.r2.cloudflarestorage.com/object?signed=1",
+          method: "PUT",
+          headers: { "Content-Type": "application/zip" },
+          expires_at: "2026-07-17T12:00:00Z",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (path.includes("cloudflarestorage.com")) return new Response(null, { status: 200 });
+      return new Response(JSON.stringify({ id: 9, file_name: "entry.zip", file_size: 3 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    const file = new File([new Uint8Array([1, 2, 3])], "entry.zip");
+
+    await expect(api.uploadSubmission(4, "normal", file)).resolves.toMatchObject({ id: 9 });
+    expect(calls.map((call) => [call.path, call.method])).toEqual([
+      ["/api/v1/submissions/upload-intents", "POST"],
+      ["https://example.r2.cloudflarestorage.com/object?signed=1", "PUT"],
+      ["/api/v1/submissions/upload-intents/intent-1/complete", "POST"],
+    ]);
+    expect(calls[1].body).toBe(file);
+    expect(calls[1].headers).toEqual({ "Content-Type": "application/zip" });
+  });
+
+  it("does not complete an upload when the signed PUT fails", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/upload-intents")) {
+        return new Response(JSON.stringify({
+          id: "intent-failed",
+          upload_url: "https://example.r2.cloudflarestorage.com/fail",
+          method: "PUT",
+          headers: { "Content-Type": "application/zip" },
+          expires_at: "2026-07-17T12:00:00Z",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("denied", { status: 403 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.uploadSubmission(4, "normal", new File(["zip"], "entry.zip"))).rejects.toThrow("denied");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("deduplicates concurrent bootstrap requests", async () => {

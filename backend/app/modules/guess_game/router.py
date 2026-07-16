@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
@@ -46,6 +46,7 @@ from app.modules.guess_game.importer import (
 from app.modules.guess_game.service import list_comments, put_vote, remove_vote, set_author_candidates, vote_state
 from app.modules.guess_game.stats import build_guess_details, build_guess_stats
 from app.modules.guess_game.vote_quota import love_vote_quota
+from app.modules.object_storage import get_object_store
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
 from app.schemas import (
     AuthorCandidatesUpdate,
@@ -198,10 +199,15 @@ def download_chart(chart_id: int, db: Session = Depends(get_db)):
     source = _resolve_archive(db, chart)
     if not source:
         raise HTTPException(status_code=404, detail="该谱面没有可下载的投稿文件")
-    path, file_name, _ = source
+    location, file_name, _, _, remote = source
+    download_name = safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
+    if remote:
+        url = get_object_store().create_download_url(str(location), download_name)
+        return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
+    path = Path(location)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="投稿文件不存在")
-    return file_download_response(path, safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name))
+    return file_download_response(path, download_name)
 
 
 @router.get("/charts/{chart_id}/download-metadata", response_model=DownloadPreparation)
@@ -213,14 +219,16 @@ def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dic
     source = _resolve_archive(db, chart)
     if not source:
         raise HTTPException(status_code=404, detail="该谱面没有可下载的投稿文件")
-    path, file_name, _ = source
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="投稿文件不存在")
+    location, file_name, _, file_size, remote = source
     download_name = safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
     return {
-        "download_url": f"{get_settings().api_prefix}/guess-game/charts/{chart_id}/download",
+        "download_url": (
+            get_object_store().create_download_url(str(location), download_name)
+            if remote
+            else f"{get_settings().api_prefix}/guess-game/charts/{chart_id}/download"
+        ),
         "file_name": download_name,
-        "file_size": path.stat().st_size,
+        "file_size": file_size,
     }
 
 
@@ -795,20 +803,33 @@ def _selected_author_candidates(db: Session, event_id: int) -> list[tuple[int, s
     ]
 
 
-def _resolve_archive(db: Session, chart: GuessChart) -> tuple[Path, str, tuple[str, int | str]] | None:
+def _resolve_archive(
+    db: Session,
+    chart: GuessChart,
+) -> tuple[Path | str, str, tuple[str, int | str], int, bool] | None:
     source_id = chart.source_submission_id
     if source_id is not None and chart.source_submission_type in {"normal", "j", "exhibition"}:
         submission = db.get(Submission, source_id)
         if submission and submission.event_id == chart.event_id and submission.public_storage_path:
-            return absolute_storage_path(submission.public_storage_path), "chart-package.zip", ("submission", submission.id)
+            store = get_object_store()
+            if store.backend == "r2":
+                try:
+                    size = submission.public_file_size or store.head(submission.public_storage_path).size
+                except Exception:
+                    return None
+                return submission.public_storage_path, "chart-package.zip", ("submission", submission.id), size, True
+            path = absolute_storage_path(submission.public_storage_path)
+            return path, "chart-package.zip", ("submission", submission.id), path.stat().st_size if path.is_file() else 0, False
         # Never fall back to the original upload: it can disclose account or file names.
         return None
     if source_id is not None and chart.source_submission_type == "admin":
         archive = db.get(AdminGuessArchive, source_id)
         if archive and archive.event_id == chart.event_id:
-            return absolute_storage_path(archive.storage_path), archive.file_name, ("admin", archive.id)
+            path = absolute_storage_path(archive.storage_path)
+            return path, archive.file_name, ("admin", archive.id), archive.file_size, False
     if chart.storage_path:
-        return absolute_storage_path(chart.storage_path), Path(chart.storage_path).name, ("path", chart.storage_path)
+        path = absolute_storage_path(chart.storage_path)
+        return path, Path(chart.storage_path).name, ("path", chart.storage_path), path.stat().st_size if path.is_file() else 0, False
     return None
 
 
@@ -817,7 +838,7 @@ def _prepare_chart_zip(
     charts: list[GuessChart],
     missing_ids: list[int],
 ) -> PreparedZip:
-    selected: list[tuple[GuessChart, Path, str]] = []
+    selected: list[tuple[GuessChart, Path | str, str, int, bool]] = []
     seen_sources: set[tuple[str, int | str]] = set()
     skipped: list[str] = [f"谱面 ID {chart_id} 不存在" for chart_id in missing_ids]
     total_size = 0
@@ -826,27 +847,27 @@ def _prepare_chart_zip(
         if not source:
             skipped.append(f"ID {chart.id}《{chart.title}》没有投稿来源")
             continue
-        path, file_name, source_key = source
+        location, file_name, source_key, file_size, remote = source
         if source_key in seen_sources:
             skipped.append(f"ID {chart.id}《{chart.title}》与已选谱面共用投稿文件，已去重")
             continue
-        if not path.is_file():
+        if not remote and not Path(location).is_file():
             skipped.append(f"ID {chart.id}《{chart.title}》投稿文件不存在")
             continue
         seen_sources.add(source_key)
-        total_size += path.stat().st_size
+        total_size += file_size
         if total_size > MAX_BATCH_SOURCE_BYTES:
             raise HTTPException(status_code=413, detail="所选投稿原文件总量不能超过 10 GiB")
-        selected.append((chart, path, file_name))
+        selected.append((chart, location, file_name, file_size, remote))
     if not selected:
         raise HTTPException(status_code=404, detail="所选谱面均无可下载文件")
 
     entries: list[DownloadEntry] = []
     used_names: set[str] = set()
-    for chart, path, file_name in selected:
+    for chart, location, file_name, file_size, remote in selected:
         base = safe_download_name(
             f"{chart.id}_{chart.title}_{chart.level}_{file_name}",
-            f"chart_{chart.id}{path.suffix}",
+            f"chart_{chart.id}{Path(file_name).suffix}",
         )
         name = base
         counter = 2
@@ -854,7 +875,12 @@ def _prepare_chart_zip(
             name = f"{Path(base).stem}_{counter}{Path(base).suffix}"
             counter += 1
         used_names.add(name.casefold())
-        entries.append(DownloadEntry(path=path, archive_name=name))
+        if remote:
+            entries.append(
+                DownloadEntry(path=None, archive_name=name, data=get_object_store().chunks(str(location), file_size))
+            )
+        else:
+            entries.append(DownloadEntry(path=Path(location), archive_name=name))
     return prepare_streaming_zip(
         entries,
         file_name="guess-charts.zip",

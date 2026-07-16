@@ -262,6 +262,31 @@ class StoredFileRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SubmissionUploadIntentCreate(BaseModel):
+    song_id: int | None = None
+    submission_id: int | None = None
+    track: Literal["normal", "j", "exhibition"] = "normal"
+    file_name: str = Field(min_length=1, max_length=255)
+    file_size: int = Field(gt=0)
+    content_type: str = Field(min_length=1, max_length=100)
+    acknowledge_ban_warning: bool = False
+
+
+class AdminSubmissionUploadIntentCreate(BaseModel):
+    track: Literal["normal", "j", "exhibition"] | None = None
+    file_name: str = Field(min_length=1, max_length=255)
+    file_size: int = Field(gt=0)
+    content_type: str = Field(min_length=1, max_length=100)
+
+
+class SubmissionUploadIntentRead(BaseModel):
+    id: str
+    upload_url: str
+    method: Literal["PUT"] = "PUT"
+    headers: dict[str, str]
+    expires_at: datetime
+
+
 class SubmissionTargetRead(BaseModel):
     song: SongRead
     source_kind: str

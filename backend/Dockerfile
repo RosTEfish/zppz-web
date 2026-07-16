@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -8,7 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends unar \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" -r /app/requirements.txt
 
 COPY backend /app/backend
 COPY bg /app/bg
