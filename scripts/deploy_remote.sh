@@ -138,17 +138,15 @@ if [[ "$configured_database_url" == sqlite:////data/* ]]; then
 fi
 
 # A previous manual CLI invocation without the production environment could
-# create this relative SQLite file under backend/. It is not the persistent
-# database used by the service, but a root-owned copy can otherwise prevent
-# the release snapshot and writable-path check from completing. Keep it in
-# place for safety and exclude only this exact legacy path when the configured
-# database is the native deployment database.
+# create this relative SQLite file under backend/. Its ownership and the exact
+# DATABASE_URL spelling vary between older installations. Treat only this
+# exact, regular, non-symlink file as persistent runtime data regardless of the
+# current URL: preserve it in place and never require the deploy user to modify
+# it. A release containing the same path is rejected below before extraction.
 skip_legacy_database=0
-configured_database_url="$(sed -n 's/^DATABASE_URL=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
-expected_database_url="sqlite:///$app_dir/data/zppz_v2.db"
-if [ "$configured_database_url" = "$expected_database_url" ] && [ -f "$legacy_database_path" ] && [ ! -L "$legacy_database_path" ]; then
+if [ -f "$legacy_database_path" ] && [ ! -L "$legacy_database_path" ]; then
   skip_legacy_database=1
-  echo "Ignoring legacy database outside DATA_DIR: $legacy_database_path"
+  echo "Preserving database file outside the release: $legacy_database_path"
 fi
 
 configured_workers="$(sed -n 's/^WEB_CONCURRENCY=//p' "$env_file" | tail -n 1 | tr -d '"' | tr -d "'")"
@@ -167,6 +165,10 @@ fi
 
 if [ ! -f "$release_dir/backend/app/main.py" ] || [ ! -f "$release_dir/backend/requirements.txt" ]; then
   echo "Invalid V2 release: backend/app/main.py or backend/requirements.txt is missing." >&2
+  exit 1
+fi
+if [ -e "$release_dir/backend/zppz_v2.db" ] || [ -L "$release_dir/backend/zppz_v2.db" ]; then
+  echo "Invalid V2 release: backend/zppz_v2.db must not be included in a release archive." >&2
   exit 1
 fi
 echo "Detected app kind: fastapi-v2"
