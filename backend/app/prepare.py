@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from sqlalchemy import select
@@ -6,7 +7,7 @@ from app.core.config import get_settings
 from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults, upgrade_schema
 from app.models import BanImport, User
 from app.db.session import SessionLocal
-from app.modules.banlist.service import create_ban_import
+from app.modules.banlist.service import BAN_PARSER_VERSION, create_ban_import
 from app.modules.submissions.service import copy_asset_from_repo, drain_storage_deletions
 
 
@@ -33,15 +34,28 @@ def prepare() -> None:
 
 
 def seed_bundled_banlist(db) -> None:
-    """Make the repository's current Ban workbook usable on a fresh deployment."""
-    if db.scalar(select(BanImport.id).limit(1)):
-        return
+    """Seed Ban data and repair a published bundled workbook parsed by older code."""
     repo_root = Path(__file__).resolve().parents[2]
     workbook = next(iter(sorted((repo_root / "banlist").glob("*.xlsx"))), None)
     if workbook is None:
         return
+    raw = workbook.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    matching = list(
+        db.scalars(
+            select(BanImport)
+            .where(BanImport.file_sha256 == digest)
+            .order_by(BanImport.id.desc())
+        ).all()
+    )
+    if any(record.parser_version == BAN_PARSER_VERSION for record in matching):
+        return
+    any_import = db.scalar(select(BanImport.id).limit(1)) is not None
+    should_publish = not any_import or any(record.status == "published" for record in matching)
+    if not should_publish:
+        return
     admin = db.scalar(select(User).where(User.user_code == get_settings().admin_seed_code))
-    create_ban_import(db, workbook.name, workbook.read_bytes(), admin.id if admin else None, auto_publish=True)
+    create_ban_import(db, workbook.name, raw, admin.id if admin else None, auto_publish=True)
 
 
 if __name__ == "__main__":

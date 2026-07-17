@@ -237,6 +237,40 @@ describe("Material application shell", () => {
     expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
   });
 
+  it("shows feedback while a chart batch download is being prepared", async () => {
+    window.history.pushState({}, "", "/guess");
+    const baseFetch = vi.mocked(fetch);
+    let resolveMetadata: ((response: Response) => void) | undefined;
+    const metadata = new Promise<Response>((resolve) => { resolveMetadata = resolve; });
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/guess-game/charts/download-metadata")) return metadata;
+      return baseFetch(input, init);
+    }));
+    let clickedHref = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
+      clickedHref = this.getAttribute("href") || "";
+    });
+
+    render(<App />);
+    expect(await screen.findByText("测试谱面")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "批量选择" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择 测试谱面" }));
+    fireEvent.click(screen.getByRole("button", { name: "下载 1 项" }));
+
+    expect(screen.getByRole("dialog", { name: "正在准备批量下载" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "正在准备下载文件" })).toBeInTheDocument();
+    expect(screen.getByText("正在准备…").closest("button")).toBeDisabled();
+
+    resolveMetadata?.(json({
+      download_url: "/api/v1/guess-game/charts/download.zip?ids=7",
+      file_name: "guess-charts.zip",
+      file_size: 1024,
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "正在准备批量下载" })).not.toBeInTheDocument());
+    expect(await screen.findByText("下载请求已开始，请查看浏览器下载列表")).toBeInTheDocument();
+    expect(clickedHref).toBe("/api/v1/guess-game/charts/download.zip?ids=7");
+  });
+
   it("warns when the current user has not filled their song pool", async () => {
     window.history.pushState({}, "", "/songs");
     const participant = {

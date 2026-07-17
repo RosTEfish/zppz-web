@@ -130,6 +130,7 @@ class BanImport(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_sha256: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    parser_version: Mapped[int] = mapped_column(Integer, default=2, server_default="2", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     entry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     issue_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -1,4 +1,6 @@
 from collections import Counter
+from datetime import datetime
+import hashlib
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -10,8 +12,15 @@ from fastapi.testclient import TestClient
 from app import models  # noqa: F401
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
-from app.models import BanImport, Event, Song, User
-from app.modules.banlist.service import parse_ban_workbook, similarity
+from app.models import BanAlias, BanEntry, BanImport, Event, Song, User
+from app.modules.banlist.service import (
+    BAN_PARSER_VERSION,
+    create_ban_import,
+    normalize_text,
+    parse_ban_workbook,
+    similarity,
+)
+from app.prepare import seed_bundled_banlist
 from sqlalchemy import select
 from app.main import app
 
@@ -64,6 +73,56 @@ def workbook_bytes() -> bytes:
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
+
+
+def create_legacy_ban_import(db, raw: bytes) -> BanImport:
+    parsed, issues = parse_ban_workbook(raw)
+    legacy_entries = [entry for entry in parsed if not entry.round_label.startswith("#4")]
+    admin = db.scalar(select(User).where(User.user_code == "admin"))
+    record = BanImport(
+        file_name="legacy-ban.xlsx",
+        file_sha256=hashlib.sha256(raw).hexdigest(),
+        parser_version=1,
+        status="published",
+        entry_count=len(legacy_entries),
+        issue_count=len(issues),
+        preview_json='{"issues":[]}',
+        uploaded_by_id=admin.id if admin else None,
+        published_at=datetime.utcnow(),
+    )
+    db.add(record)
+    db.flush()
+    alias_target = None
+    for item in legacy_entries:
+        entry = BanEntry(
+            import_id=record.id,
+            round_label=item.round_label,
+            song_name=item.song_name,
+            artist=item.artist,
+            remark=item.remark,
+            normalized_song_name=normalize_text(item.song_name),
+            normalized_artist=normalize_text(item.artist),
+        )
+        db.add(entry)
+        db.flush()
+        if alias_target is None:
+            alias_target = entry
+    if alias_target is not None:
+        db.add(
+            BanAlias(
+                entry_id=alias_target.id,
+                song_name="Legacy Alias",
+                artist="Legacy Artist",
+                normalized_song_name=normalize_text("Legacy Alias"),
+                normalized_artist=normalize_text("Legacy Artist"),
+                source="admin",
+                confirmed_by_id=admin.id if admin else None,
+                confirmed_at=datetime.utcnow(),
+            )
+        )
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 def test_similarity_uses_rapidfuzz_wratio_and_rounds() -> None:
@@ -137,6 +196,77 @@ def test_bundled_number_four_workbook_parses_completely_and_is_downloadable(clie
     download = client.get("/api/v1/assets/banlist/download")
     assert download.status_code == 200
     assert download.content == workbook_path.read_bytes()
+
+
+def test_same_hash_is_reparsed_by_new_parser_version_and_preserves_aliases(client) -> None:
+    raw = workbook_bytes()
+    with SessionLocal() as db:
+        legacy = create_legacy_ban_import(db, raw)
+        legacy_id = legacy.id
+
+    login_admin(client)
+    uploaded = client.post(
+        "/api/v1/admin/banlist/import",
+        files={"file": ("ban.xlsx", raw, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    preview = uploaded.json()
+    assert preview["id"] != legacy_id
+    assert preview["entry_count"] == 5
+    assert {entry["round"] for entry in preview["entries"]} == {
+        "#1 - Pure",
+        "#2 - Pure Plus",
+        "#3 - Devour",
+        "#4 - Devour plus",
+    }
+
+    with SessionLocal() as db:
+        replacement = db.get(BanImport, preview["id"])
+        assert replacement is not None
+        assert replacement.parser_version == BAN_PARSER_VERSION
+        assert db.scalar(select(BanAlias).join(BanEntry).where(BanEntry.import_id == replacement.id)) is not None
+
+    assert client.post(f"/api/v1/admin/banlist/{preview['id']}/publish").status_code == 200
+    fourth = client.post("/api/v1/banlist/check", json={"title": "Fourth Song", "artist": "Fourth Artist"})
+    assert fourth.status_code == 200
+    assert fourth.json()["status"] == "exact"
+    alias = client.post("/api/v1/banlist/check", json={"title": "Legacy Alias", "artist": "Legacy Artist"})
+    assert alias.status_code == 200
+    assert alias.json()["status"] == "exact"
+    assert alias.json()["matches"][0]["match_type"] == "alias"
+
+
+def test_prepare_repairs_published_bundled_import_once_and_preserves_custom_publication() -> None:
+    workbook_path = next((Path(__file__).resolve().parents[2] / "banlist").glob("*#4*.xlsx"))
+    raw = workbook_path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    with SessionLocal() as db:
+        create_legacy_ban_import(db, raw)
+        seed_bundled_banlist(db)
+        seed_bundled_banlist(db)
+        matching = list(db.scalars(select(BanImport).where(BanImport.file_sha256 == digest)).all())
+        active = db.scalar(select(BanImport).where(BanImport.status == "published"))
+        assert len(matching) == 2
+        assert active is not None
+        assert active.parser_version == BAN_PARSER_VERSION
+        assert active.entry_count == 168
+        assert Counter(entry.round_label for entry in active.entries) == {
+            "#1 - Pure": 21,
+            "#2 - Pure Plus": 50,
+            "#3 - Devour": 47,
+            "#4 - Devour plus": 50,
+        }
+
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        seed_defaults(db)
+        custom = create_ban_import(db, "custom.xlsx", workbook_bytes(), None, auto_publish=True)
+        seed_bundled_banlist(db)
+        active = db.scalar(select(BanImport).where(BanImport.status == "published"))
+        assert active is not None
+        assert active.id == custom.id
+        assert db.scalar(select(BanImport).where(BanImport.file_sha256 == digest)) is None
 
 
 def register(client, user_code: str, identity: str = "participant") -> None:

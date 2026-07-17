@@ -17,7 +17,7 @@ from rapidfuzz import fuzz
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import BanEntry, BanImport
+from app.models import BanAlias, BanEntry, BanImport
 
 
 MAX_BAN_FILE_BYTES = 10 * 1024 * 1024
@@ -27,6 +27,7 @@ MATCH_TITLE_THRESHOLD = 85.0
 MATCH_ARTIST_THRESHOLD = 70.0
 MATCH_TITLE_EXACT_ARTIST_THRESHOLD = 80.0
 SEARCH_LIMIT = 50
+BAN_PARSER_VERSION = 2
 TITLE_HEADERS = {"曲名", "songname", "title"}
 ARTIST_HEADERS = {"作者", "artist", "author"}
 REMARK_HEADERS = {"备注", "remark", "note"}
@@ -148,15 +149,30 @@ def create_ban_import(db: Session, file_name: str, raw: bytes, uploaded_by_id: i
     digest = hashlib.sha256(raw).hexdigest()
     existing = db.scalar(
         select(BanImport)
-        .where(BanImport.file_sha256 == digest)
+        .where(
+            BanImport.file_sha256 == digest,
+            BanImport.parser_version == BAN_PARSER_VERSION,
+        )
         .order_by(BanImport.id.desc())
     )
     if existing:
         return existing
     entries, issues = parse_ban_workbook(raw)
+    previous = db.scalar(
+        select(BanImport)
+        .options(selectinload(BanImport.entries).selectinload(BanEntry.aliases))
+        .where(BanImport.file_sha256 == digest)
+        .order_by(BanImport.parser_version.desc(), BanImport.id.desc())
+    )
+    previous_aliases: dict[tuple[str, str, str], list[BanAlias]] = {}
+    if previous:
+        for entry in previous.entries:
+            key = (entry.round_label, entry.normalized_song_name, entry.normalized_artist)
+            previous_aliases[key] = list(entry.aliases)
     record = BanImport(
         file_name=file_name[:255] or "banlist.xlsx",
         file_sha256=digest,
+        parser_version=BAN_PARSER_VERSION,
         status="draft",
         entry_count=len(entries),
         issue_count=len(issues),
@@ -165,20 +181,36 @@ def create_ban_import(db: Session, file_name: str, raw: bytes, uploaded_by_id: i
     )
     db.add(record)
     db.flush()
-    db.add_all(
-        [
-            BanEntry(
-                import_id=record.id,
-                round_label=item.round_label,
-                song_name=item.song_name,
-                artist=item.artist,
-                remark=item.remark,
-                normalized_song_name=normalize_text(item.song_name),
-                normalized_artist=normalize_text(item.artist),
-            )
-            for item in entries
-        ]
-    )
+    for item in entries:
+        normalized_song_name = normalize_text(item.song_name)
+        normalized_artist = normalize_text(item.artist)
+        entry = BanEntry(
+            import_id=record.id,
+            round_label=item.round_label,
+            song_name=item.song_name,
+            artist=item.artist,
+            remark=item.remark,
+            normalized_song_name=normalized_song_name,
+            normalized_artist=normalized_artist,
+        )
+        db.add(entry)
+        db.flush()
+        key = (item.round_label, normalized_song_name, normalized_artist)
+        db.add_all(
+            [
+                BanAlias(
+                    entry_id=entry.id,
+                    song_name=alias.song_name,
+                    artist=alias.artist,
+                    normalized_song_name=alias.normalized_song_name,
+                    normalized_artist=alias.normalized_artist,
+                    source=alias.source,
+                    confirmed_by_id=alias.confirmed_by_id,
+                    confirmed_at=alias.confirmed_at,
+                )
+                for alias in previous_aliases.get(key, [])
+            ]
+        )
     db.commit()
     db.refresh(record)
     if auto_publish:
