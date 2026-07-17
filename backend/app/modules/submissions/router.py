@@ -1210,7 +1210,12 @@ def _prepare_submission_zip(rows: list[Submission], filename: str) -> PreparedZi
             entries.append(DownloadEntry(path=absolute_storage_path(row.storage_path), archive_name=name))
         else:
             entries.append(
-                DownloadEntry(path=None, archive_name=name, data=store.chunks(row.storage_path, object_size))
+                DownloadEntry(
+                    path=None,
+                    archive_name=name,
+                    data=store.chunks(row.storage_path, object_size),
+                    data_size=object_size,
+                )
             )
     report = ""
     if missing:

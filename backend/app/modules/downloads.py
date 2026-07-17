@@ -56,6 +56,7 @@ class DownloadEntry:
     path: Path | None
     archive_name: str
     data: Iterable[bytes] | None = None
+    data_size: int | None = None
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,15 @@ def prepare_streaming_zip(
         if entry.path is not None:
             stream.add_path(entry.path, entry.archive_name)
         elif entry.data is not None:
-            stream.add(entry.data, entry.archive_name)
+            size = entry.data_size
+            if size is None:
+                try:
+                    size = len(entry.data)  # type: ignore[arg-type]
+                except TypeError as exc:
+                    raise ValueError("streaming download entry requires data_size") from exc
+            if size < 0:
+                raise ValueError("streaming download entry data_size cannot be negative")
+            stream.add(entry.data, entry.archive_name, size=size)
         else:
             raise ValueError("download entry requires a path or data")
     if report:

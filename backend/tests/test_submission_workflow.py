@@ -71,6 +71,28 @@ def test_streaming_zip_yields_before_the_source_is_fully_read(tmp_path: Path):
         assert archive.read("source.zip") == source.read_bytes()
 
 
+def test_streaming_zip_keeps_sized_iterables_lazy():
+    source = b"remote payload"
+    started = False
+
+    def chunks():
+        nonlocal started
+        started = True
+        yield source
+
+    prepared = prepare_streaming_zip(
+        [DownloadEntry(path=None, archive_name="remote.zip", data=chunks(), data_size=len(source))],
+        file_name="submissions.zip",
+    )
+
+    assert not started
+    payload = b"".join(prepared.stream)
+    assert started
+    assert len(payload) == prepared.file_size
+    with ZipFile(BytesIO(payload)) as archive:
+        assert archive.read("remote.zip") == source
+
+
 def register(client: TestClient, code: str, identity: str = "participant") -> None:
     response = client.post(
         "/api/v1/auth/register",

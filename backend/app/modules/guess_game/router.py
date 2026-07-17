@@ -895,7 +895,12 @@ def _prepare_chart_zip(
         used_names.add(name.casefold())
         if remote:
             entries.append(
-                DownloadEntry(path=None, archive_name=name, data=get_object_store().chunks(str(location), file_size))
+                DownloadEntry(
+                    path=None,
+                    archive_name=name,
+                    data=get_object_store().chunks(str(location), file_size),
+                    data_size=file_size,
+                )
             )
         else:
             entries.append(DownloadEntry(path=Path(location), archive_name=name))
