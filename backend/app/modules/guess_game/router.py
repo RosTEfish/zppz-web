@@ -27,6 +27,7 @@ from app.models import (
 )
 from app.modules.common import serialize_chart, serialize_charts
 from app.modules.downloads import (
+    DOWNLOAD_TOKEN_PATTERN,
     DownloadEntry,
     PreparedZip,
     file_download_response,
@@ -142,11 +143,17 @@ def guess_availability(response: Response, db: Session = Depends(get_db)) -> dic
 @router.get("/charts/download.zip")
 def download_charts_zip(
     ids: str = Query(...),
+    download_token: str | None = Query(
+        None,
+        min_length=32,
+        max_length=32,
+        pattern=DOWNLOAD_TOKEN_PATTERN,
+    ),
     db: Session = Depends(get_db),
 ):
     event = get_current_event(db)
     charts, missing_ids, _ = _select_chart_downloads(db, event.id, ids)
-    return _prepare_chart_zip(db, charts, missing_ids).response()
+    return _prepare_chart_zip(db, charts, missing_ids).response(download_token)
 
 
 @router.get("/charts/download-metadata", response_model=DownloadPreparation)
@@ -200,7 +207,7 @@ def download_chart(chart_id: int, db: Session = Depends(get_db)):
     if not source:
         raise HTTPException(status_code=404, detail="该谱面没有可下载的投稿文件")
     location, file_name, _, _, remote = source
-    download_name = safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
+    download_name = _chart_download_name(chart, file_name)
     if remote:
         url = get_object_store().create_download_url(str(location), download_name)
         return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
@@ -220,7 +227,7 @@ def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dic
     if not source:
         raise HTTPException(status_code=404, detail="该谱面没有可下载的投稿文件")
     location, file_name, _, file_size, remote = source
-    download_name = safe_download_name(f"{chart.title}_{chart.level}_{file_name}", file_name)
+    download_name = _chart_download_name(chart, file_name)
     return {
         "download_url": (
             get_object_store().create_download_url(str(location), download_name)
@@ -833,6 +840,20 @@ def _resolve_archive(
     return None
 
 
+def _chart_download_name(
+    chart: GuessChart,
+    file_name: str,
+    *,
+    include_id: bool = False,
+) -> str:
+    source_label = "自选" if chart.is_self_selected else "非自选"
+    prefix = f"{chart.id}_" if include_id else ""
+    return safe_download_name(
+        f"{prefix}{chart.title}_{chart.level}_{source_label}_{file_name}",
+        f"chart_{chart.id}_{source_label}{Path(file_name).suffix}",
+    )
+
+
 def _prepare_chart_zip(
     db: Session,
     charts: list[GuessChart],
@@ -865,10 +886,7 @@ def _prepare_chart_zip(
     entries: list[DownloadEntry] = []
     used_names: set[str] = set()
     for chart, location, file_name, file_size, remote in selected:
-        base = safe_download_name(
-            f"{chart.id}_{chart.title}_{chart.level}_{file_name}",
-            f"chart_{chart.id}{Path(file_name).suffix}",
-        )
+        base = _chart_download_name(chart, file_name, include_id=True)
         name = base
         counter = 2
         while name.casefold() in used_names:

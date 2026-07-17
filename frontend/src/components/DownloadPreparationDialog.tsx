@@ -24,7 +24,7 @@ export function DownloadPreparationDialog({ open, count, unit }: { open: boolean
           </Typography>
           <LinearProgress aria-label="正在准备下载文件" />
           <Typography variant="caption" color="text.secondary">
-            准备完成后，下载会自动出现在浏览器的下载列表中。
+            弹窗会在浏览器确认开始接收文件后自动关闭。
           </Typography>
         </Stack>
       </DialogContent>

@@ -10,12 +10,17 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from zipstream import ZIP_STORED, ZipStream
 
+from app.core.config import get_settings
+
 
 DOWNLOAD_HEADERS = {
     "Cache-Control": "private, no-store",
     "Content-Encoding": "identity",
     "X-Accel-Buffering": "no",
 }
+DOWNLOAD_TOKEN_PATTERN = r"^[a-f0-9]{32}$"
+DOWNLOAD_COOKIE_PREFIX = "zppz_download_"
+DOWNLOAD_CONFIRMATION_SECONDS = 300
 
 
 def safe_download_name(value: str, fallback: str) -> str:
@@ -59,13 +64,24 @@ class PreparedZip:
     file_name: str
     file_size: int
 
-    def response(self) -> StreamingResponse:
+    def response(self, download_token: str | None = None) -> StreamingResponse:
         headers = {
             **DOWNLOAD_HEADERS,
             "Content-Disposition": content_disposition(self.file_name),
             "Content-Length": str(self.file_size),
         }
-        return StreamingResponse(self.stream, media_type="application/zip", headers=headers)
+        response = StreamingResponse(self.stream, media_type="application/zip", headers=headers)
+        if download_token:
+            response.set_cookie(
+                key=f"{DOWNLOAD_COOKIE_PREFIX}{download_token}",
+                value="1",
+                max_age=DOWNLOAD_CONFIRMATION_SECONDS,
+                path="/",
+                secure=get_settings().secure_cookies,
+                httponly=False,
+                samesite="lax",
+            )
+        return response
 
 
 def content_disposition(file_name: str) -> str:

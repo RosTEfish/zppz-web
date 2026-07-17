@@ -433,12 +433,73 @@ function triggerBrowserDownload(preparation: DownloadPreparation): void {
   anchor.remove();
 }
 
+const DOWNLOAD_COOKIE_PREFIX = "zppz_download_";
+const DOWNLOAD_START_TIMEOUT_MS = 5 * 60 * 1000;
+const DOWNLOAD_COOKIE_POLL_MS = 100;
+
+function createDownloadToken(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function addDownloadToken(downloadUrl: string, token: string): string {
+  const url = new URL(downloadUrl, window.location.origin);
+  url.searchParams.set("download_token", token);
+  return url.origin === window.location.origin
+    ? `${url.pathname}${url.search}${url.hash}`
+    : url.toString();
+}
+
+function clearDownloadConfirmation(cookieName: string): void {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${cookieName}=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
+}
+
+function waitForDownloadConfirmation(token: string): Promise<void> {
+  const cookieName = `${DOWNLOAD_COOKIE_PREFIX}${token}`;
+  return new Promise((resolve, reject) => {
+    let intervalId: number | undefined;
+    let timeoutId: number | undefined;
+    const cleanup = () => {
+      if (intervalId !== undefined) window.clearInterval(intervalId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+    const check = () => {
+      const confirmed = document.cookie
+        .split("; ")
+        .some((item) => item === `${cookieName}=1`);
+      if (!confirmed) return;
+      cleanup();
+      clearDownloadConfirmation(cookieName);
+      resolve();
+    };
+    intervalId = window.setInterval(check, DOWNLOAD_COOKIE_POLL_MS);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      clearDownloadConfirmation(cookieName);
+      reject(new Error("浏览器未确认下载开始，请检查下载拦截设置后重试"));
+    }, DOWNLOAD_START_TIMEOUT_MS);
+    check();
+  });
+}
+
 async function downloadDirect(path: string, fileName: string): Promise<void> {
   triggerBrowserDownload({ download_url: `${API_PREFIX}${path}`, file_name: fileName, file_size: 0 });
 }
 
-async function downloadPrepared(metadataPath: string): Promise<void> {
-  triggerBrowserDownload(await apiRequest<DownloadPreparation>(metadataPath));
+async function downloadPrepared(metadataPath: string, waitForBrowserStart = false): Promise<void> {
+  const preparation = await apiRequest<DownloadPreparation>(metadataPath);
+  if (!waitForBrowserStart) {
+    triggerBrowserDownload(preparation);
+    return;
+  }
+  const token = createDownloadToken();
+  triggerBrowserDownload({
+    ...preparation,
+    download_url: addDownloadToken(preparation.download_url, token),
+  });
+  await waitForDownloadConfirmation(token);
 }
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -566,14 +627,14 @@ export const api = {
     const params = new URLSearchParams();
     if (ids?.length) params.set("ids", ids.join(","));
     if (track && track !== "all") params.set("track", track);
-    return downloadPrepared(`/admin/submissions/download-metadata${params.size ? `?${params}` : ""}`);
+    return downloadPrepared(`/admin/submissions/download-metadata${params.size ? `?${params}` : ""}`, true);
   },
 
   guessCharts: (signal?: AbortSignal) => apiRequest<GuessChartRead[]>("/guess-game/charts", { signal }),
   loveVoteQuota: (signal?: AbortSignal) => apiRequest<LoveVoteQuotaRead>("/guess-game/vote-quota", { signal }),
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
   downloadChart: (id: number) => downloadPrepared(`/guess-game/charts/${id}/download-metadata`),
-  downloadCharts: (ids: number[]) => downloadPrepared(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`),
+  downloadCharts: (ids: number[]) => downloadPrepared(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`, true),
   vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
   unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),
   comments: (chartId: number) => apiRequest<GuessCommentRead[]>(`/guess-game/charts/${chartId}/comments`),

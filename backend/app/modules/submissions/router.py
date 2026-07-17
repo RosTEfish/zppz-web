@@ -20,6 +20,7 @@ from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission
 from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song, serialize_submission
 from app.modules.downloads import (
+    DOWNLOAD_TOKEN_PATTERN,
     content_disposition,
     DownloadEntry,
     PreparedZip,
@@ -1063,12 +1064,18 @@ def admin_delete_submission(
 def admin_download_zip(
     ids: str | None = Query(None),
     track: str | None = Query(None),
+    download_token: str | None = Query(
+        None,
+        min_length=32,
+        max_length=32,
+        pattern=DOWNLOAD_TOKEN_PATTERN,
+    ),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ):
     event = get_current_event(db)
     rows, _, _ = _select_admin_downloads(db, event.id, ids, track)
-    return _prepare_submission_zip(rows, "submissions.zip").response()
+    return _prepare_submission_zip(rows, "submissions.zip").response(download_token)
 
 
 @admin_router.get("/download-metadata", response_model=DownloadPreparation)

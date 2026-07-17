@@ -1,6 +1,6 @@
 import { type ComponentProps, memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, Chip, Dialog, DialogContent, DialogTitle as MuiDialogTitle, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
-import { ClipboardList, Clock3, Download, Heart, MessageSquare, Music2, SlidersHorizontal, Sparkles, Vote, X } from "lucide-react";
+import { CheckCheck, ClipboardList, Clock3, Download, Heart, MessageSquare, Music2, SlidersHorizontal, Sparkles, Vote, X } from "lucide-react";
 import { api, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
 import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
@@ -44,18 +44,18 @@ function chartGroupIdentity(chart: GuessChartRead): string {
   return chart.guess_group_key || `chart:${chart.id}`;
 }
 
-function GuessFilterPanel({ levels, level, lane, selfSelected, onLevelChange, onLaneChange, onSelfChange, onReset }: { levels: string[]; level: string; lane: GuessLaneFilter; selfSelected: GuessSelfFilter; onLevelChange: (value: string) => void; onLaneChange: (value: GuessLaneFilter) => void; onSelfChange: (value: GuessSelfFilter) => void; onReset: () => void }) {
+function GuessFilterPanel({ levels, level, lane, selfSelected, disabled, onLevelChange, onLaneChange, onSelfChange, onReset }: { levels: string[]; level: string; lane: GuessLaneFilter; selfSelected: GuessSelfFilter; disabled: boolean; onLevelChange: (value: string) => void; onLaneChange: (value: GuessLaneFilter) => void; onSelfChange: (value: GuessSelfFilter) => void; onReset: () => void }) {
   const hasFilter = level !== "all" || lane !== "all" || selfSelected !== "all";
   return (
     <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mb: 1.5 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><SlidersHorizontal size={18} /><Typography variant="h3">分类查看</Typography></Stack>
-        <Button size="small" color="inherit" disabled={!hasFilter} onClick={onReset}>清除筛选</Button>
+        <Button size="small" color="inherit" disabled={disabled || !hasFilter} onClick={onReset}>清除筛选</Button>
       </Stack>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(170px, .65fr) minmax(300px, 1fr) minmax(300px, 1fr)" }, gap: 1.5 }}>
-        <FormControl size="small" fullWidth><InputLabel id="guess-level-filter-label">难度</InputLabel><Select labelId="guess-level-filter-label" label="难度" value={level} onChange={(event) => onLevelChange(event.target.value)} inputProps={{ "aria-label": "按难度筛选" }}><MenuItem value="all">全部难度</MenuItem>{levels.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</Select></FormControl>
-        <ToggleButtonGroup size="small" exclusive fullWidth value={lane} aria-label="按投稿类型筛选" onChange={(_, value: GuessLaneFilter | null) => { if (value) onLaneChange(value); }}><ToggleButton value="all">全部</ToggleButton><ToggleButton value="normal">普通</ToggleButton><ToggleButton value="j">J</ToggleButton><ToggleButton value="exhibition">场外</ToggleButton></ToggleButtonGroup>
-        <ToggleButtonGroup size="small" exclusive fullWidth value={selfSelected} aria-label="按自选状态筛选" onChange={(_, value: GuessSelfFilter | null) => { if (value) onSelfChange(value); }}><ToggleButton value="all">全部来源</ToggleButton><ToggleButton value="self">自选</ToggleButton><ToggleButton value="other">非自选</ToggleButton></ToggleButtonGroup>
+        <FormControl size="small" fullWidth disabled={disabled}><InputLabel id="guess-level-filter-label">难度</InputLabel><Select labelId="guess-level-filter-label" label="难度" value={level} onChange={(event) => onLevelChange(event.target.value)} inputProps={{ "aria-label": "按难度筛选" }}><MenuItem value="all">全部难度</MenuItem>{levels.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</Select></FormControl>
+        <ToggleButtonGroup size="small" exclusive fullWidth value={lane} aria-label="按投稿类型筛选" onChange={(_, value: GuessLaneFilter | null) => { if (value) onLaneChange(value); }}><ToggleButton value="all" disabled={disabled}>全部</ToggleButton><ToggleButton value="normal" disabled={disabled}>普通</ToggleButton><ToggleButton value="j" disabled={disabled}>J</ToggleButton><ToggleButton value="exhibition" disabled={disabled}>场外</ToggleButton></ToggleButtonGroup>
+        <ToggleButtonGroup size="small" exclusive fullWidth value={selfSelected} aria-label="按自选状态筛选" onChange={(_, value: GuessSelfFilter | null) => { if (value) onSelfChange(value); }}><ToggleButton value="all" disabled={disabled}>全部来源</ToggleButton><ToggleButton value="self" disabled={disabled}>自选</ToggleButton><ToggleButton value="other" disabled={disabled}>非自选</ToggleButton></ToggleButtonGroup>
       </Box>
     </Paper>
   );
@@ -65,7 +65,7 @@ function LoveVoteQuotaPanel({ quota }: { quota: LoveVoteQuotaRead }) {
   return <Paper variant="outlined" aria-live="polite" aria-label="真爱票额度" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: { sm: "center" } }}><Typography variant="body2" sx={{ fontWeight: 800 }}>真爱票额度</Typography><Chip size="small" variant="outlined" label={`14 以下：已用 ${quota.below_14.used}/${quota.below_14.limit}，剩余 ${quota.below_14.remaining}`} /><Chip size="small" variant="outlined" label={`14 及以上：已用 ${quota.at_least_14.used}/${quota.at_least_14.limit}，剩余 ${quota.at_least_14.remaining}`} /></Stack></Paper>;
 }
 
-const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected, candidates, candidateLabels, canGuess, guessedUserId, guessBusy, onOpen, onGuess }: { chart: GuessChartRead; selecting: boolean; selected: boolean; candidates: DesignerGuessOverview["candidates"]; candidateLabels: ReadonlyMap<number, string>; canGuess: boolean; guessedUserId?: number | null; guessBusy: boolean; onOpen: (chart: GuessChartRead) => void; onGuess: (chart: GuessChartRead, userId: number | null) => void }) {
+const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected, selectionDisabled, candidates, candidateLabels, canGuess, guessedUserId, guessBusy, onOpen, onGuess }: { chart: GuessChartRead; selecting: boolean; selected: boolean; selectionDisabled: boolean; candidates: DesignerGuessOverview["candidates"]; candidateLabels: ReadonlyMap<number, string>; canGuess: boolean; guessedUserId?: number | null; guessBusy: boolean; onOpen: (chart: GuessChartRead) => void; onGuess: (chart: GuessChartRead, userId: number | null) => void }) {
   const isJ = chart.lane === "j";
   const isExhibition = chart.lane === "exhibition" || chart.source_submission_type === "exhibition";
   const levelSlot = getChartLevelSlot(chart.source_level_slot);
@@ -91,7 +91,7 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
           </Select>
         </FormControl>
       </Box> : null}
-      {selecting ? <Checkbox checked={selected} slotProps={{ input: { "aria-label": `选择 ${chart.title}` } }} sx={{ position: "absolute", top: 6, right: 6, bgcolor: "rgba(255,255,255,.9)", "&:hover": { bgcolor: "white" } }} onChange={() => onOpen(chart)} /> : null}
+      {selecting ? <Checkbox checked={selected} disabled={selectionDisabled} slotProps={{ input: { "aria-label": `选择 ${chart.title}` } }} sx={{ position: "absolute", top: 6, right: 6, bgcolor: "rgba(255,255,255,.9)", "&:hover": { bgcolor: "white" } }} onChange={() => onOpen(chart)} /> : null}
     </Card>
   );
 });
@@ -118,16 +118,31 @@ export default function GuessPage() {
   const canGuess = designerGuesses.data?.can_guess ?? false;
   const levels = useMemo(() => [...new Set(allCharts.map((chart) => chart.level))].sort(compareChartLevels), [allCharts]);
   const filteredCharts = useMemo(() => allCharts.filter((chart) => (levelFilter === "all" || chart.level === levelFilter) && (laneFilter === "all" || (laneFilter === "exhibition" ? chart.source_submission_type === "exhibition" || chart.lane === "exhibition" : chart.lane === laneFilter && chart.source_submission_type !== "exhibition")) && (selfFilter === "all" || (selfFilter === "self" ? chart.is_self_selected : !chart.is_self_selected))), [allCharts, laneFilter, levelFilter, selfFilter]);
+  const allFilteredSelected = filteredCharts.length > 0 && filteredCharts.every((chart) => selected.has(chart.id));
   const guessedByChart = useMemo(() => new Map(designerGuesses.data?.states.map((state) => [state.chart_id, state.guessed_user_id]) ?? []), [designerGuesses.data?.states]);
   const setDesignerGuessData = designerGuesses.setData;
 
   function clearSelection() { setSelected(new Set()); }
   function resetFilters() { setLevelFilter("all"); setLaneFilter("all"); setSelfFilter("all"); clearSelection(); }
+  function toggleAllFiltered() {
+    if (downloading || !filteredCharts.length) return;
+    const filteredIds = filteredCharts.map((chart) => chart.id);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) filteredIds.forEach((id) => next.delete(id));
+      else filteredIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
   const updateChart = charts.updateData;
   const open = useCallback((chart: GuessChartRead) => {
-    if (selecting) { setSelected((current) => { const next = new Set(current); if (next.has(chart.id)) next.delete(chart.id); else next.add(chart.id); return next; }); return; }
+    if (selecting) {
+      if (downloading) return;
+      setSelected((current) => { const next = new Set(current); if (next.has(chart.id)) next.delete(chart.id); else next.add(chart.id); return next; });
+      return;
+    }
     void api.guessChart(chart.id).then((next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
-  }, [selecting, updateChart]);
+  }, [downloading, selecting, updateChart]);
   const saveDesignerGuess = useCallback(async (chart: GuessChartRead, userId: number | null) => {
     const groupIdentity = chartGroupIdentity(chart);
     setBusyGuessGroup(groupIdentity);
@@ -159,12 +174,12 @@ export default function GuessPage() {
 
   return (
     <Stack spacing={3}>
-      <PageHeader icon={Vote} title="猜谱" meta={`显示 ${filteredCharts.length} / 共 ${allCharts.length} 张谱面`} actions={<><Button variant={selecting ? "contained" : "outlined"} startIcon={<ClipboardList size={17} />} disabled={downloading} onClick={() => { setSelecting(!selecting); if (selecting) clearSelection(); }}>{selecting ? "结束选择" : "批量选择"}</Button>{selecting ? <Button variant="contained" startIcon={<Download size={17} />} disabled={!selected.size || downloading} onClick={() => void downloadSelected()}>{downloading ? "正在准备…" : `下载 ${selected.size} 项`}</Button> : null}</>} />
+      <PageHeader icon={Vote} title="猜谱" meta={`显示 ${filteredCharts.length} / 共 ${allCharts.length} 张谱面`} actions={<><Button variant={selecting ? "contained" : "outlined"} startIcon={<ClipboardList size={17} />} disabled={downloading} onClick={() => { setSelecting(!selecting); if (selecting) clearSelection(); }}>{selecting ? "结束选择" : "批量选择"}</Button>{selecting ? <><Button variant="outlined" startIcon={<CheckCheck size={17} />} disabled={downloading || !filteredCharts.length} onClick={toggleAllFiltered}>{allFilteredSelected ? "取消全选" : "全选当前结果"}</Button><Button variant="contained" startIcon={<Download size={17} />} disabled={!selected.size || downloading} onClick={() => void downloadSelected()}>{downloading ? "正在准备…" : `下载 ${selected.size} 项`}</Button></> : null}</>} />
       {error || designerGuesses.error || voteQuota.error ? <Alert severity="error">{error || designerGuesses.error || voteQuota.error}</Alert> : null}
       {isLoggedIn && voteQuota.data ? <LoveVoteQuotaPanel quota={voteQuota.data} /> : null}
       <ResourceState loading={charts.loading} error={charts.error} empty={!allCharts.length ? "暂无谱面" : undefined} />
-      {allCharts.length ? <GuessFilterPanel levels={levels} level={levelFilter} lane={laneFilter} selfSelected={selfFilter} onLevelChange={(value) => { setLevelFilter(value); clearSelection(); }} onLaneChange={(value) => { setLaneFilter(value); clearSelection(); }} onSelfChange={(value) => { setSelfFilter(value); clearSelection(); }} onReset={resetFilters} /> : null}
-      {filteredCharts.length ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>{filteredCharts.map((chart) => <GuessChartCard key={chart.id} chart={chart} selecting={selecting} selected={selected.has(chart.id)} candidates={candidates} candidateLabels={candidateLabels} canGuess={canGuess} guessedUserId={guessedByChart.get(chart.id)} guessBusy={busyGuessGroup === chartGroupIdentity(chart)} onOpen={open} onGuess={saveDesignerGuess} />)}</Box> : allCharts.length ? <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center" }}><Typography color="text.secondary">没有符合当前筛选条件的谱面</Typography><Button variant="outlined" sx={{ mt: 2 }} onClick={resetFilters}>清除筛选</Button></Paper> : null}
+      {allCharts.length ? <GuessFilterPanel levels={levels} level={levelFilter} lane={laneFilter} selfSelected={selfFilter} disabled={downloading} onLevelChange={(value) => { setLevelFilter(value); clearSelection(); }} onLaneChange={(value) => { setLaneFilter(value); clearSelection(); }} onSelfChange={(value) => { setSelfFilter(value); clearSelection(); }} onReset={resetFilters} /> : null}
+      {filteredCharts.length ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>{filteredCharts.map((chart) => <GuessChartCard key={chart.id} chart={chart} selecting={selecting} selected={selected.has(chart.id)} selectionDisabled={downloading} candidates={candidates} candidateLabels={candidateLabels} canGuess={canGuess} guessedUserId={guessedByChart.get(chart.id)} guessBusy={busyGuessGroup === chartGroupIdentity(chart)} onOpen={open} onGuess={saveDesignerGuess} />)}</Box> : allCharts.length ? <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center" }}><Typography color="text.secondary">没有符合当前筛选条件的谱面</Typography><Button variant="outlined" sx={{ mt: 2 }} disabled={downloading} onClick={resetFilters}>清除筛选</Button></Paper> : null}
       <GuessDetailDialog chart={active} designerGuesses={designerGuesses.data} candidateLabels={candidateLabels} voteQuota={voteQuota.data} guessedUserId={active ? guessedByChart.get(active.id) : null} guessBusy={Boolean(active && busyGuessGroup === chartGroupIdentity(active))} canVote={phases?.capabilities.quality_vote ?? true} canComment={phases?.capabilities.quality_vote ?? true} canReadHistory={phases?.capabilities.normal_submission_public ?? false} onGuess={saveDesignerGuess} onClose={() => setActive(null)} onChanged={(next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }} onQuotaChanged={voteQuota.setData} />
       <DownloadPreparationDialog open={downloading} count={selected.size} unit="项" />
       <Snackbar open={Boolean(downloadMessage)} autoHideDuration={5000} onClose={() => setDownloadMessage("")} message={downloadMessage} slotProps={{ content: { "aria-live": "polite" } }} />

@@ -43,7 +43,11 @@ describe("AdminSubmissions", () => {
       return Promise.resolve(json({ detail: "not found" }, 404));
     }));
     let clickCount = 0;
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => { clickCount += 1; });
+    let clickedHref = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
+      clickCount += 1;
+      clickedHref = this.getAttribute("href") || "";
+    });
 
     render(<AdminSubmissions />);
     expect(await screen.findByText("测试曲目")).toBeInTheDocument();
@@ -58,6 +62,12 @@ describe("AdminSubmissions", () => {
       file_name: "submissions.zip",
       file_size: 2300,
     }));
+    await waitFor(() => expect(clickedHref).toContain("download_token="));
+    expect(screen.getByRole("dialog", { name: "正在准备批量下载" })).toBeInTheDocument();
+    expect(screen.getByLabelText("选择 source.zip")).toBeDisabled();
+
+    const token = new URL(clickedHref, window.location.origin).searchParams.get("download_token");
+    document.cookie = `zppz_download_${token}=1; Path=/; SameSite=Lax`;
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "正在准备批量下载" })).not.toBeInTheDocument());
     expect(await screen.findByText("下载请求已开始，请查看浏览器下载列表")).toBeInTheDocument();
     expect(clickCount).toBe(1);

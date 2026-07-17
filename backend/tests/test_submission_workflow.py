@@ -476,20 +476,48 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
     assert uploaded.status_code == 200
     set_manual_phase("guess")
     chart_ids = [row["id"] for row in client.get("/api/v1/guess-game/charts").json()]
+    single_chart_metadata = client.get(f"/api/v1/guess-game/charts/{chart_ids[0]}/download-metadata")
+    assert single_chart_metadata.status_code == 200
+    assert "自选" in single_chart_metadata.json()["file_name"]
+    assert "source.zip" not in single_chart_metadata.json()["file_name"]
+    single_chart_download = client.get(single_chart_metadata.json()["download_url"])
+    assert single_chart_download.status_code == 200
+    assert "%E8%87%AA%E9%80%89" in single_chart_download.headers["content-disposition"]
+
     metadata = client.get(f"/api/v1/guess-game/charts/download-metadata?ids={','.join(map(str, chart_ids))}")
     assert metadata.status_code == 200, metadata.text
     assert metadata.json()["download_url"].endswith(f"ids={'%2C'.join(map(str, chart_ids))}")
     assert metadata.json()["file_size"] > 0
-    response = client.get(f"/api/v1/guess-game/charts/download.zip?ids={','.join(map(str, chart_ids))}")
+    download_token = "0123456789abcdef0123456789abcdef"
+    response = client.get(
+        f"/api/v1/guess-game/charts/download.zip?ids={','.join(map(str, chart_ids))}"
+        f"&download_token={download_token}"
+    )
     assert response.status_code == 200
     assert response.headers["content-encoding"] == "identity"
     assert response.headers["x-accel-buffering"] == "no"
+    assert f"zppz_download_{download_token}=1" in response.headers["set-cookie"]
+    assert "Max-Age=300" in response.headers["set-cookie"]
+    assert "HttpOnly" not in response.headers["set-cookie"]
     assert int(response.headers["content-length"]) == len(response.content)
     with ZipFile(BytesIO(response.content)) as archive:
         archive_names = archive.namelist()
         assert len([name for name in archive_names if name.endswith(".zip")]) == 1
+        assert any("自选" in name for name in archive_names if name.endswith(".zip"))
         assert all("source.zip" not in name for name in archive_names)
     assert "_下载报告.txt" in archive_names
+    invalid_token = client.get(
+        f"/api/v1/guess-game/charts/download.zip?ids={chart_ids[0]}&download_token=invalid"
+    )
+    assert invalid_token.status_code == 422
+
+    with SessionLocal() as db:
+        chart = db.get(GuessChart, chart_ids[0])
+        chart.is_self_selected = False
+        db.commit()
+    non_self_metadata = client.get(f"/api/v1/guess-game/charts/{chart_ids[0]}/download-metadata")
+    assert non_self_metadata.status_code == 200
+    assert "非自选" in non_self_metadata.json()["file_name"]
 
     login_admin(client)
     submission_id = uploaded.json()["id"]
@@ -498,9 +526,11 @@ def test_chart_batch_download_deduplicates_source(client: TestClient):
     assert single_metadata.json()["file_size"] == uploaded.json()["file_size"]
     batch_metadata = client.get(f"/api/v1/admin/submissions/download-metadata?ids={submission_id}")
     assert batch_metadata.status_code == 200
-    admin_download = client.get(batch_metadata.json()["download_url"])
+    admin_token = "fedcba9876543210fedcba9876543210"
+    admin_download = client.get(f"{batch_metadata.json()['download_url']}&download_token={admin_token}")
     assert admin_download.status_code == 200
     assert admin_download.headers["content-encoding"] == "identity"
+    assert f"zppz_download_{admin_token}=1" in admin_download.headers["set-cookie"]
     assert int(admin_download.headers["content-length"]) == len(admin_download.content)
 
 

@@ -3,6 +3,11 @@ import { api, formatDuration, formatMB, formatTime, submissionContentType } from
 
 describe("v1 API helpers", () => {
   afterEach(() => {
+    document.cookie.split(";").forEach((item) => {
+      const name = item.split("=")[0]?.trim();
+      if (name) document.cookie = `${name}=; Max-Age=0; Path=/`;
+    });
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -115,6 +120,44 @@ describe("v1 API helpers", () => {
     );
     expect(clickedHref).toBe("/api/v1/guess-game/charts/7/download");
     expect(clickedName).toBe("chart-7.zip");
+  });
+
+  it("keeps a batch download pending until its isolated confirmation cookie arrives", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      download_url: "/api/v1/guess-game/charts/download.zip?ids=7",
+      file_name: "guess-charts.zip",
+      file_size: 1024,
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    let clickedHref = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
+      clickedHref = this.getAttribute("href") || "";
+      const token = new URL(this.href).searchParams.get("download_token");
+      document.cookie = `zppz_download_${token}=1; Path=/; SameSite=Lax`;
+    });
+
+    await expect(api.downloadCharts([7])).resolves.toBeUndefined();
+
+    const token = new URL(clickedHref, window.location.origin).searchParams.get("download_token");
+    expect(token).toMatch(/^[a-f0-9]{32}$/);
+    expect(clickedHref).toContain("ids=7&download_token=");
+    expect(document.cookie).not.toContain(`zppz_download_${token}=1`);
+  });
+
+  it("fails a batch download after five minutes without browser confirmation", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      download_url: "/api/v1/admin/submissions/download.zip?ids=11",
+      file_name: "submissions.zip",
+      file_size: 2048,
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    let clicked = false;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => { clicked = true; });
+
+    const download = api.downloadAdminSubmissions([11]);
+    const rejection = expect(download).rejects.toThrow("浏览器未确认下载开始，请检查下载拦截设置后重试");
+    await vi.waitFor(() => expect(clicked).toBe(true));
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await rejection;
   });
 
   it("sends atomic batch delete requests to each admin resource", async () => {

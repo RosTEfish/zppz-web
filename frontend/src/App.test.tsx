@@ -237,6 +237,24 @@ describe("Material application shell", () => {
     expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
   });
 
+  it("selects and clears only the charts in the current filtered result", async () => {
+    window.history.pushState({}, "", "/guess");
+    render(<App />);
+
+    expect(await screen.findByText("测试谱面")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "J" }));
+    fireEvent.click(screen.getByRole("button", { name: "批量选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "全选当前结果" }));
+
+    expect(screen.getByRole("checkbox", { name: "选择 J谱面" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "下载 1 项" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "取消全选" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消全选" }));
+    expect(screen.getByRole("checkbox", { name: "选择 J谱面" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "下载 0 项" })).toBeDisabled();
+  });
+
   it("shows feedback while a chart batch download is being prepared", async () => {
     window.history.pushState({}, "", "/guess");
     const baseFetch = vi.mocked(fetch);
@@ -266,9 +284,16 @@ describe("Material application shell", () => {
       file_name: "guess-charts.zip",
       file_size: 1024,
     }));
+    await waitFor(() => expect(clickedHref).toContain("download_token="));
+    expect(screen.getByRole("dialog", { name: "正在准备批量下载" })).toBeInTheDocument();
+    expect(screen.getByLabelText("选择 测试谱面")).toBeDisabled();
+    expect(screen.getByText("全选当前结果").closest("button")).toBeDisabled();
+
+    const token = new URL(clickedHref, window.location.origin).searchParams.get("download_token");
+    document.cookie = `zppz_download_${token}=1; Path=/; SameSite=Lax`;
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "正在准备批量下载" })).not.toBeInTheDocument());
     expect(await screen.findByText("下载请求已开始，请查看浏览器下载列表")).toBeInTheDocument();
-    expect(clickedHref).toBe("/api/v1/guess-game/charts/download.zip?ids=7");
+    expect(clickedHref).toContain("/api/v1/guess-game/charts/download.zip?ids=7&download_token=");
   });
 
   it("warns when the current user has not filled their song pool", async () => {
