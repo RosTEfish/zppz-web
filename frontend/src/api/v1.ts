@@ -112,7 +112,7 @@ export interface SongRead {
 export interface SongPayload {
   song_name: string;
   artist: string;
-  song_type: string;
+  song_type?: string;
   remark: string;
   acknowledge_ban_warning?: boolean;
 }

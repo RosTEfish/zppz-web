@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import { Music2, Plus, Search } from "lucide-react";
 import { api, type BanMatchRead, type SongPayload, type SongRead } from "../api/v1";
 import { BanCheckPanel, canSubmitWithBanCheck, useBanCheck } from "../components/BanCheckPanel";
@@ -64,10 +64,9 @@ export default function SongPoolPage() {
       {incomplete ? <Alert severity="warning">曲池尚未投满，还需提交 {Math.max((limit ?? 0) - songCount, 0)} 首曲目后才能进入抽签阶段。</Alert> : null}
       <Paper component="form" onSubmit={createSong} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1.4fr 120px 2fr auto" }, gap: 1.5, alignItems: "center" }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1.4fr 2fr auto" }, gap: 1.5, alignItems: "center" }}>
           <TextField size="small" label="曲名" value={form.song_name} onChange={(e) => setForm({ ...form, song_name: e.target.value })} required />
           <TextField size="small" label="曲师" value={form.artist} onChange={(e) => setForm({ ...form, artist: e.target.value })} required />
-          <FormControl size="small"><InputLabel>分类</InputLabel><Select label="分类" value={form.song_type} onChange={(e) => setForm({ ...form, song_type: e.target.value })}><MenuItem value="A">A</MenuItem><MenuItem value="B">B</MenuItem><MenuItem value="C">C</MenuItem></Select></FormControl>
           <TextField size="small" label="备注" value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} />
           <Button type="submit" variant="contained" disabled={!canSubmitWithBanCheck(banCheck)} startIcon={<Plus size={17} />}>添加</Button>
         </Box>

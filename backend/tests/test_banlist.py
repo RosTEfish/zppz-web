@@ -286,6 +286,23 @@ def login_admin(client) -> None:
     login(client, "admin", "change-me-please")
 
 
+def test_song_pool_defaults_category_when_omitted(client):
+    register(client, "pool-default")
+    login(client, "pool-default")
+
+    response = client.post(
+        "/api/v1/song-pool/me",
+        json={"song_name": "No Category", "artist": "Artist", "remark": ""},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["song_type"] == "A"
+    with SessionLocal() as db:
+        song = db.scalar(select(Song).where(Song.song_name == "No Category"))
+        assert song is not None
+        assert song.song_type == "A"
+
+
 def test_ban_import_preview_publish_and_matching(client):
     login_admin(client)
     uploaded = client.post(

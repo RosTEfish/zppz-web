@@ -325,6 +325,58 @@ describe("Material application shell", () => {
     expect(screen.getByText(/曲池尚未投满/)).toBeInTheDocument();
   });
 
+  it("lets users submit a song without choosing a category", async () => {
+    window.history.pushState({}, "", "/songs");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const songs = Array.from({ length: 5 }, (_, index) => ({
+      id: index + 1,
+      song_name: `已有曲目 ${index + 1}`,
+      artist: "曲师",
+      song_type: "A",
+      remark: "",
+      submitter: participant,
+      created_at: "2026-07-04T00:00:00",
+    }));
+    const savedBodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/banlist/check")) return json({ status: "clear", matches: [] });
+      if (path.endsWith("/song-pool/me")) {
+        if (init?.method === "POST") {
+          savedBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return json({ ...songs[0], id: 6, song_name: "新曲目" });
+        }
+        return json(songs);
+      }
+      return json({ detail: "not found" }, 404);
+    }));
+
+    render(<App />);
+    const addButton = await screen.findByRole("button", { name: "添加" });
+    expect(screen.queryByRole("combobox", { name: "分类" })).not.toBeInTheDocument();
+    const addForm = addButton.closest("form");
+    expect(addForm).not.toBeNull();
+    const form = within(addForm as HTMLFormElement);
+    fireEvent.change(form.getByRole("textbox", { name: "曲名" }), { target: { value: "新曲目" } });
+    fireEvent.change(form.getByRole("textbox", { name: "曲师" }), { target: { value: "新曲师" } });
+    await screen.findByText("未发现往届 Ban 记录");
+    fireEvent.click(addButton);
+
+    await waitFor(() => expect(savedBodies).toHaveLength(1));
+    expect(savedBodies[0]).toEqual({ song_name: "新曲目", artist: "新曲师", remark: "", acknowledge_ban_warning: false });
+  });
+
   it("saves a designer guess from a chart card and syncs its difficulty group", async () => {
     window.history.pushState({}, "", "/guess");
     const participant = {
