@@ -605,6 +605,7 @@ describe("Material application shell", () => {
     const applicant = { ...admin, id: 9, user_code: "player", qq_id: "9", display_name: "参赛者", roles: ["participant"], is_admin: false, is_pool_editor: false };
     const song = { id: 1, song_name: "待更换曲目", artist: "曲师", song_type: "A", remark: "", submitter: applicant, created_at: "2026-07-04T00:00:00" };
     let phases = { phase_mode: "manual", manual_phase: "swap" as string | null, active_phase: "swap" as string | null, phases: [], capabilities: { song_pool_edit: false, draw: false, submission: false, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
+    const cachedPhases = phases;
     const request = { id: 41, user: applicant, status: "pending", error_message: "", items: [{ position: 0, original: { id: 31, song, status: "active", draw_kind: "initial", created_at: "2026-07-04T00:00:00" }, replacement: null }] };
     let audit = { round: { id: 1, status: "open", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", random_seed: "seed", finalized_at: null }, requests: [request], message: "换曲批次处理中" };
     let rejectCalls = 0;
@@ -618,7 +619,7 @@ describe("Material application shell", () => {
         phases = { ...phases, phase_mode: "auto", manual_phase: null, active_phase: null };
         return json(phases);
       }
-      if (path.endsWith("/event/phases")) return json(phases);
+      if (path.endsWith("/event/phases")) return json(init?.cache === "no-store" ? phases : cachedPhases);
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/admin/swap/audit")) return json(audit);

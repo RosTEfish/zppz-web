@@ -29,10 +29,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     const task = (async () => {
       setLoading(true);
       try {
+        const freshRequest: RequestInit = { cache: "no-store" };
         const [nextEvent, nextPhases, availability] = await Promise.all([
-          api.currentEvent(),
-          api.eventPhases().catch(() => null),
-          api.guessAvailability().catch(() => ({ available: false })),
+          api.currentEvent(freshRequest),
+          api.eventPhases(freshRequest).catch(() => null),
+          api.guessAvailability(freshRequest).catch(() => ({ available: false })),
         ]);
         setEvent(nextEvent);
         setPhases(nextPhases);

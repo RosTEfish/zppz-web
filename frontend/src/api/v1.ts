@@ -411,7 +411,8 @@ async function performRequest<T>(path: string, options: RequestInit = {}): Promi
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
-  if (method !== "GET" || options.signal) {
+  const bypassPendingGet = options.signal || options.cache === "no-store" || options.cache === "no-cache" || options.cache === "reload";
+  if (method !== "GET" || bypassPendingGet) {
     const result = await performRequest<T>(path, options);
     if (method !== "GET") pendingGetRequests.clear();
     return result;
@@ -561,12 +562,12 @@ export const api = {
   register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
   logout: () => apiRequest<{ message: string }>("/auth/logout", { method: "POST" }),
   changePassword: (old_password: string, new_password: string) => apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
-  currentEvent: () => apiRequest<EventRead>("/events/current"),
+  currentEvent: (options?: RequestInit) => apiRequest<EventRead>("/events/current", options),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
   resetAllData: (confirmation: string) => apiRequest<AdminResetResponse>("/admin/reset", { method: "POST", body: JSON.stringify({ confirmation }) }),
-  eventPhases: () => apiRequest<EventPhasesRead>("/event/phases"),
+  eventPhases: (options?: RequestInit) => apiRequest<EventPhasesRead>("/event/phases", options),
   updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),
-  guessAvailability: () => apiRequest<GuessAvailabilityRead>("/guess-game/availability"),
+  guessAvailability: (options?: RequestInit) => apiRequest<GuessAvailabilityRead>("/guess-game/availability", options),
 
   mySongs: (signal?: AbortSignal) => apiRequest<SongRead[]>("/song-pool/me", { signal }),
   createSong: (payload: SongPayload) => apiRequest<SongRead>("/song-pool/me", { method: "POST", body: JSON.stringify(payload) }),
