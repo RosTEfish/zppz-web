@@ -8,7 +8,7 @@ import { adminTabLoaders } from "./admin/adminTabLoaders";
 
 const ADMIN_TABS = [
   ["overview", "总览", Gauge], ["settings", "设置", Settings], ["users", "用户", Users], ["songs", "曲池", Music2],
-  ["draw", "抽签", Sparkles], ["phases", "阶段与换曲", CalendarClock], ["submissions", "投稿", Archive], ["guess", "猜谱", Vote], ["stats", "统计", BarChart3], ["banlist", "Ban 曲", FileWarning],
+  ["draw", "曲目分配", Sparkles], ["phases", "阶段与换曲", CalendarClock], ["submissions", "投稿", Archive], ["guess", "猜谱", Vote], ["stats", "统计", BarChart3], ["banlist", "Ban 曲", FileWarning],
 ] as const;
 
 const AdminOverview = lazy(adminTabLoaders.overview);

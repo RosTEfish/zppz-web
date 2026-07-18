@@ -1,9 +1,8 @@
 export type Track = "normal" | "j" | "exhibition";
-export type EventPhaseName = "registration" | "draw" | "submission_1" | "swap" | "submission_2" | "guess";
+export type EventPhaseName = "registration" | "submission_1" | "submission_2" | "guess";
 
 export interface PhaseCapabilities {
   song_pool_edit: boolean;
-  draw: boolean;
   submission: boolean;
   swap: boolean;
   normal_submission_public: boolean;
@@ -17,11 +16,22 @@ export interface EventPhaseWindow {
   ends_at: string;
 }
 
+export interface EventPhaseSnapshotRead {
+  id: number;
+  original_phase: string;
+  starts_at: string;
+  ends_at: string;
+  source_id?: number | null;
+  migration_revision: string;
+  created_at?: string | null;
+}
+
 export interface EventPhasesRead {
   phase_mode: "auto" | "manual";
   manual_phase?: EventPhaseName | null;
   active_phase: EventPhaseName | null;
   phases: EventPhaseWindow[];
+  phase_snapshots?: EventPhaseSnapshotRead[];
   capabilities: PhaseCapabilities;
   next_transition_at?: string | null;
   /** UTC timestamp captured by the API, used to correct an inaccurate client clock. */
@@ -195,22 +205,48 @@ export interface DrawAssignmentRead {
   replaces_assignment_id?: number | null;
 }
 
+export interface SwapAssignmentRead extends DrawAssignmentRead {
+  selected: boolean;
+  can_swap: boolean;
+  has_submission: boolean;
+}
+
+export interface AdminDrawStatsRead {
+  assignments: number;
+  assigned_users: number;
+  has_submission: boolean;
+  can_redraw: boolean;
+}
+
+export interface SwapRollItemRead {
+  id: number;
+  position: number;
+  original: DrawAssignmentRead;
+  replacement?: DrawAssignmentRead | null;
+}
+
+export interface SwapRollRead {
+  id: number;
+  round_id?: number;
+  status: string;
+  created_at: string;
+  items: SwapRollItemRead[];
+}
+
 export interface SwapMeRead {
   is_open: boolean;
   active_phase: EventPhaseName | null;
-  max_selections: number;
-  round?: { id: number; status: string; starts_at: string; ends_at: string; finalized_at?: string | null } | null;
-  request?: { id: number; status: string; assignment_ids: number[] } | null;
-  assignments: Array<DrawAssignmentRead & { selected: boolean }>;
-  results: Array<{ original: DrawAssignmentRead; replacement?: DrawAssignmentRead | null }>;
-}
-
-export interface SwapValidationRead {
-  ok: boolean;
-  message: string;
-  request_count?: number;
-  item_count?: number;
-  pool_size?: number;
+  round?: {
+    id: number;
+    status: string;
+    round_kind: string;
+    starts_at: string;
+    ends_at: string;
+    roll_count: number;
+    finalized_at?: string | null;
+  } | null;
+  assignments: SwapAssignmentRead[];
+  last_roll?: SwapRollRead | null;
 }
 
 export interface SwapAuditAssignmentRead {
@@ -229,23 +265,27 @@ export interface SwapAuditItemRead {
 
 export interface SwapAuditRequestRead {
   id: number;
+  round_id?: number;
   user: UserRead;
   status: string;
-  error_message: string;
+  created_at?: string;
   items: SwapAuditItemRead[];
 }
 
 export interface SwapAuditRoundRead {
   id: number;
   status: string;
+  round_kind: string;
   starts_at: string;
   ends_at: string;
   random_seed?: string;
   finalized_at?: string | null;
+  roll_count: number;
 }
 
 export interface SwapAuditRead {
   round: SwapAuditRoundRead | null;
+  rounds: SwapAuditRoundRead[];
   requests: SwapAuditRequestRead[];
   message?: string;
 }
@@ -601,15 +641,11 @@ export const api = {
   addBanAlias: (entry_id: number, title: string, artist: string) => apiRequest<{ message: string; entry_id: number }>("/admin/banlist/aliases", { method: "POST", body: JSON.stringify({ entry_id, title, artist }) }),
 
   myDraw: (signal?: AbortSignal) => apiRequest<DrawAssignmentRead[]>("/draw/results", { signal }),
-  drawMine: () => apiRequest<DrawAssignmentRead[]>("/draw/me", { method: "POST" }),
   runDraw: () => apiRequest<DrawAssignmentRead[]>("/admin/draw", { method: "POST" }),
   adminDrawResults: (signal?: AbortSignal) => apiRequest<DrawAssignmentRead[]>("/admin/draw/results", { signal }),
+  adminDrawStats: (signal?: AbortSignal) => apiRequest<AdminDrawStatsRead>("/admin/draw/stats", { signal }),
   mySwap: (signal?: AbortSignal) => apiRequest<SwapMeRead>("/swap/me", { signal }),
-  updateMySwap: (assignment_ids: number[]) => apiRequest<SwapMeRead>("/swap/me", { method: "PUT", body: JSON.stringify({ assignment_ids }) }),
-  cancelMySwap: () => apiRequest<SwapMeRead>("/swap/me", { method: "DELETE" }),
-  validateSwaps: () => apiRequest<SwapValidationRead>("/admin/swap/validate", { method: "POST" }),
-  finalizeSwaps: () => apiRequest<SwapAuditRead>("/admin/swap/finalize", { method: "POST" }),
-  rejectSwapRequest: (requestId: number) => apiRequest<SwapAuditRead>(`/admin/swap/requests/${requestId}/reject`, { method: "POST" }),
+  rollMySwap: (assignment_ids: number[]) => apiRequest<SwapMeRead>("/swap/me/roll", { method: "POST", body: JSON.stringify({ assignment_ids }) }),
   swapAudit: (signal?: AbortSignal) => apiRequest<SwapAuditRead>("/admin/swap/audit", { signal }),
 
   submissionTargets: (signal?: AbortSignal) => apiRequest<SubmissionTargetsResponse>("/submissions/targets", { signal }),

@@ -5,9 +5,7 @@ import type { EventPhaseName, EventPhasesRead } from "../api/v1";
 
 export const PHASE_LABELS: Record<EventPhaseName, string> = {
   registration: "报名",
-  draw: "抽签",
   submission_1: "征稿一阶段",
-  swap: "换曲",
   submission_2: "征稿二阶段",
   guess: "猜谱",
 };

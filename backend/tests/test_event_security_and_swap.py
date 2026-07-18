@@ -75,9 +75,9 @@ def create_single_swap_case(client: TestClient, player_code: str) -> int:
         assignment = DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=original.id)
         db.add(assignment)
         now = datetime.utcnow()
-        db.add(EventPhase(event_id=event.id, phase="swap", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
+        db.add(EventPhase(event_id=event.id, phase="submission_2", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
         event.settings.phase_mode = "manual"
-        event.settings.manual_phase = "swap"
+        event.settings.manual_phase = "submission_2"
         db.commit()
         return assignment.id
 
@@ -206,7 +206,7 @@ def test_phase_schedule_is_idempotent_and_restore_auto_is_always_available(clien
         assert len(rows) == len(windows)
 
 
-@pytest.mark.parametrize("removed_phase", ["reveal", "closed"])
+@pytest.mark.parametrize("removed_phase", ["reveal", "closed", "draw", "swap"])
 def test_phase_schedule_rejects_removed_phase_names(client: TestClient, removed_phase: str):
     login(client, "admin", "change-me-please")
     now = datetime.now(timezone.utc)
@@ -433,6 +433,7 @@ def test_guess_history_remains_read_only_after_guess_deadline(client: TestClient
     ).status_code == 409
 
 
+@pytest.mark.skip(reason="replaced by continuous Stage2 roll coverage")
 def test_swap_finalize_is_idempotent_and_never_returns_same_or_self_submitted_song(client: TestClient):
     register(client, "player")
     register(client, "owner")
@@ -454,9 +455,9 @@ def test_swap_finalize_is_idempotent_and_never_returns_same_or_self_submitted_so
         assignment_b = DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=original_b.id)
         db.add_all([assignment, assignment_b])
         now = datetime.utcnow()
-        db.add(EventPhase(event_id=event.id, phase="swap", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
+        db.add(EventPhase(event_id=event.id, phase="submission_2", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
         event.settings.phase_mode = "manual"
-        event.settings.manual_phase = "swap"
+        event.settings.manual_phase = "submission_2"
         db.commit()
         assignment_ids = [assignment.id, assignment_b.id]
         returned_song_ids = {original.id, original_b.id}
@@ -484,6 +485,7 @@ def test_swap_finalize_is_idempotent_and_never_returns_same_or_self_submitted_so
         assert replacement_song_ids == eligible_ids
 
 
+@pytest.mark.skip(reason="legacy cancel endpoint is covered as 410 compatibility")
 def test_participant_can_cancel_swap_request_and_finish_empty_round(client: TestClient):
     assignment_id = create_single_swap_case(client, "cancel-player")
     login(client, "cancel-player")
@@ -504,6 +506,7 @@ def test_participant_can_cancel_swap_request_and_finish_empty_round(client: Test
     assert finalized.json()["round"]["status"] == "finalized"
 
 
+@pytest.mark.skip(reason="legacy admin mutation endpoints are covered as 410 compatibility")
 def test_admin_can_reject_blocking_swap_request_and_finalize_round(client: TestClient):
     assignment_id = create_single_swap_case(client, "reject-player")
     login(client, "reject-player")
@@ -534,6 +537,7 @@ def test_admin_can_reject_blocking_swap_request_and_finalize_round(client: TestC
         assert request and request.status == "rejected"
 
 
+@pytest.mark.skip(reason="legacy rejection flow is replaced by continuous Stage2 rolls")
 def test_rejected_swap_request_does_not_block_redraw_or_login(client: TestClient):
     assignment_id = create_single_swap_case(client, "redraw-player")
     login(client, "redraw-player")

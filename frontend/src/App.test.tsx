@@ -93,7 +93,7 @@ describe("Material application shell", () => {
     expect(screen.getByAltText("公安备案图标").getAttribute("src")).toContain("beian");
   });
 
-  it("uses phase capabilities for submission status and draw availability", async () => {
+  it("uses phase capabilities for submission status and keeps allocation read-only", async () => {
     window.history.pushState({}, "", "/draw");
     const participant = {
       id: 9,
@@ -111,19 +111,21 @@ describe("Material application shell", () => {
       manual_phase: "submission_1",
       active_phase: "submission_1",
       phases: [],
-      capabilities: { song_pool_edit: false, draw: false, submission: true, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false },
+      capabilities: { song_pool_edit: false, submission: true, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false },
     };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/event/phases")) return json(phases);
       if (path.endsWith("/draw/results")) return json([]);
+      if (path.endsWith("/swap/me")) return json({ is_open: false, active_phase: "submission_1", round: null, assignments: [], last_roll: null });
       return json({ detail: "not found" }, 404);
     }));
 
     render(<App />);
     expect((await screen.findAllByText("投稿开放")).length).toBeGreaterThan(0);
-    expect(await screen.findByRole("button", { name: "开始抽签" })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "我的曲目" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始抽签" })).not.toBeInTheDocument();
   });
 
   it("hides the guess entry from regular users when no public charts exist", async () => {
@@ -599,7 +601,7 @@ describe("Material application shell", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: "J赛道" })[1]).toHaveAttribute("aria-pressed", "true"));
   });
 
-  it("lets participants cancel a pending swap request", async () => {
+  it("lets participants roll any number of songs immediately", async () => {
     window.history.pushState({}, "", "/draw");
     const participant = {
       id: 9,
@@ -612,19 +614,21 @@ describe("Material application shell", () => {
       is_pool_editor: false,
       is_active: true,
     };
-    const song = { id: 1, song_name: "换曲原曲", artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" };
-    const assignment = { id: 31, assigned_to: participant, song, created_at: "2026-07-04T00:00:00", status: "active", draw_kind: "initial", replaces_assignment_id: null };
-    const phases = { phase_mode: "manual", manual_phase: "swap", active_phase: "swap", phases: [], capabilities: { song_pool_edit: false, draw: false, submission: false, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
-    let currentSwap = { is_open: true, active_phase: "swap", max_selections: 3, round: { id: 1, status: "open", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", finalized_at: null }, request: { id: 41, status: "pending", assignment_ids: [31] }, assignments: [{ ...assignment, selected: true }], results: [] };
-    let cancelCalls = 0;
+    const songs = [1, 2, 3, 4].map((id) => ({ id, song_name: `换曲原曲${id}`, artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" }));
+    const assignments = songs.map((song, index) => ({ id: 31 + index, assigned_to: participant, song, created_at: "2026-07-04T00:00:00", status: "active", draw_kind: "initial", replaces_assignment_id: null }));
+    const phases = { phase_mode: "manual", manual_phase: "submission_2", active_phase: "submission_2", phases: [], capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
+    const round = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", roll_count: 0, finalized_at: null };
+    let currentSwap = { is_open: true, active_phase: "submission_2" as const, round, assignments: assignments.map((assignment) => ({ ...assignment, selected: false, can_swap: true, has_submission: false })), last_roll: null };
+    const rollBodies: number[][] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/event/phases")) return json(phases);
-      if (path.endsWith("/draw/results")) return json([assignment]);
-      if (path.endsWith("/swap/me") && init?.method === "DELETE") {
-        cancelCalls += 1;
-        currentSwap = { ...currentSwap, request: { ...currentSwap.request, status: "cancelled", assignment_ids: [] }, assignments: [{ ...assignment, selected: false }] };
+      if (path.endsWith("/draw/results")) return json(assignments);
+      if (path.endsWith("/swap/me/roll") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { assignment_ids: number[] };
+        rollBodies.push(body.assignment_ids);
+        currentSwap = { ...currentSwap, round: { ...round, roll_count: 1 }, last_roll: { id: 41, status: "completed", created_at: "2026-07-04T00:01:00", items: assignments.map((assignment, index) => ({ id: index + 1, position: index, original: assignment, replacement: { ...assignment, id: 51 + index, song: { ...assignment.song, id: 101 + index, song_name: `新曲${index + 1}` }, draw_kind: "swap", replaces_assignment_id: assignment.id } })) } };
         return json(currentSwap);
       }
       if (path.endsWith("/swap/me")) return json(currentSwap);
@@ -632,16 +636,15 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "换曲申请" })).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "取消申请" }));
-    const dialog = await screen.findByRole("dialog", { name: "取消换曲申请" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认取消" }));
-    await waitFor(() => expect(cancelCalls).toBe(1));
-    expect(await screen.findByText("已取消")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "取消申请" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Stage2 投稿与换曲" })).toBeInTheDocument();
+    const checkboxes = await screen.findAllByRole("checkbox");
+    checkboxes.forEach((checkbox) => fireEvent.click(checkbox));
+    fireEvent.click(await screen.findByRole("button", { name: "立即换曲（4 首）" }));
+    await waitFor(() => expect(rollBodies).toEqual([[31, 32, 33, 34]]));
+    expect(await screen.findByText("最近一次换曲结果")).toBeInTheDocument();
   });
 
-  it("lets administrators reject a pending swap request", async () => {
+  it("keeps swap audit history read-only for administrators", async () => {
     window.history.pushState({}, "", "/admin/phases");
     const admin = {
       id: 1,
@@ -656,11 +659,11 @@ describe("Material application shell", () => {
     };
     const applicant = { ...admin, id: 9, user_code: "player", qq_id: "9", display_name: "参赛者", roles: ["participant"], is_admin: false, is_pool_editor: false };
     const song = { id: 1, song_name: "待更换曲目", artist: "曲师", song_type: "A", remark: "", submitter: applicant, created_at: "2026-07-04T00:00:00" };
-    let phases = { phase_mode: "manual", manual_phase: "swap" as string | null, active_phase: "swap" as string | null, phases: [], capabilities: { song_pool_edit: false, draw: false, submission: false, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
+    let phases = { phase_mode: "manual", manual_phase: "submission_2" as string | null, active_phase: "submission_2" as string | null, phases: [], capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
     const cachedPhases = phases;
-    const request = { id: 41, user: applicant, status: "pending", error_message: "", items: [{ position: 0, original: { id: 31, song, status: "active", draw_kind: "initial", created_at: "2026-07-04T00:00:00" }, replacement: null }] };
-    let audit = { round: { id: 1, status: "open", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", random_seed: "seed", finalized_at: null }, requests: [request], message: "换曲批次处理中" };
-    let rejectCalls = 0;
+    const request = { id: 41, round_id: 1, user: applicant, status: "completed", created_at: "2026-07-04T00:01:00", items: [{ position: 0, original: { id: 31, song, status: "returned", draw_kind: "initial", created_at: "2026-07-04T00:00:00" }, replacement: { id: 51, song: { ...song, id: 2, song_name: "新曲" }, status: "active", draw_kind: "swap", created_at: "2026-07-04T00:01:00" } }] };
+    const auditRound = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", random_seed: "seed", finalized_at: null, roll_count: 1 };
+    const audit = { round: auditRound, rounds: [auditRound], requests: [request], message: "连续换曲记录" };
     const phaseUpdates: Array<Record<string, unknown>> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -675,17 +678,12 @@ describe("Material application shell", () => {
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/admin/swap/audit")) return json(audit);
-      if (path.endsWith("/admin/swap/requests/41/reject") && init?.method === "POST") {
-        rejectCalls += 1;
-        audit = { ...audit, requests: [{ ...request, status: "rejected", error_message: "管理员驳回申请" }] };
-        return json(audit);
-      }
       return json({ detail: "not found" }, 404);
     }));
 
     render(<App />);
     expect(await screen.findByRole("heading", { name: "赛事阶段" })).toBeInTheDocument();
-    expect(document.querySelectorAll('input[type="datetime-local"]')).toHaveLength(12);
+    expect(document.querySelectorAll('input[type="datetime-local"]')).toHaveLength(8);
     expect(screen.queryByText("揭晓")).not.toBeInTheDocument();
     expect(screen.queryByText("已结束")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));
@@ -693,11 +691,8 @@ describe("Material application shell", () => {
       { phase_mode: "auto", manual_phase: null, phases: [] },
     ]));
     await waitFor(() => expect(screen.getByRole("button", { name: "恢复自动" })).toBeDisabled());
-    fireEvent.click(await screen.findByRole("button", { name: "驳回申请" }));
-    const dialog = await screen.findByRole("dialog", { name: "驳回换曲申请" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认驳回" }));
-    await waitFor(() => expect(rejectCalls).toBe(1));
-    expect(await screen.findByText("已驳回")).toBeInTheDocument();
+    expect(await screen.findByText("连续换曲轮次")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Finalize" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "驳回申请" })).not.toBeInTheDocument();
   });
 

@@ -5,7 +5,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.security import has_admin_access
-from app.models import DrawAssignment, Event, EventPhase, EventSetting, Song, SwapRound, User
+from app.models import (
+    DrawAssignment,
+    Event,
+    EventPhase,
+    EventPhaseSnapshot,
+    EventSetting,
+    Song,
+    SwapRound,
+    User,
+)
 from app.modules.events.phase_policy import PHASES, get_phase_status, phase_status_payload
 from app.schemas import EventPhasesUpdate, EventUpdate
 
@@ -102,6 +111,11 @@ def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime
 def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
     event = event or get_current_event(db)
     status_payload = phase_status_payload(get_phase_status(db, event))
+    snapshots = db.scalars(
+        select(EventPhaseSnapshot)
+        .where(EventPhaseSnapshot.event_id == event.id)
+        .order_by(EventPhaseSnapshot.starts_at.asc(), EventPhaseSnapshot.id.asc())
+    ).all()
     return {
         "event_id": event.id,
         "phase_mode": event.settings.phase_mode,
@@ -117,6 +131,18 @@ def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
             }
             for row in sorted(event.phases, key=lambda item: (item.starts_at, item.ends_at))
             if row.phase in PHASES
+        ],
+        "phase_snapshots": [
+            {
+                "id": row.id,
+                "original_phase": row.original_phase,
+                "starts_at": _utc_aware(row.starts_at),
+                "ends_at": _utc_aware(row.ends_at),
+                "source_id": row.source_id,
+                "migration_revision": row.migration_revision,
+                "created_at": _utc_aware(row.created_at) if row.created_at else None,
+            }
+            for row in snapshots
         ],
         **status_payload,
     }
@@ -149,13 +175,17 @@ def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
     event.settings.phase_mode = payload.phase_mode
     event.settings.manual_phase = payload.manual_phase if payload.phase_mode == "manual" else None
     db.flush()
-    swap_window = next((row for row in rows if row[0] == "swap"), None)
+    stage2_window = next((row for row in rows if row[0] == "submission_2"), None)
     open_swap_round = db.scalar(
-        select(SwapRound).where(SwapRound.event_id == event.id, SwapRound.status == "open")
+        select(SwapRound).where(
+            SwapRound.event_id == event.id,
+            SwapRound.status == "open",
+            SwapRound.round_kind == "continuous",
+        )
     )
-    if open_swap_round and swap_window:
-        open_swap_round.starts_at = swap_window[1]
-        open_swap_round.ends_at = swap_window[2]
+    if open_swap_round and stage2_window:
+        open_swap_round.starts_at = stage2_window[1]
+        open_swap_round.roll_ends_at = stage2_window[2]
     db.commit()
     event = get_current_event(db)
     return get_phase_schedule(db, event)

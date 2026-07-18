@@ -108,6 +108,20 @@ class EventPhase(Base, TimestampMixin):
     event: Mapped[Event] = relationship(back_populates="phases")
 
 
+class EventPhaseSnapshot(Base, TimestampMixin):
+    """Immutable copy of a phase window retired by a data migration."""
+
+    __tablename__ = "event_phase_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    original_phase: Mapped[str] = mapped_column(String(30), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    migration_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class Song(Base, TimestampMixin):
     __tablename__ = "songs"
     __table_args__ = (Index("ix_songs_event_submitter", "event_id", "submitted_by_id"),)
@@ -238,6 +252,8 @@ class SwapRound(Base, TimestampMixin):
     round_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    roll_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    round_kind: Mapped[str] = mapped_column(String(20), default="continuous", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
     random_seed: Mapped[str] = mapped_column(String(128), nullable=False)
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -248,7 +264,6 @@ class SwapRound(Base, TimestampMixin):
 
 class SwapRequest(Base, TimestampMixin):
     __tablename__ = "swap_requests"
-    __table_args__ = (UniqueConstraint("round_id", "user_id", name="uq_swap_request_round_user"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     round_id: Mapped[int] = mapped_column(ForeignKey("swap_rounds.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -283,6 +298,21 @@ class SwapRequestItem(Base, TimestampMixin):
     request: Mapped[SwapRequest] = relationship(back_populates="items")
     original_assignment: Mapped[DrawAssignment] = relationship(foreign_keys=[original_assignment_id])
     replacement_assignment: Mapped[DrawAssignment | None] = relationship(foreign_keys=[replacement_assignment_id])
+
+
+class SwapExcludedSong(Base, TimestampMixin):
+    """A song a participant has returned and should not be rolled back to them."""
+
+    __tablename__ = "swap_excluded_songs"
+    __table_args__ = (
+        UniqueConstraint("event_id", "user_id", "song_id", name="uq_swap_excluded_event_user_song"),
+        Index("ix_swap_excluded_event_user", "event_id", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), index=True, nullable=False)
 
 
 class Submission(Base, TimestampMixin):

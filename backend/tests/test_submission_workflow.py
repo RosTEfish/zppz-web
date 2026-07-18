@@ -475,8 +475,8 @@ def test_admin_open_validation_and_draw_lock(client: TestClient):
         db.commit()
     opened = client.put("/api/v1/admin/events/current", json=payload)
     assert opened.status_code == 200, opened.text
-    blocked = client.post("/api/v1/admin/draw")
-    assert blocked.status_code == 409
+    redrawn = client.post("/api/v1/admin/draw")
+    assert redrawn.status_code == 200, redrawn.text
 
 
 def test_chart_batch_download_deduplicates_source(client: TestClient):

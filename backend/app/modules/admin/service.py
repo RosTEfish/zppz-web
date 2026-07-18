@@ -17,6 +17,7 @@ from app.models import (
     DrawAssignment,
     Event,
     EventPhase,
+    EventPhaseSnapshot,
     EventSetting,
     GuessAuthorCandidate,
     GuessAuthorGuess,
@@ -32,6 +33,7 @@ from app.models import (
     SwapRequest,
     SwapRequestItem,
     SwapRound,
+    SwapExcludedSong,
     User,
     UserRole,
     UserSession,
@@ -153,6 +155,17 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
     else:
         deleted["swap_requests"] = 0
         deleted["swap_rounds"] = 0
+
+    deleted["swap_excluded_songs"] = (
+        _delete_rows(db, delete(SwapExcludedSong).where(SwapExcludedSong.event_id.in_(event_ids)))
+        if event_ids
+        else 0
+    )
+    deleted["event_phase_snapshots"] = (
+        _delete_rows(db, delete(EventPhaseSnapshot).where(EventPhaseSnapshot.event_id.in_(event_ids)))
+        if event_ids
+        else 0
+    )
 
     if chart_ids:
         deleted["guess_votes"] = _delete_rows(db, delete(GuessVote).where(GuessVote.chart_id.in_(chart_ids)))

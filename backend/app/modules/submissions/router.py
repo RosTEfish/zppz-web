@@ -29,6 +29,7 @@ from app.modules.downloads import (
     prepare_streaming_zip,
     safe_download_name,
 )
+from app.modules.draw.service import ensure_global_draw
 from app.modules.events.service import get_current_event
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.guess_game.importer import (
@@ -430,6 +431,8 @@ def _submission_options():
 def submission_targets(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     _require_participant(user)
     event = get_current_event(db)
+    if get_phase_status(db, event).can("submission"):
+        ensure_global_draw(db)
     assigned_song_ids = select(DrawAssignment.song_id).where(
         DrawAssignment.event_id == event.id,
         DrawAssignment.assigned_to_id == user.id,

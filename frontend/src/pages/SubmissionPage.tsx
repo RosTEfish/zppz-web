@@ -3,10 +3,15 @@ import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, FormControlLabel
 import { Check, Clock3, FileCheck2, RefreshCw, Trash2, Upload } from "lucide-react";
 import { api, formatDuration, formatMB, formatTime, type StoredFileRead, type SubmissionTargetRead, type Track } from "../api/v1";
 import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
+import Stage2SwapPanel from "../components/Stage2SwapPanel";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
 export default function SubmissionPage() {
+  return <Stack spacing={3}><SubmissionPageContent /><Stage2SwapPanel /></Stack>;
+}
+
+function SubmissionPageContent() {
   const targets = useResource(api.submissionTargets, []);
   const submissions = useResource(api.mySubmissions, []);
   const [trackChoices, setTrackChoices] = useState<Record<number, Track>>({});

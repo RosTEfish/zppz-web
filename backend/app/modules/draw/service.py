@@ -1,165 +1,215 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
 import random
-import time
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, SwapRequestItem, User
+from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, User
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
 
 
-SELF_DRAW_MAX_ATTEMPTS = 3
-SELF_DRAW_RETRY_DELAY_SECONDS = 0.04
+DRAW_RETRY_ATTEMPTS = 3
+DRAW_RETRY_DELAY_SECONDS = 0.04
 
 
 def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
-    _begin_sqlite_immediate_transaction(db)
-    event = get_current_event(db)
-    _lock_event_row(db, event.id)
-    _assert_draw_is_mutable(db, event)
-    assert_song_pool_complete(
-        db,
-        event.id,
-        participant_limit=event.settings.participant_song_limit,
-        audience_limit=event.settings.audience_song_limit,
-    )
-    existing = db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id)).first()
-    if existing and not allow_redraw:
-        raise HTTPException(status_code=400, detail="本赛事已经抽签，当前设置不允许重抽")
+    """Run the administrator-facing global allocation.
 
-    participants = list(
-        db.scalars(
-            select(User).options(selectinload(User.roles)).where(User.identity == "participant", User.is_active.is_(True))
-        ).all()
-    )
-    songs = db.scalars(select(Song).where(Song.event_id == event.id)).all()
-    if not participants:
-        raise HTTPException(status_code=400, detail="没有参赛者可以抽签")
-    if not songs:
-        raise HTTPException(status_code=400, detail="曲池为空")
-
-    _retire_active_assignments(db, event.id)
-    pool = songs[:]
-    random.shuffle(pool)
-    created: list[DrawAssignment] = []
-    cursor = 0
-    per_user = event.settings.draw_songs_per_participant
-    for participant in participants:
-        for _ in range(per_user):
-            candidates = [song for song in pool if song.submitted_by_id != participant.id]
-            if not candidates:
-                candidates = pool[:]
-            if not candidates:
-                break
-            song = candidates[cursor % len(candidates)]
-            pool.remove(song)
-            assignment = DrawAssignment(
-                event_id=event.id,
-                assigned_to_id=participant.id,
-                song_id=song.id,
-                status="active",
-                draw_kind="initial",
-            )
-            db.add(assignment)
-            created.append(assignment)
-            cursor += 1
-            if not pool:
-                break
-    db.commit()
-    return get_draw_results(db)
-
-
-def draw_for_user(db: Session, user: User) -> list[DrawAssignment]:
-    user_id = user.id
-    identity = user.identity
-    if identity != "participant":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有参赛选手可以抽取曲目")
-
-    for attempt in range(SELF_DRAW_MAX_ATTEMPTS):
+    The old endpoint name is retained for the API surface, but allocation is now
+    always global and never performed per participant.
+    """
+    for attempt in range(DRAW_RETRY_ATTEMPTS):
         try:
-            return _draw_for_user_once(db, user_id)
+            return _run_global_draw_once(db, allow_redraw=allow_redraw)
         except IntegrityError:
             db.rollback()
-            if attempt == SELF_DRAW_MAX_ATTEMPTS - 1:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="多人同时抽取导致曲目占用冲突，请重试") from None
-            time.sleep(SELF_DRAW_RETRY_DELAY_SECONDS * (attempt + 1))
+            if attempt == DRAW_RETRY_ATTEMPTS - 1:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="全局分配发生并发冲突，请重试") from None
         except OperationalError as exc:
             db.rollback()
             if not _is_retryable_operational_error(exc):
                 raise
-            if attempt == SELF_DRAW_MAX_ATTEMPTS - 1:
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="抽取请求过于密集，请稍后重试") from exc
-            time.sleep(SELF_DRAW_RETRY_DELAY_SECONDS * (attempt + 1))
+            if attempt == DRAW_RETRY_ATTEMPTS - 1:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="分配请求过于密集，请稍后重试") from exc
         except HTTPException:
             db.rollback()
             raise
 
-    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="抽取失败，请重试")
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="全局分配失败，请重试")
 
 
-def _draw_for_user_once(db: Session, user_id: int) -> list[DrawAssignment]:
+def ensure_global_draw(db: Session) -> None:
+    """Lazily create the initial global allocation after registration closes.
+
+    This is called by draw-dependent reads and writes rather than from a request
+    middleware, so cached public event metadata remains side-effect free.
+    """
+    event = get_current_event(db)
+    if not _draw_is_due(event, db):
+        return
+
+    if _has_complete_allocation(db, event):
+        return
+
+    run_draw(db, allow_redraw=False)
+
+
+def draw_for_user(db: Session, user: User) -> list[DrawAssignment]:
+    """Compatibility guard for stale clients that still try personal drawing."""
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="个人抽取已取消，请等待全局分配")
+
+
+def _run_global_draw_once(db: Session, *, allow_redraw: bool) -> list[DrawAssignment]:
     _begin_sqlite_immediate_transaction(db)
     event = get_current_event(db)
     _lock_event_row(db, event.id)
-    _assert_draw_is_mutable(db, event)
+    _assert_draw_is_mutable(db, event, allow_redraw=allow_redraw)
     assert_song_pool_complete(
         db,
         event.id,
         participant_limit=event.settings.participant_song_limit,
         audience_limit=event.settings.audience_song_limit,
     )
-    locked_user_id = db.scalar(select(User.id).where(User.id == user_id, User.is_active.is_(True)).with_for_update())
-    if not locked_user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不可用")
 
-    song_rows = db.execute(select(Song.id, Song.submitted_by_id).where(Song.event_id == event.id)).all()
-    if not song_rows:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="曲池为空")
-
-    occupied_song_ids = set(
+    participants = list(
         db.scalars(
-            select(DrawAssignment.song_id).where(
-                DrawAssignment.event_id == event.id,
-                DrawAssignment.assigned_to_id != user_id,
-                DrawAssignment.status == "active",
-            )
+            select(User)
+            .options(selectinload(User.roles))
+            .where(User.identity == "participant", User.is_active.is_(True))
+            .order_by(User.id.asc())
         ).all()
     )
-    available = [(song_id, submitted_by_id) for song_id, submitted_by_id in song_rows if song_id not in occupied_song_ids]
-    if not available:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="剩余曲库为空，请稍后再试")
+    allocation_complete = _has_complete_allocation(db, event)
+    if not allow_redraw and not allocation_complete:
+        # Repair partial legacy allocations atomically and keep their rows as
+        # returned history instead of silently dropping them.
+        _retire_active_assignments(db, event.id)
 
-    draw_count = min(max(event.settings.draw_songs_per_participant, 1), len(available))
-    chosen_song_ids = _choose_song_ids(available, user_id, draw_count)
+    songs = list(db.scalars(select(Song).where(Song.event_id == event.id)).all())
+    if not participants:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有可参与全局分配的选手")
+    if not songs:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="曲池为空")
 
-    _retire_active_assignments(db, event.id, assigned_to_id=user_id)
+    if allocation_complete:
+        if not allow_redraw:
+            return _load_draw_results(db)
+        # Explicit administrator redraws intentionally replace only active
+        # allocation rows. Historical assignment rows remain queryable.
+        _retire_active_assignments(db, event.id)
+    elif not allow_redraw and db.scalar(
+        select(DrawAssignment.id).where(
+            DrawAssignment.event_id == event.id,
+            DrawAssignment.status == "active",
+        )
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已有不完整分配，请由管理员手动重新全局分配")
+    elif allow_redraw:
+        _retire_active_assignments(db, event.id)
+
+    per_user = max(event.settings.draw_songs_per_participant, 1)
+    slots = [(participant.id, slot) for participant in participants for slot in range(per_user)]
+    if len(songs) < len(slots):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="曲池曲目数量不足，无法完成全局分配")
+
+    randomizer = random.Random()
+    available_ids = [song.id for song in songs]
+    song_by_id = {song.id: song for song in songs}
+    candidates: dict[int, list[int]] = {}
+    for slot_index, (user_id, _slot) in enumerate(slots):
+        choices = [song_id for song_id in available_ids if song_by_id[song_id].submitted_by_id != user_id]
+        randomizer.shuffle(choices)
+        candidates[slot_index] = choices
+
+    song_to_slot: dict[int, int] = {}
+
+    def assign(slot_index: int, visited: set[int]) -> bool:
+        for song_id in candidates[slot_index]:
+            if song_id in visited:
+                continue
+            visited.add(song_id)
+            previous = song_to_slot.get(song_id)
+            if previous is None or assign(previous, visited):
+                song_to_slot[song_id] = slot_index
+                return True
+        return False
+
+    slot_order = list(range(len(slots)))
+    randomizer.shuffle(slot_order)
+    for slot_index in slot_order:
+        if not assign(slot_index, set()):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="排除自投曲目后无法完成全局分配")
+
+    slot_to_song = {slot_index: song_id for song_id, slot_index in song_to_slot.items()}
     assignments = [
         DrawAssignment(
             event_id=event.id,
             assigned_to_id=user_id,
-            song_id=song_id,
+            song_id=slot_to_song[slot_index],
             status="active",
             draw_kind="initial",
         )
-        for song_id in chosen_song_ids
+        for slot_index, (user_id, _slot) in enumerate(slots)
     ]
     db.add_all(assignments)
     db.commit()
-    return get_draw_results(db, user_id)
+    return _load_draw_results(db)
 
 
-def _choose_song_ids(song_rows: list[tuple[int, int]], user_id: int, draw_count: int) -> list[int]:
-    preferred = [row for row in song_rows if row[1] != user_id]
-    fallback = [row for row in song_rows if row[1] == user_id]
-    if len(preferred) >= draw_count:
-        chosen = random.sample(preferred, draw_count)
-    else:
-        chosen = random.sample(preferred, len(preferred)) + random.sample(fallback, draw_count - len(preferred))
-        random.shuffle(chosen)
-    return [song_id for song_id, _submitted_by_id in chosen]
+def _draw_is_due(event, db: Session) -> bool:
+    phase = get_phase_status(db, event)
+    now = datetime.utcnow()
+    registration = next((row for row in event.phases if row.phase == "registration"), None)
+    if registration and _utc_naive(registration.ends_at) > now:
+        return False
+    if _has_submission(db, event.id):
+        return False
+    if phase.active_phase in {"submission_1", "submission_2"}:
+        return True
+    if event.settings.phase_mode != "auto":
+        return False
+    guess = next((row for row in event.phases if row.phase == "guess"), None)
+    if guess:
+        return _utc_naive(guess.starts_at) > now
+    scheduled_ends = [_utc_naive(row.ends_at) for row in event.phases]
+    return bool(scheduled_ends) and max(scheduled_ends) > now
+
+
+def _has_complete_allocation(db: Session, event) -> bool:
+    participants = list(db.scalars(select(User.id).where(User.identity == "participant", User.is_active.is_(True))).all())
+    if not participants:
+        return False
+    per_user = max(event.settings.draw_songs_per_participant, 1)
+    rows = list(
+        db.execute(
+            select(DrawAssignment.assigned_to_id, DrawAssignment.song_id, Song.submitted_by_id)
+            .join(Song, Song.id == DrawAssignment.song_id)
+            .where(DrawAssignment.event_id == event.id, DrawAssignment.status == "active")
+        ).all()
+    )
+    if len(rows) != len(participants) * per_user:
+        return False
+    participant_ids = set(participants)
+    counts: dict[int, int] = {}
+    song_ids: set[int] = set()
+    for assigned_to_id, song_id, _submitted_by_id in rows:
+        if assigned_to_id not in participant_ids or song_id in song_ids:
+            return False
+        song_ids.add(song_id)
+        counts[assigned_to_id] = counts.get(assigned_to_id, 0) + 1
+    return all(counts.get(user_id, 0) == per_user for user_id in participants)
+
+
+def _has_submission(db: Session, event_id: int) -> bool:
+    return bool(
+        db.scalar(select(Submission.id).where(Submission.event_id == event_id).limit(1))
+        or db.scalar(select(JTrackSubmission.id).where(JTrackSubmission.event_id == event_id).limit(1))
+    )
 
 
 def _begin_sqlite_immediate_transaction(db: Session) -> None:
@@ -170,53 +220,25 @@ def _begin_sqlite_immediate_transaction(db: Session) -> None:
 
 
 def _lock_event_row(db: Session, event_id: int) -> None:
-    """Serialize draw writers on databases that support row-level locking."""
+    """Serialize allocation writers on databases that support row-level locks."""
     db.scalar(select(Event.id).where(Event.id == event_id).with_for_update())
 
 
 def _retire_active_assignments(db: Session, event_id: int, assigned_to_id: int | None = None) -> None:
-    """Release active songs while preserving rows referenced by swap history.
-
-    Swap request items keep a foreign-key reference to the original draw row so
-    rejected/cancelled requests can remain visible in the audit trail. Deleting
-    such an old assignment during a redraw would therefore fail with a
-    foreign-key error and be incorrectly reported as a concurrent draw
-    conflict. Unreferenced rows can still be removed, which keeps ordinary
-    redraws compact.
-    """
+    """Keep old allocation rows as returned history instead of deleting them."""
     stmt = select(DrawAssignment.id).where(
         DrawAssignment.event_id == event_id,
         DrawAssignment.status == "active",
     )
     if assigned_to_id is not None:
         stmt = stmt.where(DrawAssignment.assigned_to_id == assigned_to_id)
-    active_ids = set(db.scalars(stmt).all())
-    if not active_ids:
-        return
-
-    referenced_ids = set(
-        db.scalars(
-            select(SwapRequestItem.original_assignment_id).where(
-                SwapRequestItem.original_assignment_id.in_(active_ids)
-            )
-        ).all()
-    )
-    referenced_ids.update(
-        db.scalars(
-            select(SwapRequestItem.replacement_assignment_id).where(
-                SwapRequestItem.replacement_assignment_id.in_(active_ids)
-            )
-        ).all()
-    )
-    if referenced_ids:
+    active_ids = list(db.scalars(stmt).all())
+    if active_ids:
         db.execute(
             update(DrawAssignment)
-            .where(DrawAssignment.id.in_(referenced_ids))
+            .where(DrawAssignment.id.in_(active_ids))
             .values(status="returned")
         )
-    deletable_ids = active_ids - referenced_ids
-    if deletable_ids:
-        db.execute(delete(DrawAssignment).where(DrawAssignment.id.in_(deletable_ids)))
 
 
 def _is_retryable_operational_error(exc: OperationalError) -> bool:
@@ -224,16 +246,16 @@ def _is_retryable_operational_error(exc: OperationalError) -> bool:
     return any(fragment in message for fragment in ("database is locked", "deadlock", "lock timeout", "could not serialize"))
 
 
-def _assert_draw_is_mutable(db: Session, event) -> None:
-    if not get_phase_status(db, event).can("draw"):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前不在抽签阶段")
-    has_submission = db.scalar(select(Submission.id).where(Submission.event_id == event.id).limit(1))
-    has_legacy_j = db.scalar(select(JTrackSubmission.id).where(JTrackSubmission.event_id == event.id).limit(1))
-    if has_submission or has_legacy_j:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已有投稿文件，请先清空投稿后再重新抽签")
+def _assert_draw_is_mutable(db: Session, event, *, allow_redraw: bool) -> None:
+    phase = get_phase_status(db, event)
+    allowed_phases = {"submission_1"} if allow_redraw else {"submission_1", "submission_2"}
+    if phase.active_phase not in allowed_phases and not _draw_is_due(event, db):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="全局分配仅允许在投稿阶段开始后执行")
+    if _has_submission(db, event.id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已有投稿，不能重新全局分配")
 
 
-def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssignment]:
+def _load_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssignment]:
     event = get_current_event(db)
     stmt = (
         select(DrawAssignment)
@@ -243,8 +265,22 @@ def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssign
         )
         .where(DrawAssignment.event_id == event.id)
         .where(DrawAssignment.status == "active")
-        .order_by(DrawAssignment.created_at.desc())
+        .order_by(DrawAssignment.created_at.desc(), DrawAssignment.id.desc())
     )
-    if user_id:
+    if user_id is not None:
         stmt = stmt.where(DrawAssignment.assigned_to_id == user_id)
     return list(db.scalars(stmt).all())
+
+
+def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssignment]:
+    event = get_current_event(db)
+    phase = get_phase_status(db, event)
+    if phase.active_phase in {"submission_1", "submission_2"}:
+        ensure_global_draw(db)
+    return _load_draw_results(db, user_id)
+
+
+def _utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)

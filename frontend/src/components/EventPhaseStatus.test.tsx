@@ -5,7 +5,6 @@ import { formatCountdown, PHASE_LABELS, PhaseHeadline } from "./EventPhaseStatus
 
 const capabilities = {
   song_pool_edit: false,
-  draw: false,
   submission: false,
   swap: false,
   normal_submission_public: true,
@@ -66,9 +65,7 @@ describe("event phase status", () => {
     expect(screen.getByText("猜谱已截止")).toBeInTheDocument();
     expect(Object.keys(PHASE_LABELS)).toEqual([
       "registration",
-      "draw",
       "submission_1",
-      "swap",
       "submission_2",
       "guess",
     ]);

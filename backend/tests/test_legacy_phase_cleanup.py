@@ -25,9 +25,7 @@ LEGACY_PHASE_FIELDS = {
 }
 PHASES = (
     "registration",
-    "draw",
     "submission_1",
-    "swap",
     "submission_2",
     "guess",
 )

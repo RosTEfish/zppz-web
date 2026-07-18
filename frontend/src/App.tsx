@@ -96,7 +96,7 @@ function AppShell() {
   const links = [
     { label: "首页", to: "/", icon: Home, preload: loadHomePage },
     { label: "曲池", to: "/songs", icon: Music2, preload: loadSongPoolPage },
-    { label: "抽签", to: "/draw", icon: Sparkles, preload: loadDrawPage },
+    { label: "曲目分配", to: "/draw", icon: Sparkles, preload: loadDrawPage },
     { label: "投稿", to: "/submissions", icon: Upload, preload: loadSubmissionPage },
     { label: "猜谱", to: "/guess", icon: Vote, preload: loadGuessPage },
   ].filter(({ to }) => to !== "/guess" || showGuessEntry);

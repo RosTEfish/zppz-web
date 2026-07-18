@@ -6,9 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 EventPhaseName = Literal[
     "registration",
-    "draw",
     "submission_1",
-    "swap",
     "submission_2",
     "guess",
 ]
@@ -117,9 +115,18 @@ class EventPhaseRead(EventPhaseWrite):
     model_config = {"from_attributes": True}
 
 
+class EventPhaseSnapshotRead(BaseModel):
+    id: int
+    original_phase: str
+    starts_at: datetime
+    ends_at: datetime
+    source_id: int | None = None
+    migration_revision: str
+    created_at: datetime | None = None
+
+
 class PhaseCapabilitiesRead(BaseModel):
     song_pool_edit: bool = False
-    draw: bool = False
     submission: bool = False
     swap: bool = False
     normal_submission_public: bool = False
@@ -150,6 +157,7 @@ class EventPhasesRead(BaseModel):
     server_time: datetime
     next_transition_at: datetime | None = None
     phases: list[EventPhaseRead]
+    phase_snapshots: list[EventPhaseSnapshotRead] = Field(default_factory=list)
     capabilities: PhaseCapabilitiesRead
 
 
@@ -303,7 +311,7 @@ class SubmissionTrackUpdate(BaseModel):
 
 
 class SwapSelectionUpdate(BaseModel):
-    assignment_ids: list[int] = Field(min_length=1, max_length=3)
+    assignment_ids: list[int] = Field(min_length=1)
 
     @field_validator("assignment_ids")
     @classmethod
@@ -316,10 +324,23 @@ class SwapSelectionUpdate(BaseModel):
 class SwapItemRead(BaseModel):
     id: int
     position: int
-    original_assignment: DrawAssignmentRead
-    replacement_assignment: DrawAssignmentRead | None = None
+    original: DrawAssignmentRead
+    replacement: DrawAssignmentRead | None = None
 
     model_config = {"from_attributes": True}
+
+
+class SwapAssignmentRead(DrawAssignmentRead):
+    can_swap: bool = False
+    has_submission: bool = False
+
+
+class SwapRollRead(BaseModel):
+    id: int
+    round_id: int | None = None
+    status: str
+    created_at: datetime
+    items: list[SwapItemRead] = Field(default_factory=list)
 
 
 class SwapOverviewRead(BaseModel):
@@ -328,10 +349,10 @@ class SwapOverviewRead(BaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     round_status: str | None = None
-    request_id: int | None = None
-    request_status: str | None = None
-    error_message: str = ""
-    items: list[SwapItemRead] = Field(default_factory=list)
+    round_kind: str | None = None
+    roll_count: int = 0
+    assignments: list[SwapAssignmentRead] = Field(default_factory=list)
+    last_roll: SwapRollRead | None = None
 
 
 class SwapValidationRead(BaseModel):

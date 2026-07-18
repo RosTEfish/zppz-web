@@ -1,37 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 from secrets import token_hex
 
-from fastapi import HTTPException
-from sqlalchemy import select
+from fastapi import HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     DrawAssignment,
+    Event,
     EventPhase,
     Song,
     Submission,
+    SwapExcludedSong,
     SwapRequest,
     SwapRequestItem,
     SwapRound,
     User,
 )
+from app.modules.draw.service import ensure_global_draw
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import get_current_event
-
-
-MAX_SWAP_SELECTIONS = 3
-ACTIONABLE_SWAP_REQUEST_STATUSES = {"pending", "processing"}
-
-
-@dataclass(frozen=True)
-class SwapPlan:
-    slot_items: list[SwapRequestItem]
-    song_by_slot: dict[int, int]
-    pool_size: int
 
 
 def _begin_write_transaction(db: Session) -> None:
@@ -41,43 +32,83 @@ def _begin_write_transaction(db: Session) -> None:
     db.connection().exec_driver_sql("BEGIN IMMEDIATE")
 
 
-def _swap_phase(db: Session, event_id: int) -> EventPhase:
-    phase = db.scalar(
-        select(EventPhase).where(EventPhase.event_id == event_id, EventPhase.phase == "swap")
-    )
+def _stage2_window(db: Session, event_id: int) -> tuple[datetime, datetime]:
+    phase = db.scalar(select(EventPhase).where(EventPhase.event_id == event_id, EventPhase.phase == "submission_2"))
     if not phase:
-        raise HTTPException(status_code=409, detail="尚未配置换曲阶段时间")
-    return phase
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="尚未配置 Stage2 时间")
+    return phase.starts_at, phase.ends_at
+
+
+def _round_options():
+    return (
+        selectinload(SwapRound.requests)
+        .selectinload(SwapRequest.items)
+        .selectinload(SwapRequestItem.original_assignment)
+        .selectinload(DrawAssignment.assigned_to)
+        .selectinload(User.roles),
+        selectinload(SwapRound.requests)
+        .selectinload(SwapRequest.items)
+        .selectinload(SwapRequestItem.original_assignment)
+        .selectinload(DrawAssignment.song)
+        .selectinload(Song.submitter)
+        .selectinload(User.roles),
+        selectinload(SwapRound.requests)
+        .selectinload(SwapRequest.items)
+        .selectinload(SwapRequestItem.replacement_assignment)
+        .selectinload(DrawAssignment.assigned_to)
+        .selectinload(User.roles),
+        selectinload(SwapRound.requests)
+        .selectinload(SwapRequest.items)
+        .selectinload(SwapRequestItem.replacement_assignment)
+        .selectinload(DrawAssignment.song)
+        .selectinload(Song.submitter)
+        .selectinload(User.roles),
+        selectinload(SwapRound.requests).selectinload(SwapRequest.user).selectinload(User.roles),
+    )
+
+
+def get_swap_rounds(db: Session, event_id: int) -> list[SwapRound]:
+    return list(
+        db.scalars(
+            select(SwapRound)
+            .options(*_round_options())
+            .where(SwapRound.event_id == event_id)
+            .order_by(SwapRound.round_number.desc(), SwapRound.id.desc())
+        ).all()
+    )
 
 
 def get_swap_round(db: Session, event_id: int) -> SwapRound | None:
+    return next(iter(get_swap_rounds(db, event_id)), None)
+
+
+def _latest_continuous_round(db: Session, event_id: int) -> SwapRound | None:
     return db.scalar(
         select(SwapRound)
-        .options(
-            selectinload(SwapRound.requests)
-            .selectinload(SwapRequest.items)
-            .selectinload(SwapRequestItem.original_assignment)
-            .selectinload(DrawAssignment.song),
-            selectinload(SwapRound.requests)
-            .selectinload(SwapRequest.items)
-            .selectinload(SwapRequestItem.replacement_assignment)
-            .selectinload(DrawAssignment.song),
-            selectinload(SwapRound.requests).selectinload(SwapRequest.user),
-        )
-        .where(SwapRound.event_id == event_id, SwapRound.round_number == 1)
+        .where(SwapRound.event_id == event_id, SwapRound.round_kind == "continuous")
+        .order_by(SwapRound.round_number.desc(), SwapRound.id.desc())
+        .limit(1)
     )
 
 
-def ensure_swap_round(db: Session, event_id: int) -> SwapRound:
-    row = get_swap_round(db, event_id)
-    if row:
-        return row
-    phase = _swap_phase(db, event_id)
+def ensure_continuous_round(db: Session, event_id: int) -> SwapRound:
+    existing = _latest_continuous_round(db, event_id)
+    stage2_start, stage2_end = _stage2_window(db, event_id)
+    if existing and existing.status == "open":
+        existing.starts_at = stage2_start
+        existing.roll_ends_at = stage2_end
+        return existing
+
+    max_round = db.scalar(select(func.max(SwapRound.round_number)).where(SwapRound.event_id == event_id)) or 0
     row = SwapRound(
         event_id=event_id,
-        round_number=1,
-        starts_at=phase.starts_at,
-        ends_at=phase.ends_at,
+        round_number=int(max_round) + 1,
+        starts_at=stage2_start,
+        # Keep the legacy column as the original-style timestamp while the new
+        # effective deadline lives in roll_ends_at.
+        ends_at=stage2_end,
+        roll_ends_at=stage2_end,
+        round_kind="continuous",
         status="open",
         random_seed=token_hex(24),
     )
@@ -90,7 +121,7 @@ def active_assignments_for_user(db: Session, event_id: int, user_id: int) -> lis
     return list(
         db.scalars(
             select(DrawAssignment)
-            .options(selectinload(DrawAssignment.song).selectinload(Song.submitter))
+            .options(selectinload(DrawAssignment.song).selectinload(Song.submitter).selectinload(User.roles))
             .where(
                 DrawAssignment.event_id == event_id,
                 DrawAssignment.assigned_to_id == user_id,
@@ -101,26 +132,43 @@ def active_assignments_for_user(db: Session, event_id: int, user_id: int) -> lis
     )
 
 
-def save_swap_request(db: Session, user: User, assignment_ids: list[int]) -> SwapRound:
+def roll_for_user(db: Session, user: User, assignment_ids: list[int]) -> tuple[SwapRound, SwapRequest]:
+    try:
+        return _roll_for_user_once(db, user, assignment_ids)
+    except HTTPException:
+        db.rollback()
+        raise
+
+
+def _roll_for_user_once(db: Session, user: User, assignment_ids: list[int]) -> tuple[SwapRound, SwapRequest]:
     if user.identity != "participant":
-        raise HTTPException(status_code=403, detail="只有参赛者可以申请换曲")
-    if not 1 <= len(assignment_ids) <= MAX_SWAP_SELECTIONS or len(set(assignment_ids)) != len(assignment_ids):
-        raise HTTPException(status_code=400, detail="请选择 1 至 3 首不重复的抽中曲目")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有参赛者可以换曲")
+    if not assignment_ids or len(set(assignment_ids)) != len(assignment_ids):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请选择不重复的当前曲目")
 
     event = get_current_event(db)
     phase = get_phase_status(db, event)
     if not phase.can("swap"):
-        raise HTTPException(status_code=409, detail="当前不在换曲阶段")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前不在 Stage2 换曲时间")
 
+    ensure_global_draw(db)
     _begin_write_transaction(db)
     event = get_current_event(db)
-    round_row = ensure_swap_round(db, event.id)
-    if round_row.status != "open":
-        raise HTTPException(status_code=409, detail="换曲结果已经生成，不能再修改申请")
+    phase = get_phase_status(db, event)
+    if not phase.can("swap"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前不在 Stage2 换曲时间")
+
+    # The event row serializes all pool mutations on PostgreSQL; SQLite is
+    # serialized by BEGIN IMMEDIATE above.
+    db.scalar(select(Event.id).where(Event.id == event.id).with_for_update())
+    round_row = ensure_continuous_round(db, event.id)
+    if round_row.status != "open" or not _round_is_open(round_row):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Stage2 换曲时间已结束")
 
     assignments = list(
         db.scalars(
             select(DrawAssignment)
+            .options(selectinload(DrawAssignment.song))
             .where(
                 DrawAssignment.id.in_(assignment_ids),
                 DrawAssignment.event_id == event.id,
@@ -131,9 +179,8 @@ def save_swap_request(db: Session, user: User, assignment_ids: list[int]) -> Swa
         ).all()
     )
     by_id = {row.id: row for row in assignments}
-    missing = [item for item in assignment_ids if item not in by_id]
-    if missing:
-        raise HTTPException(status_code=400, detail="所选曲目已失效，请刷新后重试")
+    if len(by_id) != len(assignment_ids):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="部分曲目已失效，请刷新后重试")
 
     submitted_song_ids = set(
         db.scalars(
@@ -145,260 +192,97 @@ def save_swap_request(db: Session, user: User, assignment_ids: list[int]) -> Swa
         ).all()
     )
     if submitted_song_ids:
-        raise HTTPException(status_code=409, detail="已有投稿的曲目不能换曲，请先删除对应投稿")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已投稿曲目不能换曲，请先删除对应投稿")
 
-    request = db.scalar(
-        select(SwapRequest).where(SwapRequest.round_id == round_row.id, SwapRequest.user_id == user.id)
-    )
-    if not request:
-        request = SwapRequest(round_id=round_row.id, user_id=user.id, status="pending", error_message="")
-        db.add(request)
-        db.flush()
-    else:
-        for item in list(request.items):
-            db.delete(item)
-        db.flush()
-        request.status = "pending"
-        request.error_message = ""
-
-    for position, assignment_id in enumerate(assignment_ids):
-        db.add(
-            SwapRequestItem(
-                request_id=request.id,
-                original_assignment_id=assignment_id,
-                position=position,
-            )
-        )
-    db.commit()
-    return get_swap_round(db, event.id)  # type: ignore[return-value]
-
-
-def cancel_swap_request(db: Session, user: User) -> SwapRound:
-    if user.identity != "participant":
-        raise HTTPException(status_code=403, detail="只有参赛者可以取消换曲申请")
-
-    event = get_current_event(db)
-    phase = get_phase_status(db, event)
-    if not phase.can("swap"):
-        raise HTTPException(status_code=409, detail="当前不在换曲阶段")
-
-    _begin_write_transaction(db)
-    event = get_current_event(db)
-    db.scalar(
-        select(SwapRound.id)
-        .where(SwapRound.event_id == event.id, SwapRound.round_number == 1)
-        .with_for_update()
-    )
-    round_row = get_swap_round(db, event.id)
-    if not round_row:
-        raise HTTPException(status_code=404, detail="当前没有换曲申请")
-    if round_row.status != "open":
-        raise HTTPException(status_code=409, detail="换曲结果已经生成，不能再取消申请")
-
-    request = next((row for row in round_row.requests if row.user_id == user.id), None)
-    if not request:
-        raise HTTPException(status_code=404, detail="当前没有换曲申请")
-    if request.status not in ACTIONABLE_SWAP_REQUEST_STATUSES:
-        raise HTTPException(status_code=409, detail="当前申请不可取消")
-
-    request.status = "cancelled"
-    request.error_message = "用户取消申请"
-    db.commit()
-    return get_swap_round(db, event.id)  # type: ignore[return-value]
-
-
-def reject_swap_request(db: Session, request_id: int) -> SwapRound:
-    _begin_write_transaction(db)
-    event = get_current_event(db)
-    db.scalar(
-        select(SwapRound.id)
-        .where(SwapRound.event_id == event.id, SwapRound.round_number == 1)
-        .with_for_update()
-    )
-    round_row = get_swap_round(db, event.id)
-    if not round_row:
-        raise HTTPException(status_code=404, detail="当前没有换曲批次")
-    if round_row.status != "open":
-        raise HTTPException(status_code=409, detail="换曲结果已经生成，不能再驳回申请")
-
-    request = next((row for row in round_row.requests if row.id == request_id), None)
-    if not request:
-        raise HTTPException(status_code=404, detail="换曲申请不存在")
-    if request.status not in ACTIONABLE_SWAP_REQUEST_STATUSES:
-        raise HTTPException(status_code=409, detail="当前申请不可驳回")
-
-    request.status = "rejected"
-    request.error_message = "管理员驳回申请"
-    db.commit()
-    return get_swap_round(db, event.id)  # type: ignore[return-value]
-
-
-def _actionable_requests(round_row: SwapRound) -> list[SwapRequest]:
-    return [
-        request
-        for request in round_row.requests
-        if request.status in ACTIONABLE_SWAP_REQUEST_STATUSES and request.items
-    ]
-
-
-def _build_plan(db: Session, round_row: SwapRound) -> SwapPlan:
-    requests = _actionable_requests(round_row)
-    slot_items = [item for request in requests for item in request.items]
-    if not slot_items:
-        return SwapPlan(slot_items=[], song_by_slot={}, pool_size=0)
-
-    event_id = round_row.event_id
-    requested_assignment_ids = {item.original_assignment_id for item in slot_items}
+    selected_ids = set(assignment_ids)
     active_assignments = list(
         db.scalars(
             select(DrawAssignment).where(
-                DrawAssignment.event_id == event_id,
+                DrawAssignment.event_id == event.id,
                 DrawAssignment.status == "active",
             )
         ).all()
     )
-    active_by_id = {row.id: row for row in active_assignments}
-    if not requested_assignment_ids.issubset(active_by_id):
-        raise HTTPException(status_code=409, detail="部分换曲申请对应的抽签结果已经失效")
-
-    submitted = db.scalar(
-        select(Submission.id)
-        .join(
-            DrawAssignment,
-            (DrawAssignment.song_id == Submission.source_song_id)
-            & (DrawAssignment.assigned_to_id == Submission.user_id),
-        )
-        .where(
-            DrawAssignment.id.in_(requested_assignment_ids),
-            Submission.event_id == event_id,
-        )
-        .limit(1)
-    )
-    if submitted:
-        raise HTTPException(status_code=409, detail="有换曲目标已经投稿，请先删除投稿后再执行")
-
-    occupied_song_ids = {
-        row.song_id for row in active_assignments if row.id not in requested_assignment_ids
-    }
-    songs = list(db.scalars(select(Song).where(Song.event_id == event_id)).all())
+    occupied_song_ids = {row.song_id for row in active_assignments if row.id not in selected_ids}
+    songs = list(db.scalars(select(Song).where(Song.event_id == event.id)).all())
     pool = [song for song in songs if song.id not in occupied_song_ids]
-    if len(pool) < len(slot_items):
-        raise HTTPException(status_code=409, detail="换曲曲池数量不足，无法满足全部申请")
 
-    user_by_request = {request.id: request.user_id for request in requests}
-    returned_song_ids_by_user: dict[int, set[int]] = {}
-    for item in slot_items:
-        user_id = user_by_request[item.request_id]
-        returned_song_ids_by_user.setdefault(user_id, set()).add(
-            active_by_id[item.original_assignment_id].song_id
-        )
-    randomizer = random.Random(round_row.random_seed)
-    candidates: dict[int, list[int]] = {}
-    for slot_index, item in enumerate(slot_items):
-        user_id = user_by_request[item.request_id]
-        choices = [
-            song.id
-            for song in pool
-            if song.submitted_by_id != user_id
-            and song.id not in returned_song_ids_by_user[user_id]
-        ]
-        randomizer.shuffle(choices)
-        candidates[slot_index] = choices
-
-    slot_for_song: dict[int, int] = {}
-
-    def assign(slot_index: int, visited: set[int]) -> bool:
-        for song_id in candidates[slot_index]:
-            if song_id in visited:
-                continue
-            visited.add(song_id)
-            previous = slot_for_song.get(song_id)
-            if previous is None or assign(previous, visited):
-                slot_for_song[song_id] = slot_index
-                return True
-        return False
-
-    slot_order = list(range(len(slot_items)))
-    randomizer.shuffle(slot_order)
-    for slot_index in slot_order:
-        if not assign(slot_index, set()):
-            raise HTTPException(status_code=409, detail="排除自投曲和原曲后无法满足全部换曲申请")
-
-    song_by_slot = {slot_index: song_id for song_id, slot_index in slot_for_song.items()}
-    return SwapPlan(slot_items=slot_items, song_by_slot=song_by_slot, pool_size=len(pool))
-
-
-def validate_swap_round(db: Session) -> dict:
-    event = get_current_event(db)
-    round_row = get_swap_round(db, event.id)
-    if not round_row:
-        return {"ok": False, "valid": False, "request_count": 0, "item_count": 0, "pool_size": 0, "message": "当前没有换曲申请"}
-    requests = _actionable_requests(round_row)
-    if not requests:
-        return {
-            "ok": True,
-            "valid": True,
-            "request_count": 0,
-            "item_count": 0,
-            "pool_size": 0,
-            "message": "没有待处理的换曲申请，可以结束本轮",
-        }
-    try:
-        plan = _build_plan(db, round_row)
-    except HTTPException as exc:
-        return {
-            "ok": False,
-            "valid": False,
-            "request_count": len(requests),
-            "item_count": sum(len(row.items) for row in requests),
-            "pool_size": 0,
-            "message": str(exc.detail),
-        }
-    return {
-        "ok": True,
-        "valid": True,
-        "request_count": len(requests),
-        "item_count": len(plan.slot_items),
-        "pool_size": plan.pool_size,
-        "message": "全部换曲申请均可完成",
-    }
-
-
-def finalize_swap_round(db: Session) -> SwapRound:
-    _begin_write_transaction(db)
-    event = get_current_event(db)
-    # PostgreSQL needs an explicit row lock so concurrent finalize requests cannot
-    # both create replacements. SQLite is covered by BEGIN IMMEDIATE above.
-    db.scalar(
-        select(SwapRound.id)
-        .where(SwapRound.event_id == event.id, SwapRound.round_number == 1)
-        .with_for_update()
+    excluded_song_ids = set(
+        db.scalars(
+            select(SwapExcludedSong.song_id).where(
+                SwapExcludedSong.event_id == event.id,
+                SwapExcludedSong.user_id == user.id,
+            )
+        ).all()
     )
-    round_row = get_swap_round(db, event.id)
-    if not round_row:
-        raise HTTPException(status_code=400, detail="当前没有换曲申请")
-    if round_row.status == "finalized":
-        return round_row
+    excluded_song_ids.update(row.song_id for row in assignments)
+    candidates = [
+        song
+        for song in pool
+        if song.id not in excluded_song_ids and song.submitted_by_id != user.id
+    ]
+    if len(candidates) < len(assignments):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="换曲池中没有足够的新曲目")
 
-    plan = _build_plan(db, round_row)
-    for slot_index, item in enumerate(plan.slot_items):
-        original = item.original_assignment
+    chosen_songs = random.SystemRandom().sample(candidates, len(assignments))
+    for original in assignments:
         original.status = "returned"
+
+    request = SwapRequest(round_id=round_row.id, user_id=user.id, status="completed", error_message="")
+    db.add(request)
+    db.flush()
+    for position, original in enumerate(assignments):
+        already_excluded = db.scalar(
+            select(SwapExcludedSong.id).where(
+                SwapExcludedSong.event_id == event.id,
+                SwapExcludedSong.user_id == user.id,
+                SwapExcludedSong.song_id == original.song_id,
+            )
+        )
+        if already_excluded is None:
+            db.add(
+                SwapExcludedSong(
+                    event_id=event.id,
+                    user_id=user.id,
+                    song_id=original.song_id,
+                )
+            )
         replacement = DrawAssignment(
             event_id=event.id,
-            assigned_to_id=original.assigned_to_id,
-            song_id=plan.song_by_slot[slot_index],
+            assigned_to_id=user.id,
+            song_id=chosen_songs[position].id,
             status="active",
             draw_kind="swap",
             replaces_assignment_id=original.id,
         )
         db.add(replacement)
         db.flush()
-        item.replacement_assignment_id = replacement.id
-        item.request.status = "completed"
-        item.request.error_message = ""
+        db.add(
+            SwapRequestItem(
+                request_id=request.id,
+                original_assignment_id=original.id,
+                replacement_assignment_id=replacement.id,
+                position=position,
+            )
+        )
 
-    round_row.status = "finalized"
-    round_row.finalized_at = datetime.utcnow()
     db.commit()
-    return get_swap_round(db, event.id)  # type: ignore[return-value]
+    rounds = get_swap_rounds(db, event.id)
+    current = next((row for row in rounds if row.id == round_row.id), None)
+    if current is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="换曲记录读取失败")
+    saved_request = next((row for row in current.requests if row.id == request.id), None)
+    if saved_request is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="换曲结果读取失败")
+    return current, saved_request
+
+
+def _round_is_open(round_row: SwapRound) -> bool:
+    end = round_row.roll_ends_at or round_row.ends_at
+    return _utc_naive(end) > datetime.utcnow()
+
+
+def _utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)

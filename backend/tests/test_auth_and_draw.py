@@ -45,7 +45,8 @@ def register_user(client: TestClient, user_code: str, identity: str = "participa
 
 
 def login_user(client: TestClient, user_code: str) -> None:
-    response = client.post("/api/v1/auth/login", json={"user_code": user_code, "password": "secret123"})
+    password = "change-me-please" if user_code == "admin" else "secret123"
+    response = client.post("/api/v1/auth/login", json={"user_code": user_code, "password": password})
     assert response.status_code == 200, response.text
 
 
@@ -65,14 +66,14 @@ def assignment_count_for(user_code: str) -> int:
         event = get_current_event(db)
         user = db.scalar(select(User).where(User.user_code == user_code))
         assert user is not None
-        return len(db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id, DrawAssignment.assigned_to_id == user.id)).all())
+        return len(db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id, DrawAssignment.assigned_to_id == user.id, DrawAssignment.status == "active")).all())
 
 
 def set_manual_draw() -> None:
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         event.settings.phase_mode = "manual"
-        event.settings.manual_phase = "draw"
+        event.settings.manual_phase = "submission_1"
         db.commit()
 
 
@@ -279,7 +280,7 @@ def test_self_draw_requires_auth_and_participant(client: TestClient):
 
     register_user(client, "viewer1", "audience")
     response = client.post("/api/v1/draw/me")
-    assert response.status_code == 403
+    assert response.status_code == 410
 
 
 def test_draw_requires_every_active_account_including_admin_to_fill_song_pool(client: TestClient):
@@ -295,16 +296,15 @@ def test_draw_requires_every_active_account_including_admin_to_fill_song_pool(cl
     add_song_for("player1", "player-one")
     add_song_for("player1", "player-two")
 
-    login_user(client, "player1")
-    blocked = client.post("/api/v1/draw/me")
+    login_user(client, "admin")
+    blocked = client.post("/api/v1/admin/draw")
     assert blocked.status_code == 409
     assert "admin（1/2）" in blocked.json()["detail"]
     assert "viewer1（0/1）" in blocked.json()["detail"]
-    assert "player1" not in blocked.json()["detail"]
 
     add_song_for("admin", "admin-two")
     add_song_for("viewer1", "viewer-one")
-    allowed = client.post("/api/v1/draw/me")
+    allowed = client.post("/api/v1/admin/draw")
     assert allowed.status_code == 200, allowed.text
 
 
@@ -346,22 +346,26 @@ def test_participant_self_draw_creates_assignment(client: TestClient):
     register_user(client, "player1")
     register_user(client, "player2")
     add_song_for("player2", "other-song")
+    add_song_for("player2", "other-song-2")
+    add_song_for("player2", "other-song-3")
+    add_song_for("admin", "admin-song")
 
-    login_user(client, "player1")
-    response = client.post("/api/v1/draw/me")
+    login_user(client, "admin")
+    response = client.post("/api/v1/admin/draw")
 
     assert response.status_code == 200, response.text
     rows = response.json()
-    assert len(rows) == 1
-    assert rows[0]["assigned_to"]["user_code"] == "player1"
-    assert rows[0]["song"]["song_name"] == "other-song"
+    assert {row["assigned_to"]["user_code"] for row in rows} == {"admin", "player1", "player2"}
+    assert len({row["song"]["id"] for row in rows}) == 3
 
 
 def test_global_redraw_includes_admin_participants(client: TestClient):
     set_manual_draw()
     register_user(client, "player1")
     add_song_for("admin", "admin-song")
+    add_song_for("admin", "admin-song-2")
     add_song_for("player1", "player-song")
+    add_song_for("player1", "player-song-2")
     response = client.post("/api/v1/auth/login", json={"user_code": "admin", "password": "change-me-please"})
     assert response.status_code == 200, response.text
 
@@ -372,6 +376,9 @@ def test_global_redraw_includes_admin_participants(client: TestClient):
     assert second.status_code == 200, second.text
     assert {row["assigned_to"]["user_code"] for row in first.json()} == {"admin", "player1"}
     assert {row["assigned_to"]["user_code"] for row in second.json()} == {"admin", "player1"}
+    with SessionLocal() as db:
+        event = get_current_event(db)
+        assert len(list(db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id)).all())) == 4
 
 
 def test_self_redraw_replaces_existing_assignment(client: TestClient):
@@ -379,16 +386,17 @@ def test_self_redraw_replaces_existing_assignment(client: TestClient):
     register_user(client, "player1")
     register_user(client, "player2")
     register_user(client, "player3")
-    add_song_for("player2", "song-a")
-    add_song_for("player3", "song-b")
+    for user_code in ("player1", "player2", "player3"):
+        add_song_for(user_code, f"{user_code}-song-a")
+        add_song_for(user_code, f"{user_code}-song-b")
 
-    login_user(client, "player1")
-    first = client.post("/api/v1/draw/me")
-    second = client.post("/api/v1/draw/me")
+    login_user(client, "admin")
+    first = client.post("/api/v1/admin/draw")
+    second = client.post("/api/v1/admin/draw")
 
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
-    assert len(second.json()) == 1
+    assert len(second.json()) == 4
     assert assignment_count_for("player1") == 1
 
 
@@ -397,17 +405,18 @@ def test_self_draws_do_not_duplicate_songs_between_participants(client: TestClie
     register_user(client, "player1")
     register_user(client, "player2")
     add_song_for("player1", "player1-song")
+    add_song_for("player1", "player1-song-2")
     add_song_for("player2", "player2-song")
+    add_song_for("player2", "player2-song-2")
+    add_song_for("admin", "admin-song")
+    add_song_for("admin", "admin-song-2")
 
-    login_user(client, "player1")
-    first = client.post("/api/v1/draw/me")
-    login_user(client, "player2")
-    second = client.post("/api/v1/draw/me")
+    login_user(client, "admin")
+    first = client.post("/api/v1/admin/draw")
 
     assert first.status_code == 200, first.text
-    assert second.status_code == 200, second.text
-    song_ids = {first.json()[0]["song"]["id"], second.json()[0]["song"]["id"]}
-    assert len(song_ids) == 2
+    song_ids = [row["song"]["id"] for row in first.json()]
+    assert len(song_ids) == len(set(song_ids))
 
 
 def test_self_draw_prefers_non_self_song(client: TestClient):
@@ -415,35 +424,27 @@ def test_self_draw_prefers_non_self_song(client: TestClient):
     register_user(client, "player1")
     register_user(client, "player2")
     add_song_for("player1", "self-song")
+    add_song_for("player1", "self-song-2")
     add_song_for("player2", "other-song")
+    add_song_for("player2", "other-song-2")
+    add_song_for("admin", "admin-song")
+    add_song_for("admin", "admin-song-2")
 
-    login_user(client, "player1")
-    response = client.post("/api/v1/draw/me")
+    login_user(client, "admin")
+    response = client.post("/api/v1/admin/draw")
 
     assert response.status_code == 200, response.text
-    assert response.json()[0]["song"]["song_name"] == "other-song"
+    player_row = next(row for row in response.json() if row["assigned_to"]["user_code"] == "player1")
+    assert not player_row["song"]["song_name"].startswith("self-song")
 
 
 def test_self_draw_empty_or_exhausted_pool_returns_error(client: TestClient):
     set_manual_draw()
     register_user(client, "player1")
     login_user(client, "player1")
-    empty = client.post("/api/v1/draw/me")
+    empty = client.get("/api/v1/draw/results")
     assert empty.status_code == 400
     assert empty.json()["detail"] == "曲池为空"
-
-    register_user(client, "player2")
-    register_user(client, "owner1")
-    add_song_for("owner1", "only-song")
-
-    login_user(client, "player2")
-    occupied = client.post("/api/v1/draw/me")
-    assert occupied.status_code == 200, occupied.text
-
-    login_user(client, "player1")
-    exhausted = client.post("/api/v1/draw/me")
-    assert exhausted.status_code == 400
-    assert exhausted.json()["detail"] == "剩余曲库为空，请稍后再试"
     assert assignment_count_for("player1") == 0
 
 
@@ -454,19 +455,24 @@ def test_ten_users_can_refresh_repeatedly_without_duplicate_or_extra_assignments
         register_user(client, user_code)
         add_song_for(user_code, f"{user_code}-song-a")
         add_song_for(user_code, f"{user_code}-song-b")
+    add_song_for("admin", "admin-song-a")
+    add_song_for("admin", "admin-song-b")
 
-    for _round in range(5):
-        for user_code in user_codes:
-            login_user(client, user_code)
-            response = client.post("/api/v1/draw/me")
-            assert response.status_code == 200, response.text
-            assert len(response.json()) == 1
+    set_manual_draw()
+    for user_code in user_codes:
+        login_user(client, user_code)
+        response = client.get("/api/v1/draw/results")
+        assert response.status_code == 200, response.text
+        assert len(response.json()) == 1
+    login_user(client, user_codes[0])
+    repeated = client.get("/api/v1/draw/results")
+    assert repeated.status_code == 200
 
     with SessionLocal() as db:
         assignments = db.scalars(select(DrawAssignment)).all()
         assigned_user_counts = Counter(item.assigned_to_id for item in assignments)
         song_ids = [item.song_id for item in assignments]
 
-    assert len(assignments) == 10
+    assert len(assignments) == 11
     assert set(assigned_user_counts.values()) == {1}
     assert len(song_ids) == len(set(song_ids))

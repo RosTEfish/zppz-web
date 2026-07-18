@@ -12,9 +12,7 @@ from app.models import Event
 
 PHASES = (
     "registration",
-    "draw",
     "submission_1",
-    "swap",
     "submission_2",
     "guess",
 )
@@ -23,7 +21,6 @@ PHASES = (
 @dataclass(frozen=True)
 class PhaseCapabilities:
     song_pool_edit: bool = False
-    draw: bool = False
     submission: bool = False
     swap: bool = False
     normal_submission_public: bool = False
@@ -48,10 +45,8 @@ class PhaseStatus:
 
 CAPABILITIES: dict[str, PhaseCapabilities] = {
     "registration": PhaseCapabilities(song_pool_edit=True),
-    "draw": PhaseCapabilities(draw=True),
     "submission_1": PhaseCapabilities(submission=True),
-    "swap": PhaseCapabilities(swap=True),
-    "submission_2": PhaseCapabilities(submission=True),
+    "submission_2": PhaseCapabilities(submission=True, swap=True),
     "guess": PhaseCapabilities(
         normal_submission_public=True,
         author_guess=True,
