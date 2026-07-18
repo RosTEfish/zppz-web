@@ -10,6 +10,19 @@ export const PHASE_LABELS: Record<EventPhaseName, string> = {
   guess: "猜谱",
 };
 
+const PHASE_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+export function formatPhaseDateTime(value: string): string {
+  return PHASE_DATE_TIME_FORMATTER.format(new Date(value));
+}
+
 export function isGuessEnded(phases: EventPhasesRead, now?: number): boolean {
   if (phases.active_phase !== null) return false;
   const referenceTime = now ?? (phases.server_time ? new Date(phases.server_time).getTime() : Date.now());
@@ -70,7 +83,9 @@ export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
         {ordered.map((item, index) => {
           const active = item.phase === phases.active_phase;
           const completed = new Date(item.ends_at).getTime() <= referenceTime;
-          return <Box key={item.phase} sx={{ minWidth: 0, opacity: completed && !active ? 0.56 : 1 }}><LinearProgress variant="determinate" value={active || completed || index < currentIndex ? 100 : 0} color={active ? "primary" : "inherit"} sx={{ height: active ? 5 : 3, mb: 0.75 }} /><Typography variant="caption" sx={{ display: "block", fontWeight: active ? 800 : 650 }}>{PHASE_LABELS[item.phase]}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.ends_at).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" })}</Typography></Box>;
+          const startsAt = formatPhaseDateTime(item.starts_at);
+          const endsAt = formatPhaseDateTime(item.ends_at);
+          return <Box key={item.phase} sx={{ minWidth: 0, opacity: completed && !active ? 0.56 : 1 }}><LinearProgress variant="determinate" value={active || completed || index < currentIndex ? 100 : 0} color={active ? "primary" : "inherit"} sx={{ height: active ? 5 : 3, mb: 0.75 }} /><Typography variant="caption" sx={{ display: "block", fontWeight: active ? 800 : 650 }}>{PHASE_LABELS[item.phase]}</Typography><Typography component="span" variant="caption" color="text.secondary" aria-label={`开始时间 ${startsAt}，截止时间 ${endsAt}`} sx={{ display: "block", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{startsAt} → {endsAt}</Typography></Box>;
         })}
       </Box>
     </Paper>

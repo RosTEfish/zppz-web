@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventPhasesRead } from "../api/v1";
-import { formatCountdown, PHASE_LABELS, PhaseHeadline } from "./EventPhaseStatus";
+import { formatCountdown, formatPhaseDateTime, PHASE_LABELS, PhaseHeadline, PhaseTimeline } from "./EventPhaseStatus";
 
 const capabilities = {
   song_pool_edit: false,
@@ -20,6 +20,34 @@ describe("event phase status", () => {
 
   it("formats a stable day and time countdown", () => {
     expect(formatCountdown("2026-01-02T02:03:04Z", Date.parse("2026-01-01T00:00:00Z"))).toBe("1 天 02:03:04");
+  });
+
+  it("formats phase timestamps in Beijing time", () => {
+    expect(formatPhaseDateTime("2026-07-18T02:00:00Z")).toBe("7/18 10:00");
+    expect(formatPhaseDateTime("2026-07-20T14:00:00Z")).toBe("7/20 22:00");
+  });
+
+  it("shows both bounds for each phase in the timeline", () => {
+    const phases: EventPhasesRead = {
+      phase_mode: "auto",
+      active_phase: "guess",
+      server_time: "2026-07-19T00:00:00Z",
+      next_transition_at: "2026-07-20T14:00:00Z",
+      phases: [
+        {
+          phase: "guess",
+          starts_at: "2026-07-18T02:00:00Z",
+          ends_at: "2026-07-20T14:00:00Z",
+        },
+      ],
+      capabilities,
+    };
+
+    render(<PhaseTimeline phases={phases} />);
+
+    const range = screen.getByText("7/18 10:00 → 7/20 22:00");
+    expect(range).toBeInTheDocument();
+    expect(range).toHaveAttribute("aria-label", "开始时间 7/18 10:00，截止时间 7/20 22:00");
   });
 
   it("uses API server time to correct the client clock", () => {

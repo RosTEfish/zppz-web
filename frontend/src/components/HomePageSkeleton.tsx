@@ -25,7 +25,7 @@ export default function HomePageSkeleton() {
             <Box key={slot} sx={{ minWidth: 0 }}>
               <Skeleton variant="rounded" height={slot < 2 ? 5 : 3} />
               <Skeleton variant="text" width="72%" height={18} sx={{ mt: 0.25 }} />
-              <Skeleton variant="text" width="48%" height={16} />
+              <Skeleton variant="text" width="88%" height={16} />
             </Box>
           ))}
         </Box>
