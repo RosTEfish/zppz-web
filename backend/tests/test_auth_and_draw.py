@@ -97,6 +97,7 @@ def test_rule_can_be_viewed_inline(client: TestClient):
     response = client.get("/api/v1/assets/rule/view")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["cache-control"] == "no-cache"
     assert "attachment" not in response.headers.get("content-disposition", "")
     assert response.content.startswith(b"%PDF")
 

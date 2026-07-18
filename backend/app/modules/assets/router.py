@@ -15,6 +15,7 @@ from app.modules.events.service import get_current_event
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300", "Content-Encoding": "identity"}
+RULE_CACHE_HEADERS = {"Cache-Control": "no-cache", "Content-Encoding": "identity"}
 BACKGROUND_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400", "Content-Encoding": "identity"}
 IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"}
 
@@ -36,7 +37,7 @@ def download_rule():
     file = latest_file("rules", {".pdf"})
     if not file:
         raise HTTPException(status_code=404, detail="暂无规则文件")
-    return FileResponse(file, media_type="application/pdf", filename=file.name, headers=DOWNLOAD_CACHE_HEADERS)
+    return FileResponse(file, media_type="application/pdf", filename=file.name, headers=RULE_CACHE_HEADERS)
 
 
 @router.get("/rule/view")
@@ -44,7 +45,7 @@ def view_rule():
     file = latest_file("rules", {".pdf"})
     if not file:
         raise HTTPException(status_code=404, detail="暂无规则文件")
-    return FileResponse(file, media_type="application/pdf", headers=DOWNLOAD_CACHE_HEADERS)
+    return FileResponse(file, media_type="application/pdf", headers=RULE_CACHE_HEADERS)
 
 
 @router.get("/banlist")

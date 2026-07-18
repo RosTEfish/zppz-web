@@ -1,4 +1,5 @@
 from pathlib import Path
+import filecmp
 import logging
 import shutil
 from threading import Lock
@@ -142,5 +143,9 @@ def delete_stored_file(relative_path: str) -> None:
 def copy_asset_from_repo(source: Path, target_folder: str) -> None:
     settings = get_settings()
     target = settings.assets_dir / target_folder / source.name
-    if source.exists() and not target.exists():
-        shutil.copy2(source, target)
+    if not source.is_file():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_file() and filecmp.cmp(source, target, shallow=False):
+        return
+    shutil.copy2(source, target)
