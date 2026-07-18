@@ -15,6 +15,7 @@ from app.modules.events.service import assert_song_pool_complete, get_current_ev
 
 DRAW_RETRY_ATTEMPTS = 3
 DRAW_RETRY_DELAY_SECONDS = 0.04
+DRAW_CATEGORIES = ("A", "B", "C")
 
 
 def run_draw(db: Session, allow_redraw: bool = True) -> list[DrawAssignment]:
@@ -121,10 +122,23 @@ def _run_global_draw_once(db: Session, *, allow_redraw: bool) -> list[DrawAssign
     available_ids = [song.id for song in songs]
     song_by_id = {song.id: song for song in songs}
     candidates: dict[int, list[int]] = {}
-    for slot_index, (user_id, _slot) in enumerate(slots):
+    category_order_by_user: dict[int, list[str]] = {}
+    for user_id, _slot in slots:
+        if user_id not in category_order_by_user:
+            category_order = list(DRAW_CATEGORIES)
+            randomizer.shuffle(category_order)
+            category_order_by_user[user_id] = category_order
+    for slot_index, (user_id, slot) in enumerate(slots):
         choices = [song_id for song_id in available_ids if song_by_id[song_id].submitted_by_id != user_id]
-        randomizer.shuffle(choices)
-        candidates[slot_index] = choices
+        preferred_category = category_order_by_user[user_id][slot % len(DRAW_CATEGORIES)]
+        preferred = [song_id for song_id in choices if song_by_id[song_id].song_type.upper() == preferred_category]
+        fallback = [song_id for song_id in choices if song_by_id[song_id].song_type.upper() != preferred_category]
+        randomizer.shuffle(preferred)
+        randomizer.shuffle(fallback)
+        # Keep the global matching algorithm as the hard constraint, while
+        # ordering candidates so each participant's slots prefer A/B/C in a
+        # shuffled, non-repeating cycle before falling back to other types.
+        candidates[slot_index] = preferred + fallback
 
     song_to_slot: dict[int, int] = {}
 

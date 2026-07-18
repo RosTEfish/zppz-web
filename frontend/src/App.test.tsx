@@ -860,6 +860,7 @@ describe("Material application shell", () => {
     }));
 
     render(<App />);
+    expect(await screen.findByText("2")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("checkbox", { name: "管理员" }));
 
     await waitFor(() => expect(updateBodies).toHaveLength(1));

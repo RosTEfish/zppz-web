@@ -381,6 +381,53 @@ def test_global_redraw_includes_admin_participants(client: TestClient):
         assert len(list(db.scalars(select(DrawAssignment).where(DrawAssignment.event_id == event.id)).all())) == 4
 
 
+def test_global_draw_prefers_a_b_c_coverage_per_participant(client: TestClient):
+    set_manual_draw()
+    register_user(client, "player1")
+    register_user(client, "player2")
+    with SessionLocal() as db:
+        event = get_current_event(db)
+        event.settings.draw_songs_per_participant = 3
+        users = [
+            db.scalar(select(User).where(User.user_code == code))
+            for code in ("admin", "player1", "player2")
+        ]
+        assert all(users)
+        for user in users:
+            for category in ("A", "B", "C"):
+                db.add(
+                    Song(
+                        event_id=event.id,
+                        submitted_by_id=user.id,
+                        song_name=f"{user.user_code}-{category}",
+                        artist="artist",
+                        song_type=category,
+                        remark="",
+                    )
+                )
+        db.commit()
+
+    login_user(client, "admin")
+    response = client.post("/api/v1/admin/draw")
+    assert response.status_code == 200, response.text
+
+    with SessionLocal() as db:
+        event = get_current_event(db)
+        rows = list(
+            db.scalars(
+                select(DrawAssignment)
+                .where(DrawAssignment.event_id == event.id, DrawAssignment.status == "active")
+            ).all()
+        )
+        categories_by_user = {}
+        for row in rows:
+            song = db.get(Song, row.song_id)
+            categories_by_user.setdefault(row.assigned_to_id, set()).add(song.song_type)
+
+    assert categories_by_user
+    assert all(categories == {"A", "B", "C"} for categories in categories_by_user.values())
+
+
 def test_self_redraw_replaces_existing_assignment(client: TestClient):
     set_manual_draw()
     register_user(client, "player1")

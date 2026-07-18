@@ -58,6 +58,7 @@ export default function AdminUsers() {
           <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell>注册 QQ 号</TableCell>
                 <TableCell>账号</TableCell>
                 <TableCell>显示名</TableCell>
                 <TableCell>身份</TableCell>
@@ -79,6 +80,7 @@ export default function AdminUsers() {
 
                 return (
                   <TableRow key={user.id}>
+                    <TableCell sx={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{user.qq_id || "-"}</TableCell>
                     <TableCell>{user.user_code}</TableCell>
                     <TableCell>
                       <TextField
