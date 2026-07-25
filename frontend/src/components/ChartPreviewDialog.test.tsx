@@ -153,14 +153,18 @@ describe("ChartPreviewStage", () => {
 
     const first = await screen.findByTitle("测试歌曲 Majdata 在线预览") as HTMLIFrameElement;
     const firstSession = new URL(first.src).searchParams.get("zppz_session");
-    act(() => window.dispatchEvent(previewMessage(first.contentWindow!, {
+    const playerError = previewMessage(first.contentWindow!, {
       type: "zppz.preview.error",
       version: 2,
       session_id: firstSession,
       message: "谱面接收器初始化失败",
-    })));
+    });
+    await waitFor(() => {
+      act(() => window.dispatchEvent(playerError));
+      expect(screen.getByRole("button", { name: "重新加载预览" })).toBeInTheDocument();
+    });
 
-    fireEvent.click(await screen.findByRole("button", { name: "重新加载预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新加载预览" }));
     const second = await screen.findByTitle("测试歌曲 Majdata 在线预览") as HTMLIFrameElement;
     await waitFor(() => expect(new URL(second.src).searchParams.get("zppz_session")).not.toBe(firstSession));
     expect(manifest).toHaveBeenCalledTimes(2);
