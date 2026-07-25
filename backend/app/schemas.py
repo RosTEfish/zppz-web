@@ -297,6 +297,12 @@ class SubmissionUploadIntentRead(BaseModel):
     expires_at: datetime
 
 
+class SubmissionUploadCompletionRead(BaseModel):
+    status: Literal["processing", "completed", "failed", "expired"]
+    message: str = ""
+    submission: StoredFileRead | None = None
+
+
 class SubmissionTargetRead(BaseModel):
     song: SongRead
     source_kind: str

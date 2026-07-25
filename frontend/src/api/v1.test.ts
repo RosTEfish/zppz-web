@@ -49,7 +49,11 @@ describe("v1 API helpers", () => {
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
       if (path.includes("cloudflarestorage.com")) return new Response(null, { status: 200 });
-      return new Response(JSON.stringify({ id: 9, file_name: "entry.zip", file_size: 3 }), {
+      return new Response(JSON.stringify({
+        status: "completed",
+        message: "done",
+        submission: { id: 9, file_name: "entry.zip", file_size: 3 },
+      }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -64,6 +68,53 @@ describe("v1 API helpers", () => {
     ]);
     expect(calls[1].body).toBe(file);
     expect(calls[1].headers).toEqual({ "Content-Type": "application/zip" });
+  });
+
+  it("polls the exact upload intent until background processing completes", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      calls.push(path);
+      if (path.endsWith("/upload-intents")) {
+        return new Response(JSON.stringify({
+          id: "intent-background",
+          upload_url: "https://example.r2.cloudflarestorage.com/background",
+          method: "PUT",
+          headers: { "Content-Type": "application/zip" },
+          expires_at: "2026-07-17T12:00:00Z",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (path.includes("cloudflarestorage.com")) return new Response(null, { status: 200 });
+      if (path.endsWith("/complete")) {
+        return new Response(JSON.stringify({
+          status: "processing",
+          message: "processing",
+          submission: null,
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        status: "completed",
+        message: "done",
+        submission: { id: 10, file_name: "new-entry.zip", file_size: 3 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const upload = api.uploadSubmission(
+      4,
+      "normal",
+      new File([new Uint8Array([1, 2, 3])], "new-entry.zip"),
+    );
+    await vi.waitFor(() => expect(calls).toHaveLength(3));
+    await vi.advanceTimersByTimeAsync(1500);
+
+    await expect(upload).resolves.toMatchObject({ id: 10, file_name: "new-entry.zip" });
+    expect(calls).toEqual([
+      "/api/v1/submissions/upload-intents",
+      "https://example.r2.cloudflarestorage.com/background",
+      "/api/v1/submissions/upload-intents/intent-background/complete",
+      "/api/v1/submissions/upload-intents/intent-background/status",
+    ]);
   });
 
   it("does not complete an upload when the signed PUT fails", async () => {

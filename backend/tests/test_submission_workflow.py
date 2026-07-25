@@ -162,14 +162,21 @@ def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(c
 
     uploaded = client.put(intent["upload_url"], content=payload, headers=intent["headers"])
     assert uploaded.status_code == 204, uploaded.text
-    completed = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    started = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert started.status_code == 200, started.text
+    assert started.json()["status"] == "processing"
+    completed = client.get(f"/api/v1/submissions/upload-intents/{intent['id']}/status")
     assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+    submission = completed.json()["submission"]
+    assert submission is not None
     repeated = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
     assert repeated.status_code == 200
-    assert repeated.json()["id"] == completed.json()["id"]
+    assert repeated.json()["status"] == "completed"
+    assert repeated.json()["submission"]["id"] == submission["id"]
 
     with SessionLocal() as db:
-        row = db.get(Submission, completed.json()["id"])
+        row = db.get(Submission, submission["id"])
         upload_intent = db.get(SubmissionUploadIntent, intent["id"])
         assert row is not None and upload_intent is not None
         assert row.storage_path.startswith(f"events/{row.event_id}/submissions/{row.id}/source/")
@@ -213,6 +220,70 @@ def test_upload_intent_rejects_mime_and_size_mismatches(client: TestClient):
     intent = created.json()
     mismatch = client.put(intent["upload_url"], content=payload, headers=intent["headers"])
     assert mismatch.status_code == 422
+
+
+def test_background_upload_reports_parse_failure_without_creating_submission(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes(title="")
+
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "invalid.zip",
+            "file_size": len(payload),
+            "content_type": "application/zip",
+        },
+    )
+    intent = created.json()
+    assert client.put(
+        intent["upload_url"],
+        content=payload,
+        headers=intent["headers"],
+    ).status_code == 204
+
+    started = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert started.status_code == 200
+    assert started.json()["status"] == "processing"
+    result = client.get(f"/api/v1/submissions/upload-intents/{intent['id']}/status")
+    assert result.status_code == 200
+    assert result.json()["status"] == "failed"
+    assert result.json()["submission"] is None
+    with SessionLocal() as db:
+        assert db.scalar(select(Submission.id).where(Submission.source_song_id == own_id)) is None
+
+
+def test_processing_intent_blocks_a_new_upload_for_the_same_song(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes()
+    metadata = {
+        "song_id": own_id,
+        "track": "normal",
+        "file_name": "first.zip",
+        "file_size": len(payload),
+        "content_type": "application/zip",
+    }
+    created = client.post("/api/v1/submissions/upload-intents", json=metadata)
+    assert created.status_code == 200
+    with SessionLocal() as db:
+        intent = db.get(SubmissionUploadIntent, created.json()["id"])
+        assert intent is not None
+        intent.status = "processing"
+        db.commit()
+
+    blocked = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={**metadata, "file_name": "second.zip"},
+    )
+    assert blocked.status_code == 409
+    assert "上一份投稿仍在服务器处理中" in blocked.json()["detail"]
 
 
 def test_background_storage_cleanup_keeps_failures_and_retries(monkeypatch: pytest.MonkeyPatch):

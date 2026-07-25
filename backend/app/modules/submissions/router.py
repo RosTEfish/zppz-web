@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import logging
 from pathlib import Path
 import shutil
 import tempfile
+from threading import Lock
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -15,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.security import get_current_user, is_owner, require_role
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission, SubmissionUploadIntent, User
 from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song, serialize_submissions
@@ -63,6 +65,7 @@ from app.schemas import (
     StoredFileRead,
     SubmissionTargetsResponse,
     SubmissionTrackUpdate,
+    SubmissionUploadCompletionRead,
     SubmissionUploadIntentCreate,
     SubmissionUploadIntentRead,
 )
@@ -73,6 +76,9 @@ admin_router = APIRouter(prefix="/admin/submissions", tags=["admin-submissions"]
 
 MAX_BATCH_FILES = 500
 MAX_BATCH_SOURCE_BYTES = 10 * 1024 * 1024 * 1024
+logger = logging.getLogger(__name__)
+_processing_intent_ids: set[str] = set()
+_processing_intents_lock = Lock()
 
 
 def _can_manage_submissions(user: User) -> bool:
@@ -108,6 +114,30 @@ def _create_upload_intent(
     if not safe_file_name or any(ord(character) < 32 for character in safe_file_name):
         raise HTTPException(status_code=422, detail="投稿文件名无效")
     suffix = validate_upload_metadata(safe_file_name, file_size, content_type)
+    in_progress = None
+    if submission_id is not None:
+        in_progress = db.scalar(
+            select(SubmissionUploadIntent.id).where(
+                SubmissionUploadIntent.event_id == event_id,
+                SubmissionUploadIntent.replace_submission_id == submission_id,
+                SubmissionUploadIntent.status == "processing",
+            )
+        )
+    elif song_id is not None:
+        in_progress = db.scalar(
+            select(SubmissionUploadIntent.id).where(
+                SubmissionUploadIntent.event_id == event_id,
+                SubmissionUploadIntent.user_id == user.id,
+                SubmissionUploadIntent.source_song_id == song_id,
+                SubmissionUploadIntent.replace_submission_id.is_(None),
+                SubmissionUploadIntent.status == "processing",
+            )
+        )
+    if in_progress:
+        raise HTTPException(
+            status_code=409,
+            detail="上一份投稿仍在服务器处理中，请等待完成并刷新页面后再替换",
+        )
     intent_id = uuid4().hex
     intent = SubmissionUploadIntent(
         id=intent_id,
@@ -580,7 +610,9 @@ async def upload_intent_local_content(
         raise HTTPException(status_code=404, detail="上传意图不存在")
     if intent.is_admin and not _can_manage_submissions(user):
         raise HTTPException(status_code=403, detail="没有权限执行此操作")
-    if intent.status != "pending" or intent.expires_at < datetime.utcnow():
+    if intent.status not in {"pending", "processing"} or (
+        intent.status == "pending" and intent.expires_at < datetime.utcnow()
+    ):
         raise HTTPException(status_code=410, detail="上传意图已失效")
     if request.headers.get("content-type", "").split(";", 1)[0].strip() != intent.content_type:
         raise HTTPException(status_code=422, detail="上传 Content-Type 与签名不一致")
@@ -614,7 +646,9 @@ def _complete_intent(
             return result
     if intent.status == "failed":
         raise HTTPException(status_code=422, detail=intent.error_message or "上传校验失败")
-    if intent.status != "pending" or intent.expires_at < datetime.utcnow():
+    if intent.status not in {"pending", "processing"} or (
+        intent.status == "pending" and intent.expires_at < datetime.utcnow()
+    ):
         try:
             get_object_store().delete(intent.object_key)
         except Exception:
@@ -767,7 +801,96 @@ def _complete_intent(
     return row
 
 
-@router.post("/upload-intents/{intent_id}/complete", response_model=StoredFileRead)
+def _completion_payload(db: Session, intent: SubmissionUploadIntent) -> dict:
+    submission = None
+    if intent.result_submission_id:
+        row = db.scalar(
+            select(Submission)
+            .options(*_submission_options())
+            .where(Submission.id == intent.result_submission_id)
+        )
+        if row:
+            submission = serialize_submissions(db, [row])[0]
+    status_value = "completed" if submission else intent.status
+    if status_value not in {"processing", "completed", "failed", "expired"}:
+        status_value = "processing"
+    messages = {
+        "processing": "服务器正在解析谱面并生成投稿素材",
+        "completed": "投稿处理完成",
+        "failed": intent.error_message or "投稿处理失败，请重新选择文件",
+        "expired": "上传已过期，请重新选择文件",
+    }
+    return {
+        "status": status_value,
+        "message": messages[status_value],
+        "submission": submission,
+    }
+
+
+def _process_intent_in_background(intent_id: str) -> None:
+    try:
+        with SessionLocal() as db:
+            intent = db.get(SubmissionUploadIntent, intent_id)
+            if not intent or intent.status != "processing":
+                return
+            user = db.get(User, intent.user_id)
+            if not user:
+                intent.status = "failed"
+                intent.error_message = "上传用户不存在"
+                db.commit()
+                return
+            try:
+                _complete_intent(intent, user, db, BackgroundTasks())
+                drain_storage_deletions_in_background()
+            except Exception as exc:
+                db.rollback()
+                current = db.get(SubmissionUploadIntent, intent_id)
+                if current and current.result_submission_id:
+                    current.status = "completed"
+                    current.error_message = ""
+                    db.commit()
+                elif current and current.status != "failed":
+                    current.status = "failed"
+                    current.error_message = (
+                        str(exc.detail)
+                        if isinstance(exc, HTTPException)
+                        else "投稿处理失败，请重新选择文件后重试"
+                    )[:500]
+                    db.commit()
+                logger.exception("Background submission processing failed for intent=%s", intent_id)
+    finally:
+        with _processing_intents_lock:
+            _processing_intent_ids.discard(intent_id)
+
+
+def _ensure_intent_processing(
+    db: Session,
+    intent: SubmissionUploadIntent,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    if intent.result_submission_id:
+        return _completion_payload(db, intent)
+    if intent.status in {"failed", "expired"}:
+        return _completion_payload(db, intent)
+    if intent.status == "pending":
+        if intent.expires_at < datetime.utcnow():
+            intent.status = "expired"
+            db.commit()
+            return _completion_payload(db, intent)
+        intent.status = "processing"
+        intent.error_message = ""
+        db.commit()
+    if intent.status == "processing":
+        with _processing_intents_lock:
+            should_schedule = intent.id not in _processing_intent_ids
+            if should_schedule:
+                _processing_intent_ids.add(intent.id)
+        if should_schedule:
+            background_tasks.add_task(_process_intent_in_background, intent.id)
+    return _completion_payload(db, intent)
+
+
+@router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionUploadCompletionRead)
 def complete_submission_upload_intent(
     intent_id: str,
     background_tasks: BackgroundTasks,
@@ -777,7 +900,20 @@ def complete_submission_upload_intent(
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != user.id or intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return serialize_submissions(db, [_complete_intent(intent, user, db, background_tasks)])[0]
+    return _ensure_intent_processing(db, intent, background_tasks)
+
+
+@router.get("/upload-intents/{intent_id}/status", response_model=SubmissionUploadCompletionRead)
+def submission_upload_intent_status(
+    intent_id: str,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    intent = db.get(SubmissionUploadIntent, intent_id)
+    if not intent or intent.user_id != user.id or intent.is_admin:
+        raise HTTPException(status_code=404, detail="上传意图不存在")
+    return _ensure_intent_processing(db, intent, background_tasks)
 
 
 @router.post("", response_model=StoredFileRead, deprecated=True)
@@ -1040,7 +1176,7 @@ def create_admin_submission_upload_intent(
     return _intent_response(intent)
 
 
-@admin_router.post("/upload-intents/{intent_id}/complete", response_model=StoredFileRead)
+@admin_router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionUploadCompletionRead)
 def complete_admin_submission_upload_intent(
     intent_id: str,
     background_tasks: BackgroundTasks,
@@ -1050,7 +1186,20 @@ def complete_admin_submission_upload_intent(
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != admin.id or not intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return serialize_submissions(db, [_complete_intent(intent, admin, db, background_tasks)])[0]
+    return _ensure_intent_processing(db, intent, background_tasks)
+
+
+@admin_router.get("/upload-intents/{intent_id}/status", response_model=SubmissionUploadCompletionRead)
+def admin_submission_upload_intent_status(
+    intent_id: str,
+    background_tasks: BackgroundTasks,
+    admin: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    intent = db.get(SubmissionUploadIntent, intent_id)
+    if not intent or intent.user_id != admin.id or not intent.is_admin:
+        raise HTTPException(status_code=404, detail="上传意图不存在")
+    return _ensure_intent_processing(db, intent, background_tasks)
 
 
 @admin_router.post("/batch-delete", response_model=BatchDeleteResponse)

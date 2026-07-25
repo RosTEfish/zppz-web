@@ -109,6 +109,12 @@ export interface SubmissionUploadIntent {
   expires_at: string;
 }
 
+export interface SubmissionUploadCompletion {
+  status: "processing" | "completed" | "failed" | "expired";
+  message: string;
+  submission: StoredFileRead | null;
+}
+
 export interface SongRead {
   id: number;
   song_name: string;
@@ -615,7 +621,28 @@ async function uploadSubmissionThroughIntent(
   const completePath = adminSubmissionId === undefined
     ? `/submissions/upload-intents/${intent.id}/complete`
     : `/admin/submissions/upload-intents/${intent.id}/complete`;
-  return apiRequest<StoredFileRead>(completePath, { method: "POST" });
+  const statusPath = adminSubmissionId === undefined
+    ? `/submissions/upload-intents/${intent.id}/status`
+    : `/admin/submissions/upload-intents/${intent.id}/status`;
+  let completion = await apiRequest<SubmissionUploadCompletion>(completePath, { method: "POST" });
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let lastPollingError: Error | null = null;
+  while (completion.status === "processing" && Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    try {
+      completion = await apiRequest<SubmissionUploadCompletion>(statusPath, { cache: "no-store" });
+      lastPollingError = null;
+    } catch (error) {
+      lastPollingError = error instanceof Error ? error : new Error("查询投稿处理状态失败");
+    }
+  }
+  if (completion.status === "completed" && completion.submission) {
+    return completion.submission;
+  }
+  if (completion.status === "processing") {
+    throw lastPollingError ?? new Error("投稿仍在服务器处理中，请稍后刷新页面查看结果");
+  }
+  throw new Error(completion.message || "投稿处理失败，请重新选择文件");
 }
 
 export const api = {
