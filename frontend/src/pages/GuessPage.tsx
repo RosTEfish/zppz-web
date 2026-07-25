@@ -1,8 +1,8 @@
 import { type ComponentProps, memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, Chip, Dialog, DialogContent, DialogTitle as MuiDialogTitle, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, Chip, Dialog, DialogContent, DialogTitle as MuiDialogTitle, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { CheckCheck, ClipboardList, Clock3, Download, Eye, Heart, MessageSquare, Music2, SlidersHorizontal, Sparkles, Vote, X } from "lucide-react";
 import { api, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
-import { ChartPreviewDialog } from "../components/ChartPreviewDialog";
+import { ChartPreviewStage } from "../components/ChartPreviewDialog";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
 import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
 import { useAuth } from "../contexts/AuthContext";
@@ -192,21 +192,45 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
   const [comments, setComments] = useState<GuessCommentRead[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewActive, setPreviewActive] = useState(false);
   const { isLoggedIn } = useAuth();
+  const theme = useTheme();
+  const mobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   useEffect(() => {
     if (!chart) return;
     setComments([]);
+    setComment("");
     setError("");
-    if (canReadHistory) void api.comments(chart.id).then(setComments).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
+    setPreviewActive(false);
+    if (canReadHistory) {
+      void api.comments(chart.id).then(setComments).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
+    }
   }, [canReadHistory, chart?.id]);
+
   if (!chart) return null;
+  const isJ = chart.lane === "j";
   const isExhibition = chart.source_submission_type === "exhibition" || chart.lane === "exhibition";
   const candidates = designerGuesses?.candidates ?? EMPTY_DESIGNER_CANDIDATES;
   const canGuess = designerGuesses?.can_guess ?? false;
   const emptyLabel = canGuess ? (candidates.length ? "未选择" : "暂无谱师候选") : "当前不可竞猜";
   const loveSelected = chart.my_votes.includes("love");
   const loveQuotaExhausted = !loveSelected && voteQuota !== null && voteQuota[chart.love_vote_bucket]?.remaining <= 0;
+
+  function closeDetail() {
+    setPreviewActive(false);
+    onClose();
+  }
+
+  async function download() {
+    try {
+      await api.downloadChart(chart.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "下载失败");
+      throw reason;
+    }
+  }
+
   async function toggleVote(type: "love" | "funny") {
     const selected = chart.my_votes.includes(type);
     const result = selected ? await api.unvote(chart.id, type) : await api.vote(chart.id, type);
@@ -219,18 +243,177 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
       my_votes: myVotes,
     });
   }
-  async function sendComment() { if (!comment.trim()) return; const created = await api.createComment(chart.id, comment.trim()); setComments((current) => [created, ...current]); setComment(""); }
-  return (<>
-    <Dialog open onClose={onClose} fullWidth maxWidth="md" fullScreen={false}>
-      <DialogTitle sx={{ pr: 6 }}><Typography variant="h2">{chart.title}</Typography><Stack direction="row" spacing={0.75} useFlexGap sx={{ my: 1, flexWrap: "wrap" }}><Chip size="small" label={chart.level} /><Chip size="small" color={chart.lane === "j" ? "secondary" : chart.source_submission_type === "exhibition" ? "info" : "default"} variant={chart.lane === "j" || chart.source_submission_type === "exhibition" ? "filled" : "outlined"} label={chart.lane === "j" ? "J 谱" : chart.source_submission_type === "exhibition" ? "场外" : "普通谱"} /><Chip size="small" color={chart.is_self_selected ? "warning" : "default"} variant={chart.is_self_selected ? "filled" : "outlined"} label={chart.is_self_selected ? "自选" : "非自选"} /></Stack><Typography variant="body2" color="text.secondary">曲师：{chart.author}</Typography><Typography variant="body2" color="text.secondary">谱师：{chart.designer || "请填写做谱人"}</Typography><Stack direction="row" spacing={1} useFlexGap sx={{ mt: 0.5, alignItems: "center", flexWrap: "wrap" }}><Typography variant="caption" color="text.secondary">查看 {chart.plays} 次</Typography><Typography variant="caption" color="text.secondary" aria-label={`音频时长 ${formatDuration(chart.track_duration_seconds)}`} sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}><Clock3 size={13} aria-hidden="true" />{formatDuration(chart.track_duration_seconds)}</Typography>{chart.is_long_track || (chart.track_duration_seconds ?? 0) > 240 ? <Chip size="small" color="warning" variant="outlined" label="Long Track" aria-label="Long Track，音频超过 4 分钟" /> : null}</Stack><IconButton aria-label="关闭谱面详情" onClick={onClose} sx={{ position: "absolute", right: 12, top: 12 }}><X size={20} /></IconButton></DialogTitle>
-      <DialogContent dividers>
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 280px" }, gap: 3 }}>
-          {chart.cover_path ? <Box component="img" src={chart.cover_path} alt="" sx={{ width: "100%", maxHeight: 420, objectFit: "cover", borderRadius: 1 }} /> : <Box sx={{ minHeight: 260, display: "grid", placeItems: "center", bgcolor: "background.default" }}><Music2 size={42} /></Box>}
-          <Stack spacing={2}><Button variant="outlined" startIcon={<Eye size={17} />} disabled={chart.can_preview === false} onClick={() => setPreviewOpen(true)}>在线预览</Button><Button variant="contained" startIcon={<Download size={17} />} disabled={chart.can_download === false} onClick={() => void api.downloadChart(chart.id).catch((err) => setError(err instanceof Error ? err.message : "下载失败"))}>下载投稿</Button>{!isExhibition ? <Stack direction="row" spacing={1}><Button fullWidth variant={loveSelected ? "contained" : "outlined"} color="error" startIcon={<Heart size={16} />} disabled={!isLoggedIn || !canVote || chart.can_vote === false || loveQuotaExhausted} aria-label={`真爱票 ${chart.love_votes}`} onClick={() => void toggleVote("love").catch((err) => setError(err.message))}>{chart.love_votes}</Button><Button fullWidth variant={chart.my_votes.includes("funny") ? "contained" : "outlined"} color="secondary" startIcon={<Sparkles size={16} />} disabled={!isLoggedIn || !canVote || chart.can_vote === false} aria-label={`欢乐票 ${chart.funny_votes}`} onClick={() => void toggleVote("funny").catch((err) => setError(err.message))}>{chart.funny_votes}</Button></Stack> : null}<FormControl size="small" sx={{ display: chart.lane === "j" || chart.source_submission_type === "exhibition" ? "none" : undefined }} disabled={guessBusy || !canGuess || !candidates.length || chart.can_author_guess === false}><InputLabel shrink>谱师猜测</InputLabel><Select label="谱师猜测" displayEmpty value={guessedUserId ?? ""} inputProps={{ "aria-label": `谱师猜测 ${chart.title}` }} renderValue={(value) => value ? candidateLabels.get(Number(value)) || "-" : <em>{emptyLabel}</em>} onChange={(event) => onGuess(chart, event.target.value ? Number(event.target.value) : null)}><MenuItem value=""><em>未选择</em></MenuItem>{candidates.map((item) => <MenuItem key={item.user_id} value={item.user_id}>{item.display_id}</MenuItem>)}</Select></FormControl>{error ? <Alert severity="error" aria-live="polite">{error}</Alert> : null}</Stack>
+
+  async function sendComment() {
+    if (!comment.trim()) return;
+    const created = await api.createComment(chart.id, comment.trim());
+    setComments((current) => [created, ...current]);
+    setComment("");
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={closeDetail}
+      fullWidth
+      maxWidth="lg"
+      fullScreen={mobile}
+      slotProps={{ paper: { sx: { overflow: "hidden", maxHeight: { sm: "calc(100dvh - 32px)" } } } }}
+    >
+      <DialogTitle sx={{ px: { xs: 2, sm: 3 }, py: 1.75, borderBottom: 1, borderColor: "divider" }}>
+        <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: ".12em" }}>谱面详情</Typography>
+            <Typography variant="h2" noWrap title={chart.title}>{chart.title}</Typography>
+          </Box>
+          <IconButton aria-label="关闭谱面详情" onClick={closeDetail}><X size={20} /></IconButton>
+        </Stack>
+      </DialogTitle>
+      <DialogContent sx={{ p: { xs: 0, sm: 3 }, bgcolor: "background.default" }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) 320px" },
+            gap: { xs: 0, sm: 3 },
+            alignItems: "start",
+          }}
+        >
+          <ChartPreviewStage
+            active={previewActive}
+            source="guess"
+            sourceId={chart.id}
+            title={chart.title}
+            coverUrl={chart.cover_path}
+            levelLabel={chart.level}
+            canPreview={chart.can_preview !== false}
+            onActivate={() => setPreviewActive(true)}
+            onDownload={download}
+          />
+
+          <Stack
+            spacing={2}
+            sx={{
+              p: { xs: 2, sm: 0 },
+              position: { md: "sticky" },
+              top: { md: 0 },
+            }}
+          >
+            <Box>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1.5 }}>
+                <Chip label={chart.level} color="primary" />
+                <Chip
+                  color={isJ ? "secondary" : isExhibition ? "info" : "default"}
+                  variant={isJ || isExhibition ? "filled" : "outlined"}
+                  label={isJ ? "J 谱" : isExhibition ? "场外" : "普通谱"}
+                />
+                <Chip
+                  color={chart.is_self_selected ? "warning" : "default"}
+                  variant={chart.is_self_selected ? "filled" : "outlined"}
+                  label={chart.is_self_selected ? "自选" : "非自选"}
+                />
+              </Stack>
+              <Typography variant="h2" sx={{ overflowWrap: "anywhere" }}>{chart.title}</Typography>
+              <Stack spacing={0.5} sx={{ mt: 1.5 }}>
+                <Typography variant="body2" color="text.secondary"><Box component="span" sx={{ fontWeight: 750, color: "text.primary" }}>曲师</Box>　{chart.author}</Typography>
+                <Typography variant="body2" color="text.secondary"><Box component="span" sx={{ fontWeight: 750, color: "text.primary" }}>谱师</Box>　{chart.designer || "请填写做谱人"}</Typography>
+              </Stack>
+              <Stack direction="row" spacing={1.5} useFlexGap sx={{ mt: 1.5, alignItems: "center", flexWrap: "wrap" }}>
+                <Typography variant="caption" color="text.secondary">查看 {chart.plays} 次</Typography>
+                <Typography variant="caption" color="text.secondary" aria-label={`音频时长 ${formatDuration(chart.track_duration_seconds)}`} sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                  <Clock3 size={13} aria-hidden="true" />{formatDuration(chart.track_duration_seconds)}
+                </Typography>
+                {chart.is_long_track || (chart.track_duration_seconds ?? 0) > 240 ? <Chip size="small" color="warning" variant="outlined" label="Long Track" aria-label="Long Track，音频超过 4 分钟" /> : null}
+              </Stack>
+            </Box>
+
+            <Stack spacing={1}>
+              <Button
+                variant={previewActive ? "outlined" : "contained"}
+                startIcon={<Eye size={17} />}
+                disabled={chart.can_preview === false}
+                onClick={() => setPreviewActive((current) => !current)}
+              >
+                {previewActive ? "退出预览并释放播放器" : "开始在线预览"}
+              </Button>
+              <Button variant="outlined" startIcon={<Download size={17} />} disabled={chart.can_download === false} onClick={() => void download().catch(() => {})}>下载投稿</Button>
+            </Stack>
+
+            {!isExhibition ? (
+              <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.paper" }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>为这张谱面投票</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    fullWidth
+                    variant={loveSelected ? "contained" : "outlined"}
+                    color="error"
+                    startIcon={<Heart size={16} />}
+                    disabled={!isLoggedIn || !canVote || chart.can_vote === false || loveQuotaExhausted}
+                    aria-label={`真爱票 ${chart.love_votes}`}
+                    onClick={() => void toggleVote("love").catch((err) => setError(err.message))}
+                  >
+                    {chart.love_votes}
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant={chart.my_votes.includes("funny") ? "contained" : "outlined"}
+                    color="secondary"
+                    startIcon={<Sparkles size={16} />}
+                    disabled={!isLoggedIn || !canVote || chart.can_vote === false}
+                    aria-label={`欢乐票 ${chart.funny_votes}`}
+                    onClick={() => void toggleVote("funny").catch((err) => setError(err.message))}
+                  >
+                    {chart.funny_votes}
+                  </Button>
+                </Stack>
+              </Paper>
+            ) : null}
+
+            {!isJ && !isExhibition ? (
+              <FormControl size="small" disabled={guessBusy || !canGuess || !candidates.length || chart.can_author_guess === false}>
+                <InputLabel shrink>谱师猜测</InputLabel>
+                <Select
+                  label="谱师猜测"
+                  displayEmpty
+                  value={guessedUserId ?? ""}
+                  inputProps={{ "aria-label": `谱师猜测 ${chart.title}` }}
+                  renderValue={(value) => value ? candidateLabels.get(Number(value)) || "-" : <em>{emptyLabel}</em>}
+                  onChange={(event) => onGuess(chart, event.target.value ? Number(event.target.value) : null)}
+                >
+                  <MenuItem value=""><em>未选择</em></MenuItem>
+                  {candidates.map((item) => <MenuItem key={item.user_id} value={item.user_id}>{item.display_id}</MenuItem>)}
+                </Select>
+              </FormControl>
+            ) : null}
+            {error ? <Alert severity="error" aria-live="polite">{error}</Alert> : null}
+          </Stack>
         </Box>
-        <Divider sx={{ my: 3 }} /><Typography variant="h3" sx={{ mb: 1.5 }}>评论</Typography>{isLoggedIn && canComment && chart.can_comment !== false ? <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 2 }}><TextField size="small" fullWidth label="评论内容" placeholder="写下你的评价" value={comment} onChange={(event) => setComment(event.target.value)} /><IconButton color="primary" aria-label="发送评论" disabled={!comment.trim()} onClick={() => void sendComment().catch((err) => setError(err.message))} sx={{ alignSelf: { xs: "flex-end", sm: "center" } }}><MessageSquare size={19} /></IconButton></Stack> : <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isLoggedIn ? "当前阶段未开放评论。" : "登录后可在开放阶段发表评论。"}</Typography>}<Stack spacing={1}>{comments.map((item) => <Paper key={item.id} variant="outlined" sx={{ p: 1.5 }}><Typography variant="body2">{item.content}</Typography><Typography variant="caption" color="text.secondary">{item.user.display_name || item.user.user_code} · {formatTime(item.created_at)}</Typography></Paper>)}</Stack>
+
+        <Box sx={{ px: { xs: 2, sm: 0 }, pb: { xs: 4, sm: 1 } }}>
+          <Divider sx={{ my: { xs: 2, sm: 3 } }} />
+          <Stack direction="row" spacing={1} sx={{ alignItems: "baseline", justifyContent: "space-between", mb: 1.5 }}>
+            <Typography variant="h3">评论</Typography>
+            {comments.length ? <Typography variant="caption" color="text.secondary">{comments.length} 条</Typography> : null}
+          </Stack>
+          {isLoggedIn && canComment && chart.can_comment !== false ? (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 2 }}>
+              <TextField size="small" fullWidth label="评论内容" placeholder="写下你的评价" value={comment} onChange={(event) => setComment(event.target.value)} />
+              <Button variant="contained" startIcon={<MessageSquare size={17} />} disabled={!comment.trim()} onClick={() => void sendComment().catch((err) => setError(err.message))}>发送</Button>
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {isLoggedIn ? "当前阶段未开放评论。" : "登录后可在开放阶段发表评论。"}
+            </Typography>
+          )}
+          <Stack spacing={1}>
+            {comments.length ? comments.map((item) => (
+              <Paper key={item.id} variant="outlined" sx={{ p: 1.5, bgcolor: "background.paper" }}>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.content}</Typography>
+                <Typography variant="caption" color="text.secondary">{item.user.display_name || item.user.user_code} · {formatTime(item.created_at)}</Typography>
+              </Paper>
+            )) : <Typography variant="body2" color="text.secondary">还没有评论。</Typography>}
+          </Stack>
+        </Box>
       </DialogContent>
     </Dialog>
-    <ChartPreviewDialog open={previewOpen} source="guess" sourceId={chart.id} title={chart.title} onClose={() => setPreviewOpen(false)} onDownload={() => api.downloadChart(chart.id)} />
-  </>);
+  );
 }

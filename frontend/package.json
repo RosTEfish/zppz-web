@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "vitest run --configLoader runner",
+    "test": "npm run test:unit && npm run test:player",
+    "test:unit": "vitest run --configLoader runner",
+    "test:player": "node --test ../preview-player/player-bridge.test.mjs",
     "check:bundle": "node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
