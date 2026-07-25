@@ -59,6 +59,16 @@ fi
 rollback_enabled=0
 rollback_in_progress=0
 
+install_unit_file() {
+  local source_path="$1"
+  local target_path="$2"
+
+  # The deploy user intentionally reads its own temporary unit file; only tee
+  # needs elevated privileges to write under /etc/systemd/system.
+  # shellcheck disable=SC2024
+  sudo -n tee "$target_path" < "$source_path" >/dev/null
+}
+
 restore_live_release() {
   local path
 
@@ -94,7 +104,7 @@ rollback_on_exit() {
         chmod 600 "$env_file"
       fi
       if [ -f "$rollback_service_unit" ]; then
-        sudo -n tee "$service_file" < "$rollback_service_unit" >/dev/null
+        install_unit_file "$rollback_service_unit" "$service_file"
         sudo -n systemctl daemon-reload
       fi
       sudo -n systemctl restart "$SERVICE_NAME"
@@ -417,10 +427,10 @@ WantedBy=multi-user.target
 EOF
 
 if [ "$worker_unit_preexisting" -eq 1 ]; then
-  if ! sudo -n tee "$worker_service_file" < "$worker_unit_candidate" >/dev/null 2>&1; then
+  if ! install_unit_file "$worker_unit_candidate" "$worker_service_file" 2>/dev/null; then
     echo "::warning::The existing Worker unit could not be updated; keeping its current definition." >&2
   fi
-elif sudo -n tee "$worker_service_file" < "$worker_unit_candidate" >/dev/null 2>&1; then
+elif install_unit_file "$worker_unit_candidate" "$worker_service_file" 2>/dev/null; then
   worker_unit_created=1
   worker_service_mode="separate"
 else
