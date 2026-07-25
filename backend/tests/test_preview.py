@@ -115,6 +115,7 @@ def test_preview_builds_versioned_local_assets_and_signed_urls():
         )
         assert bundle is not None and bundle.status == "ready"
         assert bundle.maidata_key and "/preview/submission/" in bundle.maidata_key
+        assert bundle.background_key and bundle.background_key.endswith("/bg.jpg")
         assert bundle.video_key and bundle.video_key.endswith("/video.mp4")
         payload = manifest_payload(db, bundle, base_url="http://testserver")
     assert [level["slot"] for level in payload["levels"]] == [4, 5]

@@ -60,10 +60,22 @@ def _clear_assets(bundle: PreviewBundle) -> None:
 
 
 def _normalized_files(parsed: ParsedArchive) -> tuple[str, str, str, str | None]:
-    names = {member.output_name for member in parsed.public_files}
-    track = next((name for name in names if name.startswith("track.")), "")
-    background = next((name for name in names if name.startswith("bg.")), "")
-    video = next((name for name in ("bg.mp4", "mv.mp4", "video.mp4") if name in names), None)
+    names = {
+        member.output_name.casefold(): member.output_name
+        for member in parsed.public_files
+    }
+    track = next(
+        (names[name] for name in ("track.mp3", "track.ogg") if name in names),
+        "",
+    )
+    background = next(
+        (names[name] for name in ("bg.png", "bg.jpg", "bg.webp") if name in names),
+        "",
+    )
+    video = next(
+        (names[name] for name in ("bg.mp4", "mv.mp4", "video.mp4") if name in names),
+        None,
+    )
     return "maidata.txt", track, background, video
 
 
