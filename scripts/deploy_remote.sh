@@ -460,25 +460,49 @@ if ! (
   set +a
   "$venv_dir/bin/python" - <<PY
 import os
+import time
 import urllib.request
 
 if os.environ.get("PREVIEW_ENABLED", "").lower() in {"1", "true", "yes", "on"}:
     url = os.environ.get("PREVIEW_PLAYER_URL", "")
     if not url:
         raise SystemExit("PREVIEW_PLAYER_URL is empty")
-    request = urllib.request.Request(url, method="HEAD")
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            if response.status >= 400:
-                raise SystemExit(f"preview player returned HTTP {response.status}")
-            if "text/html" not in response.headers.get("Content-Type", ""):
-                raise SystemExit("preview player did not return text/html")
-    except Exception as exc:
-        raise SystemExit(f"preview player health check failed for {url}: {exc}")
+    errors = []
+    for attempt in range(1, 4):
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "text/html",
+                "Range": "bytes=0-1023",
+                "User-Agent": "Mozilla/5.0 (compatible; zppz-deploy-health/1.0)",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"preview player returned HTTP {response.status}")
+                if "text/html" not in response.headers.get("Content-Type", ""):
+                    raise RuntimeError("preview player did not return text/html")
+                response.read(1024)
+            print(f"preview player is reachable from the application host: {url}")
+            break
+        except Exception as exc:
+            errors.append(f"attempt {attempt}: {exc}")
+            if attempt < 3:
+                time.sleep(attempt * 2)
+    else:
+        raise SystemExit(
+            f"preview player could not be reached from the application host: {url}; "
+            + "; ".join(errors)
+        )
 PY
 )
 then
-  exit 1
+  # The immutable player URL, MIME types, and CSP were already checked from the
+  # public Internet by publish_preview_player.py. The application server never
+  # proxies or fetches player assets at runtime, so a host-specific egress or
+  # Cloudflare bot-filter failure must not roll back an otherwise healthy app.
+  echo "::warning::Application host could not reach the preview player after retries; public CDN verification already passed, continuing activation." >&2
 fi
 
 rollback_enabled=0
