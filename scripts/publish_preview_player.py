@@ -86,10 +86,14 @@ def main() -> None:
         prepared: dict[str, tuple[Path, str, str | None]] = {}
         for name, item in manifest["files"].items():
             source = root / name
-            download(f"{manifest['build_base_url']}/{name}", source)
+            source_url = f"{manifest['build_base_url']}/{name}"
+            download(source_url, source)
             actual = sha256(source)
             if actual != item["sha256"]:
-                raise RuntimeError(f"SHA-256 mismatch for {name}: {actual}")
+                raise RuntimeError(
+                    f"SHA-256 mismatch for {name}: expected {item['sha256']}, "
+                    f"downloaded {actual} ({source.stat().st_size} bytes) from {source_url}"
+                )
             upload_path = source
             encoding = None
             if item.get("compress"):
