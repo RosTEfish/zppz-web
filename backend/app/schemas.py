@@ -262,9 +262,13 @@ class StoredFileRead(BaseModel):
     track_duration_seconds: float | None = None
     is_long_track: bool = False
     public_package_ready: bool = False
+    public_package_status: Literal["processing", "ready", "failed"] = "processing"
+    public_package_message: str = ""
     validation: dict[str, bool] = Field(default_factory=dict)
     preview_status: Literal["processing", "ready", "unsupported", "failed"] | None = None
     preview_message: str = ""
+    video_status: Literal["none", "processing", "ready", "failed"] = "none"
+    video_message: str = ""
     source_song: SongRead | None = None
     user: UserRead | None = None
     created_at: datetime
@@ -297,10 +301,28 @@ class SubmissionUploadIntentRead(BaseModel):
     expires_at: datetime
 
 
-class SubmissionUploadCompletionRead(BaseModel):
-    status: Literal["processing", "completed", "failed", "expired"]
+class SubmissionProcessingJobRead(BaseModel):
+    id: str
+    intent_id: str | None = None
+    status: Literal["queued", "processing", "completed", "failed", "cancelled"]
+    stage: Literal[
+        "uploaded",
+        "validating",
+        "accepted",
+        "preview_core",
+        "public_package",
+        "video",
+        "cleanup",
+        "complete",
+    ]
     message: str = ""
+    file_name: str
+    file_size: int
+    source_song_id: int | None = None
+    replace_submission_id: int | None = None
     submission: StoredFileRead | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class SubmissionTargetRead(BaseModel):

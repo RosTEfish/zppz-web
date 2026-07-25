@@ -1,9 +1,10 @@
 import asyncio
+from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 import re
 import shutil
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import pytest
 from fastapi import BackgroundTasks
@@ -14,9 +15,11 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, Song, StorageDeletion, Submission, SubmissionUploadIntent, User
+from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, PreviewBundle, Song, StorageDeletion, Submission, SubmissionProcessingJob, SubmissionUploadIntent, User
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 from app.modules.submissions import service as submission_service
+from app.modules.submissions import processing as submission_processing
+from app.modules.submissions.processing import claim_next_job, process_job
 from app.modules.submissions.router import _complete_intent
 
 
@@ -39,7 +42,12 @@ def client():
         yield test_client
 
 
-def archive_bytes(title: str = "Song", levels: str = "&lv_4=13\n&lv_5=14") -> bytes:
+def archive_bytes(
+    title: str = "Song",
+    levels: str = "&lv_4=13\n&lv_5=14",
+    *,
+    video_name: str | None = None,
+) -> bytes:
     playable = "\n".join(
         f"&inote_{slot}=(120){{1}},"
         for slot in re.findall(r"(?im)^\s*&lv_([1-7])\s*=", levels)
@@ -49,6 +57,8 @@ def archive_bytes(title: str = "Song", levels: str = "&lv_4=13\n&lv_5=14") -> by
         archive.writestr("nested/maidata.txt", f"&title={title}\n&artist=Artist\n{levels}\n{playable}")
         archive.writestr("nested/bg.png", b"cover")
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
+        if video_name:
+            archive.writestr(f"nested/{video_name}", b"video")
     return buffer.getvalue()
 
 
@@ -138,7 +148,58 @@ def create_candidate_rows() -> tuple[int, int, int]:
         return event.id, own.id, assigned.id
 
 
-def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(client: TestClient):
+def run_next_processing_job() -> str:
+    with SessionLocal() as db:
+        job_id = claim_next_job(db)
+    assert job_id is not None
+    process_job(job_id)
+    return job_id
+
+
+def test_worker_claim_is_exclusive_and_recovers_expired_lease(client: TestClient):
+    register(client, "owner")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        owner = db.scalar(select(User).where(User.user_code == "owner"))
+        job = SubmissionProcessingJob(
+            id="lease-job",
+            event_id=event.id,
+            user_id=owner.id,
+            source_storage_path="pending/lease.zip",
+            status="queued",
+            stage="uploaded",
+            next_attempt_at=datetime.utcnow(),
+        )
+        db.add(job)
+        db.commit()
+
+    with SessionLocal() as first:
+        assert claim_next_job(first) == "lease-job"
+    with SessionLocal() as second:
+        assert claim_next_job(second) is None
+        job = second.get(SubmissionProcessingJob, "lease-job")
+        assert job is not None
+        job.lease_until = datetime.utcnow() - timedelta(seconds=1)
+        second.commit()
+    with SessionLocal() as recovered:
+        assert claim_next_job(recovered) == "lease-job"
+        job = recovered.get(SubmissionProcessingJob, "lease-job")
+        assert job is not None and job.attempts == 2
+
+
+def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    prepare_calls = 0
+    original_prepare = submission_processing.prepare_archive
+
+    def counted_prepare(*args, **kwargs):
+        nonlocal prepare_calls
+        prepare_calls += 1
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(submission_processing, "prepare_archive", counted_prepare)
     register(client, "owner")
     register(client, "player")
     _, own_id, _ = create_candidate_rows()
@@ -164,16 +225,25 @@ def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(c
     assert uploaded.status_code == 204, uploaded.text
     started = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
     assert started.status_code == 200, started.text
-    assert started.json()["status"] == "processing"
+    assert started.json()["status"] == "queued"
+    repeated = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert repeated.status_code == 200
+    assert repeated.json()["id"] == started.json()["id"]
+    with SessionLocal() as db:
+        assert len(list(db.scalars(select(SubmissionProcessingJob)).all())) == 1
+    assert prepare_calls == 0
+
+    run_next_processing_job()
+    assert prepare_calls == 1
     completed = client.get(f"/api/v1/submissions/upload-intents/{intent['id']}/status")
     assert completed.status_code == 200, completed.text
     assert completed.json()["status"] == "completed"
     submission = completed.json()["submission"]
     assert submission is not None
-    repeated = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
-    assert repeated.status_code == 200
-    assert repeated.json()["status"] == "completed"
-    assert repeated.json()["submission"]["id"] == submission["id"]
+    completed_again = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert completed_again.status_code == 200
+    assert completed_again.json()["status"] == "completed"
+    assert completed_again.json()["submission"]["id"] == submission["id"]
 
     with SessionLocal() as db:
         row = db.get(Submission, submission["id"])
@@ -185,6 +255,60 @@ def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(c
         assert upload_intent.status == "completed"
         assert not (get_settings().data_dir / upload_intent.object_key).exists()
         assert (get_settings().data_dir / row.storage_path).read_bytes() == payload
+        with ZipFile(get_settings().data_dir / row.public_storage_path) as public:
+            compression = {info.filename: info.compress_type for info in public.infolist()}
+        assert compression["maidata.txt"] == ZIP_DEFLATED
+        assert compression["track.mp3"] == ZIP_STORED
+        assert compression["bg.png"] == ZIP_STORED
+
+
+def test_video_failure_keeps_static_preview_and_completed_submission(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes("Video Fallback", video_name="pv.mp4")
+
+    def fail_video(*_args, **_kwargs):
+        raise OSError("simulated video upload failure")
+
+    monkeypatch.setattr(submission_processing, "attach_preview_video_from_files", fail_video)
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "video.zip",
+            "file_size": len(payload),
+            "content_type": "application/zip",
+        },
+    ).json()
+    assert client.put(created["upload_url"], content=payload, headers=created["headers"]).status_code == 204
+    queued = client.post(f"/api/v1/submissions/upload-intents/{created['id']}/complete")
+    assert queued.status_code == 200
+    run_next_processing_job()
+
+    result = client.get(f"/api/v1/submissions/upload-intents/{created['id']}/status").json()
+    assert result["status"] == "completed"
+    assert result["submission"]["preview_status"] == "ready"
+    assert result["submission"]["video_status"] == "failed"
+    with SessionLocal() as db:
+        bundle = db.scalar(
+            select(PreviewBundle).where(
+                PreviewBundle.source_id == result["submission"]["id"],
+                PreviewBundle.source_type == "submission",
+            )
+        )
+        assert bundle is not None
+        assert bundle.status == "ready"
+        assert bundle.video_status == "failed"
+        row = db.get(Submission, result["submission"]["id"])
+        assert row is not None and row.public_storage_path
+        with ZipFile(get_settings().data_dir / row.public_storage_path) as public:
+            assert public.getinfo("pv.mp4").compress_type == ZIP_STORED
 
 
 def test_upload_intent_rejects_mime_and_size_mismatches(client: TestClient):
@@ -248,7 +372,8 @@ def test_background_upload_reports_parse_failure_without_creating_submission(cli
 
     started = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
     assert started.status_code == 200
-    assert started.json()["status"] == "processing"
+    assert started.json()["status"] == "queued"
+    run_next_processing_job()
     result = client.get(f"/api/v1/submissions/upload-intents/{intent['id']}/status")
     assert result.status_code == 200
     assert result.json()["status"] == "failed"
@@ -366,6 +491,52 @@ def test_replacement_defers_pending_and_old_object_deletion_to_background(client
     assert all(not (get_settings().data_dir / key).exists() for key in old_keys | {pending_key})
     with SessionLocal() as db:
         assert db.scalar(select(StorageDeletion.id).limit(1)) is None
+
+
+def test_async_replacement_validation_failure_keeps_old_submission(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    first = client.post(
+        "/api/v1/submissions",
+        data={"song_id": own_id, "track": "normal"},
+        files={"file": ("first.zip", archive_bytes("First"), "application/zip")},
+    )
+    assert first.status_code == 200
+    submission_id = first.json()["id"]
+    old_storage = first.json()["file_name"], first.json()["file_size"]
+    with SessionLocal() as db:
+        old_path = db.get(Submission, submission_id).storage_path
+
+    invalid = archive_bytes(title="")
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "submission_id": submission_id,
+            "track": "normal",
+            "file_name": "invalid-replacement.zip",
+            "file_size": len(invalid),
+            "content_type": "application/zip",
+        },
+    ).json()
+    assert client.put(created["upload_url"], content=invalid, headers=created["headers"]).status_code == 204
+    queued = client.post(f"/api/v1/submissions/upload-intents/{created['id']}/complete")
+    assert queued.status_code == 200
+    with SessionLocal() as db:
+        assert db.get(Submission, submission_id).storage_path == old_path
+
+    run_next_processing_job()
+    failed = client.get(f"/api/v1/submissions/upload-intents/{created['id']}/status").json()
+    assert failed["status"] == "failed"
+    with SessionLocal() as db:
+        retained = db.get(Submission, submission_id)
+        assert retained is not None
+        assert retained.storage_path == old_path
+        assert (retained.file_name, retained.file_size) == old_storage
+        intent = db.get(SubmissionUploadIntent, created["id"])
+        assert intent is not None
+        assert not (get_settings().data_dir / intent.object_key).exists()
 
 
 def test_targets_phase_gate_and_j_limit(client: TestClient):

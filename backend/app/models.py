@@ -352,6 +352,8 @@ class Submission(Base, TimestampMixin):
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     public_storage_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     public_file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    public_package_status: Mapped[str] = mapped_column(String(20), default="processing", nullable=False)
+    public_package_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     track_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     review_status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
@@ -391,6 +393,8 @@ class PreviewBundle(Base, TimestampMixin):
     track_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
     background_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
     video_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    video_status: Mapped[str] = mapped_column(String(20), default="none", nullable=False)
+    video_error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
 
@@ -414,6 +418,82 @@ class SubmissionUploadIntent(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
     error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+
+
+class SubmissionProcessingJob(Base, TimestampMixin):
+    __tablename__ = "submission_processing_jobs"
+    __table_args__ = (
+        CheckConstraint("job_type IN ('upload', 'resources_rebuild')", name="ck_submission_job_type"),
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')",
+            name="ck_submission_job_status",
+        ),
+        CheckConstraint(
+            "stage IN ('uploaded', 'validating', 'accepted', 'preview_core', "
+            "'public_package', 'video', 'cleanup', 'complete')",
+            name="ck_submission_job_stage",
+        ),
+        Index("ix_submission_jobs_status_schedule", "status", "next_attempt_at"),
+        Index("ix_submission_jobs_event_user", "event_id", "user_id"),
+        Index(
+            "uq_submission_jobs_active_song_target",
+            "event_id",
+            "user_id",
+            "source_song_id",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('queued', 'processing') "
+                "AND source_song_id IS NOT NULL AND replace_submission_id IS NULL"
+            ),
+            postgresql_where=text(
+                "status IN ('queued', 'processing') "
+                "AND source_song_id IS NOT NULL AND replace_submission_id IS NULL"
+            ),
+        ),
+        Index(
+            "uq_submission_jobs_active_replacement",
+            "replace_submission_id",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('queued', 'processing') AND replace_submission_id IS NOT NULL"
+            ),
+            postgresql_where=text(
+                "status IN ('queued', 'processing') AND replace_submission_id IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    upload_intent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("submission_upload_intents.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=True,
+    )
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    job_type: Mapped[str] = mapped_column(String(24), default="upload", nullable=False)
+    source_song_id: Mapped[int | None] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), nullable=True)
+    replace_submission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("submissions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    result_submission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("submissions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_version: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
+    stage: Mapped[str] = mapped_column(String(24), default="uploaded", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    stage_timings_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
 
 
 class StorageDeletion(Base, TimestampMixin):

@@ -57,6 +57,8 @@ def _asset_keys(bundle: PreviewBundle) -> set[str]:
 def _clear_assets(bundle: PreviewBundle) -> None:
     for field in (*ASSET_FIELDS, *MIME_FIELDS):
         setattr(bundle, field, None)
+    bundle.video_status = "none"
+    bundle.video_error_message = ""
 
 
 def _normalized_files(parsed: ParsedArchive) -> tuple[str, str, str, str | None]:
@@ -107,6 +109,8 @@ def create_processing_bundle(
     elif should_build:
         bundle.source_storage_path = source_storage_path
         bundle.status = "processing"
+        bundle.video_status = "none"
+        bundle.video_error_message = ""
         bundle.error_code = ""
         bundle.error_message = ""
     return bundle, should_build
@@ -244,9 +248,153 @@ def _build_from_parsed(
     bundle.track_mime = content_types[track_name]
     bundle.background_mime = content_types[background_name]
     bundle.video_mime = content_types[video_name] if video_name else None
+    bundle.video_status = "ready" if video_name else "none"
+    bundle.video_error_message = ""
     bundle.error_code = ""
     bundle.error_message = ""
     return bundle
+
+
+def build_preview_core_from_files(
+    db: Session,
+    *,
+    event_id: int,
+    source_type: str,
+    source_id: int,
+    source_storage_path: str,
+    files: dict[str, Path],
+) -> PreviewBundle:
+    """Publish core preview assets from the upload worker's single extraction."""
+    bundle, _ = create_processing_bundle(
+        db,
+        event_id=event_id,
+        source_type=source_type,
+        source_id=source_id,
+        source_storage_path=source_storage_path,
+        force=True,
+    )
+    stale_keys = _asset_keys(bundle)
+    track_name = next((name for name in ("track.mp3", "track.ogg") if name in files), "")
+    background_name = next((name for name in ("bg.png", "bg.jpg", "bg.webp") if name in files), "")
+    video_name = next((name for name in ("bg.mp4", "mv.mp4", "pv.mp4") if name in files), None)
+    if track_name != "track.mp3":
+        raise ArchiveParseError("track.ogg 当前格式暂不支持在线预览")
+    if background_name not in {"bg.png", "bg.jpg"}:
+        raise ArchiveParseError("bg.webp 当前格式暂不支持在线预览")
+
+    version = uuid4().hex
+    prefix = f"events/{event_id}/preview/{_source_prefix(source_type, source_id)}/{version}"
+    content_types = {
+        "maidata.txt": "text/plain; charset=utf-8",
+        "track.mp3": "audio/mpeg",
+        background_name: "image/png" if background_name.endswith(".png") else "image/jpeg",
+    }
+    keys = {
+        "maidata.txt": f"{prefix}/maidata.txt",
+        "track.mp3": f"{prefix}/track.mp3",
+        background_name: f"{prefix}/bg{Path(background_name).suffix.lower()}",
+    }
+    created: list[str] = []
+    # Persist the processing marker before any potentially slow R2 upload so
+    # the worker never holds a database transaction across network I/O.
+    db.commit()
+    store = get_object_store()
+    try:
+        for name in ("maidata.txt", "track.mp3", background_name):
+            store.put_file(keys[name], files[name], content_type=content_types[name])
+            created.append(keys[name])
+    except Exception:
+        for key in created:
+            try:
+                store.delete(key)
+            except Exception:
+                logger.exception("Failed to clean incomplete core preview object")
+        raise
+
+    bundle = _bundle(db, event_id, source_type, source_id)
+    if not bundle or bundle.source_storage_path != source_storage_path:
+        for key in created:
+            try:
+                store.delete(key)
+            except Exception:
+                logger.exception("Failed to clean superseded core preview object")
+        raise ArchiveParseError("投稿版本已经变更，旧预览任务已停止")
+    for key in stale_keys:
+        enqueue_storage_deletion(db, key)
+    bundle.status = "ready"
+    bundle.maidata_key = keys["maidata.txt"]
+    bundle.track_key = keys["track.mp3"]
+    bundle.background_key = keys[background_name]
+    bundle.video_key = None
+    bundle.maidata_mime = content_types["maidata.txt"]
+    bundle.track_mime = content_types["track.mp3"]
+    bundle.background_mime = content_types[background_name]
+    bundle.video_mime = None
+    bundle.video_status = "processing" if video_name else "none"
+    bundle.video_error_message = ""
+    bundle.error_code = ""
+    bundle.error_message = ""
+    return bundle
+
+
+def attach_preview_video_from_files(
+    db: Session,
+    *,
+    event_id: int,
+    source_type: str,
+    source_id: int,
+    source_storage_path: str,
+    files: dict[str, Path],
+) -> PreviewBundle | None:
+    """Attach optional video only when the core bundle still targets this source version."""
+    bundle = _bundle(db, event_id, source_type, source_id)
+    if not bundle or bundle.source_storage_path != source_storage_path or bundle.status != "ready":
+        return None
+    video_name = next((name for name in ("bg.mp4", "mv.mp4", "pv.mp4") if name in files), None)
+    if not video_name:
+        bundle.video_status = "none"
+        bundle.video_error_message = ""
+        return bundle
+    key = str(Path(bundle.maidata_key or "").parent / "video.mp4").replace("\\", "/")
+    previous_key = bundle.video_key
+    db.commit()
+    store = get_object_store()
+    store.put_file(key, files[video_name], content_type="video/mp4")
+    bundle = _bundle(db, event_id, source_type, source_id)
+    if (
+        not bundle
+        or bundle.source_storage_path != source_storage_path
+        or bundle.status != "ready"
+    ):
+        try:
+            store.delete(key)
+        except Exception:
+            logger.exception("Failed to clean superseded preview video")
+        return None
+    if previous_key and previous_key != key:
+        enqueue_storage_deletion(db, previous_key)
+    bundle.video_key = key
+    bundle.video_mime = "video/mp4"
+    bundle.video_status = "ready"
+    bundle.video_error_message = ""
+    return bundle
+
+
+def mark_preview_bundle_failed(
+    db: Session,
+    bundle: PreviewBundle,
+    *,
+    status: str,
+    error_code: str,
+    error_message: str,
+) -> None:
+    """Drop every stale asset reference when core preview generation cannot finish."""
+    for key in _asset_keys(bundle):
+        enqueue_storage_deletion(db, key)
+    _clear_assets(bundle)
+    bundle.status = status
+    bundle.error_code = error_code
+    bundle.error_message = error_message
 
 
 def delete_preview_bundle(db: Session, event_id: int, source_type: str, source_id: int) -> None:
@@ -412,6 +560,10 @@ def manifest_payload(
         "maidata_url": asset_url(bundle.maidata_key, bundle.maidata_mime),
         "track_url": asset_url(bundle.track_key, bundle.track_mime),
         "background_url": asset_url(bundle.background_key, bundle.background_mime),
-        "video_url": asset_url(bundle.video_key, bundle.video_mime),
+        "video_url": (
+            asset_url(bundle.video_key, bundle.video_mime)
+            if bundle.video_status == "ready"
+            else None
+        ),
     }
     return payload

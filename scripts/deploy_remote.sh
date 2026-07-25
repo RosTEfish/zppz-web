@@ -5,6 +5,7 @@ set -Eeuo pipefail
 : "${RELEASE_NAME:?RELEASE_NAME is required}"
 
 SERVICE_NAME="${SERVICE_NAME:-zppz-web}"
+WORKER_SERVICE_NAME="${WORKER_SERVICE_NAME:-${SERVICE_NAME}-worker}"
 APP_PORT="${APP_PORT:-8000}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
@@ -39,6 +40,12 @@ rollback_env="$deploy_state_dir/rollback-$RELEASE_NAME.env"
 venv_dir="$app_dir/.venv"
 env_file="$app_dir/.env"
 legacy_database_path="$app_dir/backend/zppz_v2.db"
+service_file="/etc/systemd/system/$SERVICE_NAME.service"
+worker_service_file="/etc/systemd/system/$WORKER_SERVICE_NAME.service"
+worker_unit_preexisting=0
+if systemctl cat "$WORKER_SERVICE_NAME" >/dev/null 2>&1; then
+  worker_unit_preexisting=1
+fi
 
 if [[ "$app_dir" != /* || "$app_dir" == "/" ]]; then
   echo "DEPLOY_PATH must be an absolute path other than /." >&2
@@ -83,10 +90,22 @@ rollback_on_exit() {
         chmod 600 "$env_file"
       fi
       sudo -n systemctl restart "$SERVICE_NAME"
+      if [ "$worker_unit_preexisting" -eq 1 ]; then
+        sudo -n systemctl restart "$WORKER_SERVICE_NAME"
+      else
+        sudo -n systemctl disable --now "$WORKER_SERVICE_NAME" >/dev/null 2>&1 || true
+        sudo -n rm -f -- "$worker_service_file"
+        sudo -n systemctl daemon-reload
+      fi
       if ! systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "The previous release could not be restarted automatically." >&2
         systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
         journalctl -u "$SERVICE_NAME" --no-pager -n 160 >&2 || true
+      fi
+      if [ "$worker_unit_preexisting" -eq 1 ] && ! systemctl is-active --quiet "$WORKER_SERVICE_NAME"; then
+        echo "The previous worker could not be restarted automatically." >&2
+        systemctl --no-pager --full status "$WORKER_SERVICE_NAME" >&2 || true
+        journalctl -u "$WORKER_SERVICE_NAME" --no-pager -n 160 >&2 || true
       fi
     else
       echo "No previous application snapshot was available for rollback." >&2
@@ -302,6 +321,10 @@ tar -C "$app_dir" \
   -czf "$rollback_archive" .
 rollback_enabled=1
 
+# Stop the old worker before replacing code or migrating the shared database.
+# The web service remains online until the new release is ready to activate.
+sudo -n systemctl stop "$WORKER_SERVICE_NAME" >/dev/null 2>&1 || true
+
 # Copy the built release into the live application directory. Runtime data lives
 # outside the archive and is preserved in place.
 tar -C "$release_dir" -cf - . | tar --no-same-owner --no-same-permissions --delay-directory-restore --touch -C "$app_dir" -xf -
@@ -328,9 +351,13 @@ fi
 "$venv_dir/bin/python" -m uvicorn --version
 service_workdir="$app_dir/backend"
 service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT --workers $WEB_CONCURRENCY"
+worker_exec="$venv_dir/bin/python -m app.worker"
 
 # Run write-producing database preparation exactly once per deployment, before
 # the service master and its workers are started.
+# The previous web release may still own legacy in-process upload tasks, so it
+# must be stopped before 0016 requeues them into the durable worker table.
+sudo -n systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
 (
   set -a
   # shellcheck disable=SC1090
@@ -340,8 +367,10 @@ service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --po
   export DATA_DIR="$app_dir/data"
   cd "$service_workdir"
   "$venv_dir/bin/python" -m app.prepare
+  "$venv_dir/bin/python" -m app.manage worker-recover
   "$venv_dir/bin/python" -m app.manage storage-check
   "$venv_dir/bin/python" -m app.manage preview-check
+  "$venv_dir/bin/python" -m app.manage worker-check
   if [ -n "$owner_user_code" ]; then
     "$venv_dir/bin/python" -m app.manage set-owner --user-code "$owner_user_code"
   else
@@ -349,7 +378,6 @@ service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --po
   fi
 )
 
-service_file="/etc/systemd/system/$SERVICE_NAME.service"
 sudo -n tee "$service_file" >/dev/null <<EOF
 [Unit]
 Description=ZPPZ Web
@@ -371,8 +399,34 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+sudo -n tee "$worker_service_file" >/dev/null <<EOF
+[Unit]
+Description=ZPPZ Submission Processing Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$RUN_USER
+Group=$RUN_GROUP
+WorkingDirectory=$service_workdir
+EnvironmentFile=-$env_file
+Environment=DATA_DIR=$app_dir/data
+ExecStart=$worker_exec
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 sudo -n systemctl daemon-reload
 sudo -n systemctl enable "$SERVICE_NAME"
+sudo -n systemctl enable "$WORKER_SERVICE_NAME"
 
 pkill -TERM -u "$RUN_USER" -f "uvicorn app.main:app" || true
 sleep 2
@@ -425,9 +479,16 @@ if targets:
         print("Port $APP_PORT is still occupied, but no killable process was visible to $RUN_USER.")
 PY
 
+sudo -n systemctl restart "$WORKER_SERVICE_NAME"
 sudo -n systemctl restart "$SERVICE_NAME"
 
 sleep 3
+if ! systemctl is-active --quiet "$WORKER_SERVICE_NAME"; then
+  echo "Service $WORKER_SERVICE_NAME failed to stay active after restart." >&2
+  systemctl --no-pager --full status "$WORKER_SERVICE_NAME" >&2 || true
+  journalctl -u "$WORKER_SERVICE_NAME" --no-pager -n 160 >&2 || true
+  exit 1
+fi
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
   echo "Service $SERVICE_NAME failed to stay active after restart." >&2
   systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
@@ -518,3 +579,4 @@ if [ "$KEEP_RELEASES" -gt 0 ]; then
 fi
 
 sudo -n systemctl --no-pager --full status "$SERVICE_NAME"
+sudo -n systemctl --no-pager --full status "$WORKER_SERVICE_NAME"

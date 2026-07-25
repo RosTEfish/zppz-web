@@ -109,10 +109,33 @@ export interface SubmissionUploadIntent {
   expires_at: string;
 }
 
-export interface SubmissionUploadCompletion {
-  status: "processing" | "completed" | "failed" | "expired";
+export interface SubmissionProcessingJob {
+  id: string;
+  intent_id: string | null;
+  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
+  stage: "uploaded" | "validating" | "accepted" | "preview_core" | "public_package" | "video" | "cleanup" | "complete";
   message: string;
+  file_name: string;
+  file_size: number;
+  source_song_id: number | null;
+  replace_submission_id: number | null;
   submission: StoredFileRead | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmissionUploadProgress {
+  phase: "preparing" | "uploading" | "confirming";
+  loaded: number;
+  total: number;
+  percent: number;
+  bytesPerSecond: number;
+  etaSeconds: number | null;
+}
+
+export interface SubmissionUploadOptions {
+  signal?: AbortSignal;
+  onProgress?: (progress: SubmissionUploadProgress) => void;
 }
 
 export interface SongRead {
@@ -187,9 +210,13 @@ export interface StoredFileRead {
   created_at: string;
   track_duration_seconds?: number | null;
   public_package_ready?: boolean;
+  public_package_status?: "processing" | "ready" | "failed";
+  public_package_message?: string;
   validation?: { maidata: boolean; track: boolean; background: boolean; duration: boolean };
   preview_status?: PreviewStatus | null;
   preview_message?: string;
+  video_status?: "none" | "processing" | "ready" | "failed";
+  video_message?: string;
 }
 
 export interface SubmissionTargetRead {
@@ -593,56 +620,129 @@ function validateSubmissionFile(file: File): string {
   return contentType;
 }
 
-async function putSubmissionFile(intent: SubmissionUploadIntent, file: File): Promise<void> {
-  const response = await fetch(intent.upload_url, {
-    method: intent.method,
-    headers: intent.headers,
-    body: file,
-    credentials: intent.upload_url.startsWith("/") ? "include" : "omit",
+function abortedUploadError(): DOMException {
+  return new DOMException("上传已取消", "AbortError");
+}
+
+function putSubmissionFile(
+  intent: SubmissionUploadIntent,
+  file: File,
+  options: SubmissionUploadOptions,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const samples: Array<{ at: number; loaded: number }> = [];
+    let lastUiUpdate = 0;
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener("abort", abort);
+      callback();
+    };
+    const abort = () => {
+      xhr.abort();
+      finish(() => reject(abortedUploadError()));
+    };
+    xhr.open(intent.method, intent.upload_url, true);
+    xhr.timeout = 30 * 60 * 1000;
+    xhr.withCredentials = intent.upload_url.startsWith("/");
+    Object.entries(intent.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+    xhr.upload.onprogress = (event) => {
+      const now = performance.now();
+      samples.push({ at: now, loaded: event.loaded });
+      while (samples.length > 1 && samples[0].at < now - 3000) samples.shift();
+      if (now - lastUiUpdate < 250 && event.loaded < event.total) return;
+      lastUiUpdate = now;
+      const first = samples[0];
+      const elapsedSeconds = first ? Math.max((now - first.at) / 1000, 0.001) : 0;
+      const bytesPerSecond = first ? Math.max((event.loaded - first.loaded) / elapsedSeconds, 0) : 0;
+      const total = event.lengthComputable ? event.total : file.size;
+      const remaining = Math.max(total - event.loaded, 0);
+      options.onProgress?.({
+        phase: "uploading",
+        loaded: event.loaded,
+        total,
+        percent: total > 0 ? Math.min((event.loaded / total) * 100, 100) : 0,
+        bytesPerSecond,
+        etaSeconds: bytesPerSecond > 0 ? remaining / bytesPerSecond : null,
+      });
+    };
+    xhr.onerror = () => finish(() => reject(new Error("对象存储上传网络中断，请检查网络后重试")));
+    xhr.ontimeout = () => finish(() => reject(new Error("对象存储上传超时，请重新上传")));
+    xhr.onabort = () => finish(() => reject(abortedUploadError()));
+    xhr.onload = () => finish(() => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onProgress?.({
+          phase: "confirming",
+          loaded: file.size,
+          total: file.size,
+          percent: 100,
+          bytesPerSecond: 0,
+          etaSeconds: null,
+        });
+        resolve();
+        return;
+      }
+      reject(new Error(xhr.responseText || `对象存储上传失败（HTTP ${xhr.status}）`));
+    });
+    if (options.signal?.aborted) {
+      abort();
+      return;
+    }
+    options.signal?.addEventListener("abort", abort, { once: true });
+    xhr.send(file);
   });
-  if (!response.ok) {
-    const message = await response.text().catch(() => "");
-    throw new Error(message || `对象存储上传失败（HTTP ${response.status}）`);
-  }
 }
 
 async function uploadSubmissionThroughIntent(
   payload: Record<string, unknown>,
   file: File,
   adminSubmissionId?: number,
-): Promise<StoredFileRead> {
+  options: SubmissionUploadOptions = {},
+): Promise<SubmissionProcessingJob> {
   const content_type = validateSubmissionFile(file);
+  options.onProgress?.({
+    phase: "preparing",
+    loaded: 0,
+    total: file.size,
+    percent: 0,
+    bytesPerSecond: 0,
+    etaSeconds: null,
+  });
   const metadata = { ...payload, file_name: file.name, file_size: file.size, content_type };
   const base = adminSubmissionId === undefined
     ? "/submissions/upload-intents"
     : `/admin/submissions/${adminSubmissionId}/upload-intents`;
   const intent = await apiRequest<SubmissionUploadIntent>(base, { method: "POST", body: JSON.stringify(metadata) });
-  await putSubmissionFile(intent, file);
+  try {
+    await putSubmissionFile(intent, file, options);
+  } catch (error) {
+    const cancelPath = adminSubmissionId === undefined
+      ? `/submissions/upload-intents/${intent.id}`
+      : `/admin/submissions/upload-intents/${intent.id}`;
+    await apiRequest<void>(cancelPath, { method: "DELETE" }).catch(() => undefined);
+    throw error;
+  }
   const completePath = adminSubmissionId === undefined
     ? `/submissions/upload-intents/${intent.id}/complete`
     : `/admin/submissions/upload-intents/${intent.id}/complete`;
-  const statusPath = adminSubmissionId === undefined
-    ? `/submissions/upload-intents/${intent.id}/status`
-    : `/admin/submissions/upload-intents/${intent.id}/status`;
-  let completion = await apiRequest<SubmissionUploadCompletion>(completePath, { method: "POST" });
-  const deadline = Date.now() + 15 * 60 * 1000;
-  let lastPollingError: Error | null = null;
-  while (completion.status === "processing" && Date.now() < deadline) {
-    await new Promise((resolve) => window.setTimeout(resolve, 1500));
+  try {
+    return await apiRequest<SubmissionProcessingJob>(completePath, { method: "POST" });
+  } catch (completionError) {
+    const statusPath = adminSubmissionId === undefined
+      ? `/submissions/upload-intents/${intent.id}/status`
+      : `/admin/submissions/upload-intents/${intent.id}/status`;
     try {
-      completion = await apiRequest<SubmissionUploadCompletion>(statusPath, { cache: "no-store" });
-      lastPollingError = null;
-    } catch (error) {
-      lastPollingError = error instanceof Error ? error : new Error("查询投稿处理状态失败");
+      return await apiRequest<SubmissionProcessingJob>(statusPath, { cache: "no-store" });
+    } catch {
+      const cancelPath = adminSubmissionId === undefined
+        ? `/submissions/upload-intents/${intent.id}`
+        : `/admin/submissions/upload-intents/${intent.id}`;
+      await apiRequest<void>(cancelPath, { method: "DELETE" }).catch(() => undefined);
+      throw completionError;
     }
   }
-  if (completion.status === "completed" && completion.submission) {
-    return completion.submission;
-  }
-  if (completion.status === "processing") {
-    throw lastPollingError ?? new Error("投稿仍在服务器处理中，请稍后刷新页面查看结果");
-  }
-  throw new Error(completion.message || "投稿处理失败，请重新选择文件");
 }
 
 export const api = {
@@ -699,15 +799,18 @@ export const api = {
 
   submissionTargets: (signal?: AbortSignal) => apiRequest<SubmissionTargetsResponse>("/submissions/targets", { signal }),
   mySubmissions: (signal?: AbortSignal) => apiRequest<StoredFileRead[]>("/submissions", { signal }),
-  uploadSubmission: (songId: number, track: Track, file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ song_id: songId, track, acknowledge_ban_warning: acknowledgeBanWarning }, file),
-  uploadExhibition: (file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ track: "exhibition", acknowledge_ban_warning: acknowledgeBanWarning }, file),
-  replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ submission_id: id, track, acknowledge_ban_warning: acknowledgeBanWarning }, file),
+  uploadSubmission: (songId: number, track: Track, file: File, acknowledgeBanWarning = false, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ song_id: songId, track, acknowledge_ban_warning: acknowledgeBanWarning }, file, undefined, options),
+  uploadExhibition: (file: File, acknowledgeBanWarning = false, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ track: "exhibition", acknowledge_ban_warning: acknowledgeBanWarning }, file, undefined, options),
+  replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ submission_id: id, track, acknowledge_ban_warning: acknowledgeBanWarning }, file, undefined, options),
+  submissionProcessingJobs: (signal?: AbortSignal) => apiRequest<SubmissionProcessingJob[]>("/submissions/processing-jobs", { cache: "no-store", signal }),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   submissionPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/submissions/${id}/preview-manifest`, { signal }),
   downloadSubmission: (id: number) => downloadPrepared(`/submissions/${id}/download-metadata`),
   adminSubmissions: (track?: Track | "all", signal?: AbortSignal) => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`, { signal }),
-  replaceAdminSubmission: (id: number, file: File, track?: Track) => uploadSubmissionThroughIntent({ track }, file, id),
+  replaceAdminSubmission: (id: number, file: File, track?: Track, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ track }, file, id, options),
+  adminSubmissionProcessingJobs: (signal?: AbortSignal) => apiRequest<SubmissionProcessingJob[]>("/admin/submissions/processing-jobs", { cache: "no-store", signal }),
+  rebuildSubmissionResources: (id: number) => apiRequest<SubmissionProcessingJob>(`/admin/submissions/${id}/resources/rebuild`, { method: "POST" }),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
   batchDeleteAdminSubmissions: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/submissions/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   downloadAdminSubmission: (id: number) => downloadPrepared(`/admin/submissions/${id}/download-metadata`),

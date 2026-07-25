@@ -44,6 +44,31 @@ services:
       timeout: 5s
       retries: 10
 
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
+      DATA_DIR: /data
+      SECRET_KEY: change-me-in-production
+      ADMIN_SEED_CODE: admin
+      ADMIN_SEED_PASSWORD: change-me-please
+      OBJECT_STORAGE_BACKEND: local
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "1"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
+    volumes:
+      - zppz-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   frontend:
     build:
       context: .

@@ -34,6 +34,8 @@ def serialize_submission(item: Submission, preview_bundle: PreviewBundle | None 
         "track_duration_seconds": item.track_duration_seconds,
         "is_long_track": bool(item.track_duration_seconds is not None and item.track_duration_seconds > 240),
         "public_package_ready": bool(item.public_storage_path),
+        "public_package_status": item.public_package_status,
+        "public_package_message": item.public_package_message,
         "validation": {
             "maidata": True,
             "track": True,
@@ -42,6 +44,8 @@ def serialize_submission(item: Submission, preview_bundle: PreviewBundle | None 
         },
         "preview_status": preview_bundle.status if preview_bundle else None,
         "preview_message": preview_bundle.error_message if preview_bundle else "",
+        "video_status": preview_bundle.video_status if preview_bundle else "none",
+        "video_message": preview_bundle.video_error_message if preview_bundle else "",
         "source_song": serialize_song(item.source_song) if item.source_song else None,
         "user": user_payload(item.user) if item.user else None,
         "created_at": item.created_at,

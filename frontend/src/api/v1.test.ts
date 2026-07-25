@@ -1,6 +1,55 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, formatDuration, formatMB, formatTime, submissionContentType } from "./v1";
 
+type XhrHandler = (xhr: TestXMLHttpRequest, body: Document | XMLHttpRequestBodyInit | null) => void;
+
+class TestXMLHttpRequest {
+  method = "";
+  url = "";
+  async = true;
+  status = 0;
+  responseText = "";
+  withCredentials = false;
+  requestHeaders: Record<string, string> = {};
+  upload = { onprogress: null as ((event: ProgressEvent) => void) | null };
+  onerror: (() => void) | null = null;
+  ontimeout: (() => void) | null = null;
+  onabort: (() => void) | null = null;
+  onload: (() => void) | null = null;
+
+  constructor(private readonly handler: XhrHandler) {}
+
+  open(method: string, url: string, async = true) {
+    this.method = method;
+    this.url = url;
+    this.async = async;
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.requestHeaders[name] = value;
+  }
+
+  send(body: Document | XMLHttpRequestBodyInit | null) {
+    this.handler(this, body);
+  }
+
+  abort() {
+    this.onabort?.();
+  }
+}
+
+function installXhr(handler: XhrHandler) {
+  const instances: TestXMLHttpRequest[] = [];
+  vi.stubGlobal("XMLHttpRequest", class {
+    constructor() {
+      const xhr = new TestXMLHttpRequest(handler);
+      instances.push(xhr);
+      return xhr;
+    }
+  });
+  return instances;
+}
+
 describe("v1 API helpers", () => {
   afterEach(() => {
     document.cookie.split(";").forEach((item) => {
@@ -48,30 +97,45 @@ describe("v1 API helpers", () => {
           expires_at: "2026-07-17T12:00:00Z",
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
-      if (path.includes("cloudflarestorage.com")) return new Response(null, { status: 200 });
       return new Response(JSON.stringify({
-        status: "completed",
-        message: "done",
-        submission: { id: 9, file_name: "entry.zip", file_size: 3 },
+        id: "job-1",
+        intent_id: "intent-1",
+        status: "queued",
+        stage: "uploaded",
+        message: "等待后台校验",
+        file_name: "entry.zip",
+        file_size: 3,
+        source_song_id: 4,
+        replace_submission_id: null,
+        submission: null,
+        created_at: "2026-07-17T12:00:00Z",
+        updated_at: "2026-07-17T12:00:00Z",
       }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }));
+    const xhrs = installXhr((xhr) => {
+      xhr.status = 200;
+      xhr.onload?.();
+    });
     const file = new File([new Uint8Array([1, 2, 3])], "entry.zip");
 
-    await expect(api.uploadSubmission(4, "normal", file)).resolves.toMatchObject({ id: 9 });
+    await expect(api.uploadSubmission(4, "normal", file)).resolves.toMatchObject({ id: "job-1", status: "queued" });
     expect(calls.map((call) => [call.path, call.method])).toEqual([
       ["/api/v1/submissions/upload-intents", "POST"],
-      ["https://example.r2.cloudflarestorage.com/object?signed=1", "PUT"],
       ["/api/v1/submissions/upload-intents/intent-1/complete", "POST"],
     ]);
-    expect(calls[1].body).toBe(file);
-    expect(calls[1].headers).toEqual({ "Content-Type": "application/zip" });
+    expect(xhrs).toHaveLength(1);
+    expect(xhrs[0]).toMatchObject({
+      method: "PUT",
+      url: "https://example.r2.cloudflarestorage.com/object?signed=1",
+      requestHeaders: { "Content-Type": "application/zip" },
+      withCredentials: false,
+    });
   });
 
-  it("polls the exact upload intent until background processing completes", async () => {
-    vi.useFakeTimers();
+  it("reports XHR progress and returns immediately after the enqueue confirmation", async () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
@@ -85,36 +149,46 @@ describe("v1 API helpers", () => {
           expires_at: "2026-07-17T12:00:00Z",
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
-      if (path.includes("cloudflarestorage.com")) return new Response(null, { status: 200 });
-      if (path.endsWith("/complete")) {
-        return new Response(JSON.stringify({
-          status: "processing",
-          message: "processing",
-          submission: null,
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
       return new Response(JSON.stringify({
-        status: "completed",
-        message: "done",
-        submission: { id: 10, file_name: "new-entry.zip", file_size: 3 },
+        id: "job-background",
+        intent_id: "intent-background",
+        status: "queued",
+        stage: "uploaded",
+        message: "等待后台校验",
+        file_name: "new-entry.zip",
+        file_size: 3,
+        source_song_id: 4,
+        replace_submission_id: null,
+        submission: null,
+        created_at: "2026-07-17T12:00:00Z",
+        updated_at: "2026-07-17T12:00:00Z",
       }), { status: 200, headers: { "content-type": "application/json" } });
     }));
+    vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValueOnce(1000);
+    installXhr((xhr) => {
+      xhr.upload.onprogress?.({ loaded: 1, total: 3, lengthComputable: true } as ProgressEvent);
+      xhr.upload.onprogress?.({ loaded: 3, total: 3, lengthComputable: true } as ProgressEvent);
+      xhr.status = 200;
+      xhr.onload?.();
+    });
+    const progress = vi.fn();
 
-    const upload = api.uploadSubmission(
+    const result = await api.uploadSubmission(
       4,
       "normal",
       new File([new Uint8Array([1, 2, 3])], "new-entry.zip"),
+      false,
+      { onProgress: progress },
     );
-    await vi.waitFor(() => expect(calls).toHaveLength(3));
-    await vi.advanceTimersByTimeAsync(1500);
 
-    await expect(upload).resolves.toMatchObject({ id: 10, file_name: "new-entry.zip" });
+    expect(result).toMatchObject({ id: "job-background", status: "queued" });
     expect(calls).toEqual([
       "/api/v1/submissions/upload-intents",
-      "https://example.r2.cloudflarestorage.com/background",
       "/api/v1/submissions/upload-intents/intent-background/complete",
-      "/api/v1/submissions/upload-intents/intent-background/status",
     ]);
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ phase: "preparing", percent: 0 }));
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ phase: "uploading", percent: 100 }));
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "confirming", percent: 100 }));
   });
 
   it("does not complete an upload when the signed PUT fails", async () => {
@@ -128,12 +202,56 @@ describe("v1 API helpers", () => {
           expires_at: "2026-07-17T12:00:00Z",
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
-      return new Response("denied", { status: 403 });
+      return new Response(null, { status: 204 });
     });
     vi.stubGlobal("fetch", fetchMock);
+    installXhr((xhr) => {
+      xhr.status = 403;
+      xhr.responseText = "denied";
+      xhr.onload?.();
+    });
 
     await expect(api.uploadSubmission(4, "normal", new File(["zip"], "entry.zip"))).rejects.toThrow("denied");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/v1/submissions/upload-intents/intent-failed",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("aborts the XHR and deletes the intent without calling complete", async () => {
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      paths.push(path);
+      if (path.endsWith("/upload-intents")) {
+        return new Response(JSON.stringify({
+          id: "intent-cancel",
+          upload_url: "https://example.r2.cloudflarestorage.com/cancel",
+          method: "PUT",
+          headers: { "Content-Type": "application/zip" },
+          expires_at: "2026-07-17T12:00:00Z",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(null, { status: 204 });
+    }));
+    const xhrs = installXhr(() => undefined);
+    const controller = new AbortController();
+    const upload = api.uploadSubmission(
+      4,
+      "normal",
+      new File(["zip"], "entry.zip"),
+      false,
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(xhrs).toHaveLength(1));
+    controller.abort();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    expect(paths).toEqual([
+      "/api/v1/submissions/upload-intents",
+      "/api/v1/submissions/upload-intents/intent-cancel",
+    ]);
   });
 
   it("deduplicates concurrent bootstrap requests", async () => {

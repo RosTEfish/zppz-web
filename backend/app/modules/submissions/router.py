@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-import logging
 from pathlib import Path
 import shutil
 import tempfile
-from threading import Lock
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -17,8 +15,18 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.security import get_current_user, is_owner, require_role
-from app.db.session import get_db, SessionLocal
-from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission, SubmissionUploadIntent, User
+from app.db.session import get_db
+from app.models import (
+    DrawAssignment,
+    GuessChart,
+    ImportIssue,
+    PreviewBundle,
+    Song,
+    Submission,
+    SubmissionProcessingJob,
+    SubmissionUploadIntent,
+    User,
+)
 from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song, serialize_submissions
 from app.modules.downloads import (
@@ -65,7 +73,7 @@ from app.schemas import (
     StoredFileRead,
     SubmissionTargetsResponse,
     SubmissionTrackUpdate,
-    SubmissionUploadCompletionRead,
+    SubmissionProcessingJobRead,
     SubmissionUploadIntentCreate,
     SubmissionUploadIntentRead,
 )
@@ -76,9 +84,6 @@ admin_router = APIRouter(prefix="/admin/submissions", tags=["admin-submissions"]
 
 MAX_BATCH_FILES = 500
 MAX_BATCH_SOURCE_BYTES = 10 * 1024 * 1024 * 1024
-logger = logging.getLogger(__name__)
-_processing_intent_ids: set[str] = set()
-_processing_intents_lock = Lock()
 
 
 def _can_manage_submissions(user: User) -> bool:
@@ -120,7 +125,7 @@ def _create_upload_intent(
             select(SubmissionUploadIntent.id).where(
                 SubmissionUploadIntent.event_id == event_id,
                 SubmissionUploadIntent.replace_submission_id == submission_id,
-                SubmissionUploadIntent.status == "processing",
+                SubmissionUploadIntent.status.in_(("uploaded", "processing")),
             )
         )
     elif song_id is not None:
@@ -130,7 +135,7 @@ def _create_upload_intent(
                 SubmissionUploadIntent.user_id == user.id,
                 SubmissionUploadIntent.source_song_id == song_id,
                 SubmissionUploadIntent.replace_submission_id.is_(None),
-                SubmissionUploadIntent.status == "processing",
+                SubmissionUploadIntent.status.in_(("uploaded", "processing")),
             )
         )
     if in_progress:
@@ -138,6 +143,22 @@ def _create_upload_intent(
             status_code=409,
             detail="上一份投稿仍在服务器处理中，请等待完成并刷新页面后再替换",
         )
+    if track == "j":
+        active_j = db.scalar(
+            select(SubmissionProcessingJob.id)
+            .join(
+                SubmissionUploadIntent,
+                SubmissionUploadIntent.id == SubmissionProcessingJob.upload_intent_id,
+            )
+            .where(
+                SubmissionProcessingJob.event_id == event_id,
+                SubmissionProcessingJob.user_id == user.id,
+                SubmissionProcessingJob.status.in_(("queued", "processing")),
+                SubmissionUploadIntent.track == "j",
+            )
+        )
+        if active_j:
+            raise HTTPException(status_code=409, detail="已有一个 J 投稿正在后台处理，请等待完成")
     intent_id = uuid4().hex
     intent = SubmissionUploadIntent(
         id=intent_id,
@@ -198,7 +219,8 @@ def _reject_intent(db: Session, intent: SubmissionUploadIntent, detail: str, sta
     try:
         get_object_store().delete(intent.object_key)
     except Exception:
-        pass
+        enqueue_storage_deletion(db, intent.object_key)
+        db.commit()
     raise HTTPException(status_code=status_code, detail=detail)
 
 
@@ -364,6 +386,8 @@ def _create_submission(
         row.track_duration_seconds = parsed.track_duration_seconds
         public_storage_path = write_public_package(event_id, row.id, parsed)
         row.public_storage_path = public_storage_path
+        row.public_package_status = "ready"
+        row.public_package_message = ""
         _sync_and_commit(db, row, parsed)
         if get_settings().preview_enabled:
             preview_bundle = build_preview_bundle(
@@ -421,6 +445,8 @@ def _replace_submission(
         row.track_duration_seconds = parsed.track_duration_seconds
         new_public_storage_path = write_public_package(row.event_id, row.id, parsed)
         row.public_storage_path = new_public_storage_path
+        row.public_package_status = "ready"
+        row.public_package_message = ""
         if source_kind:
             row.source_kind = source_kind
         _sync_and_commit(db, row, parsed, match_source_type=old_track)
@@ -465,6 +491,30 @@ def _delete_submission(db: Session, row: Submission) -> None:
 
 
 def _stage_delete_submission(db: Session, row: Submission) -> tuple[str, str | None, set[str]]:
+    active_jobs = list(
+        db.scalars(
+            select(SubmissionProcessingJob).where(
+                SubmissionProcessingJob.status.in_(("queued", "processing")),
+                or_(
+                    SubmissionProcessingJob.replace_submission_id == row.id,
+                    SubmissionProcessingJob.result_submission_id == row.id,
+                ),
+            )
+        ).all()
+    )
+    for job in active_jobs:
+        job.status = "cancelled"
+        job.finished_at = datetime.utcnow()
+        job.lease_until = None
+        job.next_attempt_at = None
+        job.error_code = "source_deleted"
+        job.error_message = "投稿已删除，后台任务已取消"
+        if job.upload_intent_id:
+            intent = db.get(SubmissionUploadIntent, job.upload_intent_id)
+            if intent:
+                intent.status = "cancelled"
+                intent.error_message = job.error_message
+                enqueue_storage_deletion(db, intent.object_key)
     _, cover_paths = delete_source_charts(db, row.event_id, row.track, row.id)
     delete_preview_bundle(db, row.event_id, "submission", row.id)
     storage_path = row.storage_path
@@ -751,6 +801,8 @@ def _complete_intent(
                 row.storage_path = final_source
                 row.public_storage_path = final_public
                 row.public_file_size = public_size
+                row.public_package_status = "ready"
+                row.public_package_message = ""
                 row.file_size = info.size
                 row.track_duration_seconds = parsed.track_duration_seconds
                 row.source_kind = source_kind
@@ -801,119 +853,121 @@ def _complete_intent(
     return row
 
 
-def _completion_payload(db: Session, intent: SubmissionUploadIntent) -> dict:
-    submission = None
-    if intent.result_submission_id:
-        row = db.scalar(
-            select(Submission)
-            .options(*_submission_options())
-            .where(Submission.id == intent.result_submission_id)
-        )
-        if row:
-            submission = serialize_submissions(db, [row])[0]
-    status_value = "completed" if submission else intent.status
-    if status_value not in {"processing", "completed", "failed", "expired"}:
-        status_value = "processing"
-    messages = {
-        "processing": "服务器正在解析谱面并生成投稿素材",
-        "completed": "投稿处理完成",
-        "failed": intent.error_message or "投稿处理失败，请重新选择文件",
-        "expired": "上传已过期，请重新选择文件",
-    }
-    return {
-        "status": status_value,
-        "message": messages[status_value],
-        "submission": submission,
-    }
-
-
-def _process_intent_in_background(intent_id: str) -> None:
-    try:
-        with SessionLocal() as db:
-            intent = db.get(SubmissionUploadIntent, intent_id)
-            if not intent or intent.status != "processing":
-                return
-            user = db.get(User, intent.user_id)
-            if not user:
-                intent.status = "failed"
-                intent.error_message = "上传用户不存在"
-                db.commit()
-                return
-            try:
-                _complete_intent(intent, user, db, BackgroundTasks())
-                drain_storage_deletions_in_background()
-            except Exception as exc:
-                db.rollback()
-                current = db.get(SubmissionUploadIntent, intent_id)
-                if current and current.result_submission_id:
-                    current.status = "completed"
-                    current.error_message = ""
-                    db.commit()
-                elif current and current.status != "failed":
-                    current.status = "failed"
-                    current.error_message = (
-                        str(exc.detail)
-                        if isinstance(exc, HTTPException)
-                        else "投稿处理失败，请重新选择文件后重试"
-                    )[:500]
-                    db.commit()
-                logger.exception("Background submission processing failed for intent=%s", intent_id)
-    finally:
-        with _processing_intents_lock:
-            _processing_intent_ids.discard(intent_id)
-
-
-def _ensure_intent_processing(
+def _confirm_and_enqueue_intent(
     db: Session,
     intent: SubmissionUploadIntent,
-    background_tasks: BackgroundTasks,
+    *,
+    enforce_phase: bool,
 ) -> dict:
-    if intent.result_submission_id:
-        return _completion_payload(db, intent)
-    if intent.status in {"failed", "expired"}:
-        return _completion_payload(db, intent)
-    if intent.status == "pending":
-        if intent.expires_at < datetime.utcnow():
+    from app.modules.submissions.processing import (
+        ActiveProcessingJobConflict,
+        enqueue_upload_job,
+        serialize_processing_job,
+    )
+
+    existing = db.scalar(
+        select(SubmissionProcessingJob).where(
+            SubmissionProcessingJob.upload_intent_id == intent.id
+        )
+    )
+    if existing:
+        return serialize_processing_job(db, existing)
+    if intent.status != "pending" or intent.expires_at < datetime.utcnow():
+        if intent.status == "pending":
             intent.status = "expired"
             db.commit()
-            return _completion_payload(db, intent)
-        intent.status = "processing"
-        intent.error_message = ""
-        db.commit()
-    if intent.status == "processing":
-        with _processing_intents_lock:
-            should_schedule = intent.id not in _processing_intent_ids
-            if should_schedule:
-                _processing_intent_ids.add(intent.id)
-        if should_schedule:
-            background_tasks.add_task(_process_intent_in_background, intent.id)
-    return _completion_payload(db, intent)
+        raise HTTPException(status_code=410, detail="上传意图已失效，请重新选择文件")
+    event = get_current_event(db)
+    if intent.event_id != event.id:
+        raise HTTPException(status_code=409, detail="投稿赛事已经变更")
+    if enforce_phase:
+        _require_submission_phase(db, event)
+    try:
+        info = get_object_store().head(intent.object_key)
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail="R2 中尚未找到完整上传文件，请重试") from exc
+    if info.size != intent.file_size:
+        _reject_intent(db, intent, "R2 对象大小与上传声明不一致")
+    if get_object_store().backend == "r2" and info.content_type != intent.content_type:
+        _reject_intent(db, intent, "R2 对象 Content-Type 与上传声明不一致")
+    try:
+        job = enqueue_upload_job(db, intent)
+    except ActiveProcessingJobConflict:
+        _reject_intent(db, intent, "同一投稿目标已有后台任务，请等待完成后重试", 409)
+    return serialize_processing_job(db, job)
 
 
-@router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionUploadCompletionRead)
+@router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionProcessingJobRead)
 def complete_submission_upload_intent(
     intent_id: str,
-    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != user.id or intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return _ensure_intent_processing(db, intent, background_tasks)
+    return _confirm_and_enqueue_intent(db, intent, enforce_phase=True)
 
 
-@router.get("/upload-intents/{intent_id}/status", response_model=SubmissionUploadCompletionRead)
+@router.get("/upload-intents/{intent_id}/status", response_model=SubmissionProcessingJobRead)
 def submission_upload_intent_status(
     intent_id: str,
-    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    from app.modules.submissions.processing import serialize_processing_job
+
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != user.id or intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return _ensure_intent_processing(db, intent, background_tasks)
+    job = db.scalar(
+        select(SubmissionProcessingJob).where(
+            SubmissionProcessingJob.upload_intent_id == intent.id
+        )
+    )
+    if not job:
+        raise HTTPException(status_code=409, detail="上传文件尚未确认入队")
+    return serialize_processing_job(db, job)
+
+
+@router.get("/processing-jobs", response_model=list[SubmissionProcessingJobRead])
+def submission_processing_jobs(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from app.modules.submissions.processing import list_visible_jobs, serialize_processing_job
+
+    event = get_current_event(db)
+    return [
+        serialize_processing_job(db, job)
+        for job in list_visible_jobs(db, event_id=event.id, user_id=user.id)
+    ]
+
+
+@router.delete("/upload-intents/{intent_id}", status_code=204)
+def cancel_submission_upload_intent(
+    intent_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    intent = db.get(SubmissionUploadIntent, intent_id)
+    if not intent or intent.user_id != user.id or intent.is_admin:
+        raise HTTPException(status_code=404, detail="上传意图不存在")
+    if db.scalar(
+        select(SubmissionProcessingJob.id).where(
+            SubmissionProcessingJob.upload_intent_id == intent.id
+        )
+    ):
+        raise HTTPException(status_code=409, detail="文件已经进入后台处理，无法取消")
+    if intent.status != "pending":
+        raise HTTPException(status_code=409, detail="上传已经确认，无法取消")
+    intent.status = "cancelled"
+    db.commit()
+    try:
+        get_object_store().delete(intent.object_key)
+    except Exception:
+        enqueue_storage_deletion(db, intent.object_key)
+        db.commit()
 
 
 @router.post("", response_model=StoredFileRead, deprecated=True)
@@ -1176,30 +1230,110 @@ def create_admin_submission_upload_intent(
     return _intent_response(intent)
 
 
-@admin_router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionUploadCompletionRead)
+@admin_router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionProcessingJobRead)
 def complete_admin_submission_upload_intent(
     intent_id: str,
-    background_tasks: BackgroundTasks,
     admin: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != admin.id or not intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return _ensure_intent_processing(db, intent, background_tasks)
+    return _confirm_and_enqueue_intent(db, intent, enforce_phase=False)
 
 
-@admin_router.get("/upload-intents/{intent_id}/status", response_model=SubmissionUploadCompletionRead)
+@admin_router.get("/upload-intents/{intent_id}/status", response_model=SubmissionProcessingJobRead)
 def admin_submission_upload_intent_status(
     intent_id: str,
-    background_tasks: BackgroundTasks,
     admin: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:
+    from app.modules.submissions.processing import serialize_processing_job
+
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != admin.id or not intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return _ensure_intent_processing(db, intent, background_tasks)
+    job = db.scalar(
+        select(SubmissionProcessingJob).where(
+            SubmissionProcessingJob.upload_intent_id == intent.id
+        )
+    )
+    if not job:
+        raise HTTPException(status_code=409, detail="上传文件尚未确认入队")
+    return serialize_processing_job(db, job)
+
+
+@admin_router.get("/processing-jobs", response_model=list[SubmissionProcessingJobRead])
+def admin_submission_processing_jobs(
+    _: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from app.modules.submissions.processing import list_visible_jobs, serialize_processing_job
+
+    event = get_current_event(db)
+    return [
+        serialize_processing_job(db, job)
+        for job in list_visible_jobs(db, event_id=event.id, include_all_users=True)
+    ]
+
+
+@admin_router.delete("/upload-intents/{intent_id}", status_code=204)
+def cancel_admin_submission_upload_intent(
+    intent_id: str,
+    admin: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+):
+    intent = db.get(SubmissionUploadIntent, intent_id)
+    if not intent or intent.user_id != admin.id or not intent.is_admin:
+        raise HTTPException(status_code=404, detail="上传意图不存在")
+    if db.scalar(
+        select(SubmissionProcessingJob.id).where(
+            SubmissionProcessingJob.upload_intent_id == intent.id
+        )
+    ):
+        raise HTTPException(status_code=409, detail="文件已经进入后台处理，无法取消")
+    if intent.status != "pending":
+        raise HTTPException(status_code=409, detail="上传已经确认，无法取消")
+    intent.status = "cancelled"
+    db.commit()
+    try:
+        get_object_store().delete(intent.object_key)
+    except Exception:
+        enqueue_storage_deletion(db, intent.object_key)
+        db.commit()
+
+
+@admin_router.post("/{submission_id}/resources/rebuild", response_model=SubmissionProcessingJobRead)
+def rebuild_submission_resources(
+    submission_id: int,
+    admin: User = Depends(require_role("admin", "pool_editor")),
+    db: Session = Depends(get_db),
+) -> dict:
+    from app.modules.submissions.processing import (
+        enqueue_resource_rebuild,
+        serialize_processing_job,
+    )
+
+    event = get_current_event(db)
+    row = db.get(Submission, submission_id)
+    if not row or row.event_id != event.id:
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    bundle = db.scalar(
+        select(PreviewBundle).where(
+            PreviewBundle.event_id == event.id,
+            PreviewBundle.source_type == "submission",
+            PreviewBundle.source_id == row.id,
+        )
+    )
+    can_rebuild = (
+        row.public_package_status == "failed"
+        or bundle is None
+        or bundle.status in {"failed", "unsupported"}
+        or bundle.video_status == "failed"
+    )
+    if not can_rebuild:
+        raise HTTPException(status_code=409, detail="当前投稿资源没有需要重建的失败项")
+    return serialize_processing_job(db, enqueue_resource_rebuild(db, row, admin.id))
 
 
 @admin_router.post("/batch-delete", response_model=BatchDeleteResponse)

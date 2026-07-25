@@ -6,13 +6,15 @@ import argparse
 from typing import TypedDict
 from urllib.request import Request, urlopen
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import OWNER_ROLE, ensure_roles
 from app.db.session import SessionLocal
 from app.core.config import get_settings
-from app.models import PreviewBundle, Role, User
+from app.models import PreviewBundle, Role, SubmissionProcessingJob, User
 from app.modules.object_storage import get_object_store
 from app.modules.preview.service import manifest_payload
 
@@ -85,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     set_owner_parser.add_argument("--user-code", required=True, help="existing active account code")
     subparsers.add_parser("storage-check", help="verify configured object storage read/write access")
     subparsers.add_parser("preview-check", help="verify preview configuration and one real manifest when available")
+    subparsers.add_parser("worker-check", help="verify the persistent processing queue is readable")
+    subparsers.add_parser(
+        "worker-recover",
+        help="requeue processing jobs after the previous worker has been stopped",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "set-owner":
@@ -130,6 +137,33 @@ def main(argv: list[str] | None = None) -> int:
                     if response.status not in {200, 206}:
                         raise RuntimeError(f"{name} returned HTTP {response.status}")
         print(f"preview manifest check passed ({payload['source_version']})")
+        return 0
+
+    if args.command == "worker-check":
+        with SessionLocal() as db:
+            pending = db.scalar(
+                select(SubmissionProcessingJob.id)
+                .where(SubmissionProcessingJob.status.in_(("queued", "processing")))
+                .limit(1)
+            )
+        print(f"worker queue check passed (pending={'yes' if pending else 'no'})")
+        return 0
+
+    if args.command == "worker-recover":
+        with SessionLocal() as db:
+            result = db.execute(
+                update(SubmissionProcessingJob)
+                .where(SubmissionProcessingJob.status == "processing")
+                .values(
+                    status="queued",
+                    lease_until=None,
+                    next_attempt_at=datetime.utcnow(),
+                    error_code="",
+                    error_message="",
+                )
+            )
+            db.commit()
+        print(f"worker recovery queued {result.rowcount} interrupted job(s)")
         return 0
 
     parser.error("unknown command")

@@ -31,6 +31,7 @@ from app.models import (
     Role,
     Song,
     Submission,
+    SubmissionProcessingJob,
     SubmissionUploadIntent,
     SwapRequest,
     SwapRequestItem,
@@ -191,6 +192,11 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
     )
     deleted["import_issues"] = (
         _delete_rows(db, delete(ImportIssue).where(ImportIssue.event_id.in_(event_ids))) if event_ids else 0
+    )
+    deleted["submission_processing_jobs"] = (
+        _delete_rows(db, delete(SubmissionProcessingJob).where(SubmissionProcessingJob.event_id.in_(event_ids)))
+        if event_ids
+        else 0
     )
     deleted["submission_upload_intents"] = (
         _delete_rows(db, delete(SubmissionUploadIntent).where(SubmissionUploadIntent.event_id.in_(event_ids)))

@@ -109,6 +109,21 @@ def _public_chart_payloads(
     user_id: int | None,
     phase_status,
 ) -> list[dict]:
+    submission_ids = {
+        int(chart.source_submission_id)
+        for chart in rows
+        if chart.source_submission_id is not None
+        and chart.source_submission_type in {"normal", "j", "exhibition"}
+    }
+    downloadable_submission_ids = set(
+        db.scalars(
+            select(Submission.id).where(
+                Submission.id.in_(submission_ids),
+                Submission.public_storage_path.is_not(None),
+                Submission.public_package_status == "ready",
+            )
+        ).all()
+    ) if submission_ids else set()
     payloads = serialize_charts(
         db,
         rows,
@@ -118,7 +133,13 @@ def _public_chart_payloads(
     for payload, chart in zip(payloads, rows):
         payload.update(
             {
-                "can_download": True,
+                "can_download": (
+                    chart.source_submission_type == "admin"
+                    or (
+                        chart.source_submission_id is not None
+                        and int(chart.source_submission_id) in downloadable_submission_ids
+                    )
+                ),
                 "can_vote": phase_status.can("quality_vote") and chart.source_submission_type != "exhibition",
                 "can_comment": phase_status.can("quality_vote"),
                 "can_author_guess": (

@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 from tempfile import TemporaryDirectory
 from uuid import uuid4
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from mutagen import File as MutagenFile
 
@@ -79,6 +80,16 @@ class ParsedArchive:
     track_duration_seconds: float = 0.0
     archive_path: Path | None = None
     public_files: tuple[PublicArchiveMember, ...] = ()
+
+
+@dataclass(frozen=True)
+class PreparedArchive:
+    parsed: ParsedArchive
+    files: dict[str, Path]
+
+    @property
+    def video_name(self) -> str | None:
+        return next((name for name in VIDEO_MEMBER_NAMES if name in self.files), None)
 
 
 @dataclass
@@ -308,6 +319,25 @@ def build_public_package(target: Path, parsed: ParsedArchive) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def build_public_package_from_files(target: Path, files: dict[str, Path]) -> None:
+    """Build the anonymous package without recompressing already-compressed media."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{uuid4().hex}.tmp")
+    ordered = [
+        name
+        for name in ("maidata.txt", "track.mp3", "track.ogg", "bg.jpg", "bg.png", "bg.webp", *VIDEO_MEMBER_NAMES)
+        if name in files
+    ]
+    try:
+        with ZipFile(temporary, "w", allowZip64=True) as archive:
+            for name in ordered:
+                compression = ZIP_DEFLATED if name == "maidata.txt" else ZIP_STORED
+                archive.write(files[name], arcname=name, compress_type=compression)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _copy_stream(source, destination) -> None:
     while chunk := source.read(1024 * 1024):
         destination.write(chunk)
@@ -392,6 +422,155 @@ def extract_public_files(parsed: ParsedArchive, destination: Path) -> dict[str, 
     else:
         raise ArchiveParseError("仅支持 zip、7z、rar 压缩包")
     return {member.output_name: destination / member.output_name for member in parsed.public_files}
+
+
+def _prepared_result(path: Path, files: dict[str, Path]) -> PreparedArchive:
+    maidata_path = files["maidata.txt"]
+    track_name = next(name for name in ("track.mp3", "track.ogg") if name in files)
+    cover_name = next(name for name in ("bg.jpg", "bg.png", "bg.webp") if name in files)
+    maidata_raw = maidata_path.read_bytes()
+    cover_bytes = files[cover_name].read_bytes()
+    if len(maidata_raw) > MAX_MAIDATA_BYTES:
+        raise ArchiveParseError("maidata.txt 大小超出限制")
+    if len(cover_bytes) > MAX_COVER_BYTES:
+        raise ArchiveParseError("封面图片大小超出限制")
+    title, author, levels = parse_maidata(decode_maidata(maidata_raw))
+    duration = _audio_duration(files[track_name], track_name)
+    public_files = tuple(PublicArchiveMember(name, name) for name in files)
+    return PreparedArchive(
+        ParsedArchive(
+            title,
+            author,
+            levels,
+            cover_bytes,
+            Path(cover_name).suffix.lower(),
+            (),
+            track_duration_seconds=duration,
+            archive_path=path,
+            public_files=public_files,
+        ),
+        files,
+    )
+
+
+def _normalized_selection(names: list[str]) -> tuple[str, str, str, str | None]:
+    maidata_name, track_name, cover_name = _select_members(names)
+    return maidata_name, track_name, cover_name, _select_video_member(names)
+
+
+def prepare_archive(path: Path, destination: Path) -> PreparedArchive:
+    """Validate and extract every selected member exactly once for an upload attempt."""
+    suffix = path.suffix.lower()
+    if suffix not in SUPPORTED_ARCHIVE_SUFFIXES:
+        raise ArchiveParseError("仅支持 zip、7z、rar 压缩包")
+    destination.mkdir(parents=True, exist_ok=True)
+    files: dict[str, Path] = {}
+
+    def output_name(kind: str, member_name: str) -> str:
+        if kind == "video":
+            return PurePosixPath(member_name).name.lower()
+        return _public_file_name(kind, member_name)
+
+    try:
+        if suffix == ".zip":
+            from zipfile import BadZipFile
+
+            try:
+                with ZipFile(path, "r") as archive:
+                    infos = [info for info in archive.infolist() if not info.is_dir()]
+                    if any(info.flag_bits & 0x1 for info in infos):
+                        raise ArchiveParseError("不支持加密压缩包")
+                    if any(stat.S_ISLNK(info.external_attr >> 16) for info in infos):
+                        raise ArchiveParseError("archive cannot contain symbolic links")
+                    _validate_archive_sizes([
+                        (getattr(info, "orig_filename", info.filename), info.file_size, info.compress_size)
+                        for info in infos
+                    ])
+                    by_name = {
+                        _validate_member_name(getattr(info, "orig_filename", info.filename)): info
+                        for info in infos
+                    }
+                    maidata, track, cover, video = _normalized_selection(list(by_name))
+                    _validate_target_size(maidata, by_name[maidata].file_size, MAX_MAIDATA_BYTES)
+                    _validate_target_size(cover, by_name[cover].file_size, MAX_COVER_BYTES)
+                    selected = (("maidata", maidata), ("track", track), ("bg", cover))
+                    if video:
+                        selected += (("video", video),)
+                    for kind, name in selected:
+                        target_name = output_name(kind, name)
+                        target = destination / target_name
+                        with archive.open(by_name[name], "r") as source, target.open("wb") as output:
+                            _copy_stream(source, output)
+                        files[target_name] = target
+            except BadZipFile as exc:
+                raise ArchiveParseError("ZIP 压缩包已损坏") from exc
+        elif suffix == ".7z":
+            if py7zr is None:
+                raise ArchiveParseError("服务器未安装 py7zr，无法解析 7z 文件")
+            with py7zr.SevenZipFile(path, mode="r") as archive:
+                if archive.needs_password():
+                    raise ArchiveParseError("不支持加密压缩包")
+                infos = [info for info in archive.list() if not getattr(info, "is_directory", False)]
+                if any(getattr(info, "is_symlink", False) for info in infos):
+                    raise ArchiveParseError("archive cannot contain symbolic links")
+                _validate_archive_sizes([
+                    (
+                        str(info.filename),
+                        int(getattr(info, "uncompressed", 0) or 0),
+                        int(getattr(info, "compressed", 0) or getattr(info, "uncompressed", 0) or 1),
+                    )
+                    for info in infos
+                ])
+                total = sum(int(getattr(info, "uncompressed", 0) or 0) for info in infos)
+                if total and total / max(path.stat().st_size, 1) > MAX_COMPRESSION_RATIO:
+                    raise ArchiveParseError("7z 压缩包总压缩倍率过高")
+                by_name = {_validate_member_name(str(info.filename)): info for info in infos}
+                maidata, track, cover, video = _normalized_selection(list(by_name))
+                _validate_target_size(maidata, getattr(by_name[maidata], "uncompressed", None), MAX_MAIDATA_BYTES)
+                _validate_target_size(cover, getattr(by_name[cover], "uncompressed", None), MAX_COVER_BYTES)
+                selected_names = [maidata, track, cover] + ([video] if video else [])
+                raw = destination / ".raw"
+                raw.mkdir()
+                archive.extract(path=raw, targets=[str(by_name[name].filename) for name in selected_names])
+                kinds = ["maidata", "track", "bg"] + (["video"] if video else [])
+                for kind, name in zip(kinds, selected_names, strict=True):
+                    extracted = raw / Path(*PurePosixPath(_normalized_member_name(str(by_name[name].filename))).parts)
+                    if not extracted.is_file():
+                        raise ArchiveParseError(f"7z 压缩包无法读取 {PurePosixPath(name).name}")
+                    target_name = output_name(kind, name)
+                    target = destination / target_name
+                    shutil.move(str(extracted), target)
+                    files[target_name] = target
+                shutil.rmtree(raw, ignore_errors=True)
+        else:
+            if rarfile is None:
+                raise ArchiveParseError("服务器未安装 rarfile，无法解析 RAR 文件")
+            with rarfile.RarFile(path, mode="r") as archive:
+                infos = [info for info in archive.infolist() if not info.isdir()]
+                if archive.needs_password():
+                    raise ArchiveParseError("不支持加密压缩包")
+                if any(getattr(info, "is_symlink", lambda: False)() for info in infos):
+                    raise ArchiveParseError("archive cannot contain symbolic links")
+                _validate_archive_sizes([(info.filename, info.file_size, info.compress_size) for info in infos])
+                by_name = {_validate_member_name(info.filename): info for info in infos}
+                maidata, track, cover, video = _normalized_selection(list(by_name))
+                _validate_target_size(maidata, by_name[maidata].file_size, MAX_MAIDATA_BYTES)
+                _validate_target_size(cover, by_name[cover].file_size, MAX_COVER_BYTES)
+                selected = (("maidata", maidata), ("track", track), ("bg", cover))
+                if video:
+                    selected += (("video", video),)
+                for kind, name in selected:
+                    target_name = output_name(kind, name)
+                    target = destination / target_name
+                    with archive.open(by_name[name], "r") as source, target.open("wb") as output:
+                        _copy_stream(source, output)
+                    files[target_name] = target
+        return _prepared_result(path, files)
+    except ArchiveParseError:
+        raise
+    except Exception as exc:
+        label = suffix.removeprefix(".").upper()
+        raise ArchiveParseError(f"{label} 压缩包解析失败: {exc}") from exc
 
 
 def _validate_target_size(name: str, size: int | None, maximum: int) -> None:
@@ -848,6 +1027,8 @@ def rebuild_event_charts(db: Session, event_id: int) -> RebuildResult:
                 row.track_duration_seconds = parsed.track_duration_seconds
                 if not row.public_storage_path:
                     row.public_storage_path = write_public_package(event_id, row.id, parsed)
+                    row.public_package_status = "ready"
+                    row.public_package_message = ""
                     created_public_packages.add(row.public_storage_path)
             sync = sync_parsed_source(
                 db,
