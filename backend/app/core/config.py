@@ -25,7 +25,7 @@ class Settings:
     secret_key = os.getenv("SECRET_KEY", "change-me-in-production")
     session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "zppz_session")
     session_expire_hours = int(os.getenv("SESSION_EXPIRE_HOURS", "168"))
-    cors_origins = [item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if item.strip()]
+    cors_origins = [item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:4173,http://127.0.0.1:4173").split(",") if item.strip()]
     data_dir = Path(os.getenv("DATA_DIR", "/data")).resolve()
     uploads_dir = data_dir / "uploads"
     assets_dir = data_dir / "assets"
@@ -38,6 +38,11 @@ class Settings:
     r2_upload_url_ttl_seconds = int(os.getenv("R2_UPLOAD_URL_TTL_SECONDS", "600"))
     r2_download_url_ttl_seconds = int(os.getenv("R2_DOWNLOAD_URL_TTL_SECONDS", "300"))
     upload_intent_ttl_seconds = int(os.getenv("UPLOAD_INTENT_TTL_SECONDS", "900"))
+    preview_enabled = os.getenv("PREVIEW_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    preview_player_url = os.getenv("PREVIEW_PLAYER_URL", "").strip()
+    preview_player_origin = os.getenv("PREVIEW_PLAYER_ORIGIN", "http://localhost:4173").strip().rstrip("/")
+    preview_url_ttl_seconds = int(os.getenv("PREVIEW_URL_TTL_SECONDS", "21600"))
+    preview_backfill_poll_seconds = int(os.getenv("PREVIEW_BACKFILL_POLL_SECONDS", "2"))
     configured_extensions = parse_allowed_extensions(os.getenv("ALLOWED_EXTENSIONS"))
     allowed_extensions = (configured_extensions & ARCHIVE_UPLOAD_EXTENSIONS) or ARCHIVE_UPLOAD_EXTENSIONS
     admin_seed_code = os.getenv("ADMIN_SEED_CODE", "admin")
@@ -69,6 +74,16 @@ class Settings:
             ]
             if missing:
                 raise RuntimeError(f"missing R2 configuration: {', '.join(missing)}")
+
+    def validate_preview(self) -> None:
+        if not self.preview_enabled:
+            return
+        if not self.preview_player_url or not self.preview_player_origin:
+            raise RuntimeError("PREVIEW_PLAYER_URL and PREVIEW_PLAYER_ORIGIN are required when PREVIEW_ENABLED=true")
+        if not self.preview_player_url.startswith(f"{self.preview_player_origin}/"):
+            raise RuntimeError("PREVIEW_PLAYER_URL must be hosted on PREVIEW_PLAYER_ORIGIN")
+        if self.preview_url_ttl_seconds < 60:
+            raise RuntimeError("PREVIEW_URL_TTL_SECONDS must be at least 60")
 
 
 @lru_cache

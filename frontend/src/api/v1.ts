@@ -182,6 +182,8 @@ export interface StoredFileRead {
   track_duration_seconds?: number | null;
   public_package_ready?: boolean;
   validation?: { maidata: boolean; track: boolean; background: boolean; duration: boolean };
+  preview_status?: PreviewStatus | null;
+  preview_message?: string;
 }
 
 export interface SubmissionTargetRead {
@@ -316,6 +318,26 @@ export interface GuessChartRead {
   can_vote?: boolean;
   can_comment?: boolean;
   can_author_guess?: boolean;
+  can_preview?: boolean;
+}
+
+export type PreviewStatus = "ready" | "processing" | "unsupported" | "failed";
+
+export interface PreviewManifest {
+  status: PreviewStatus;
+  message: string;
+  source_version: string;
+  expires_at: string | null;
+  selected_level_slot: number | null;
+  levels: Array<{ slot: number; difficulty_index: number; level: string }>;
+  assets: null | {
+    maidata_url: string;
+    track_url: string;
+    background_url: string;
+    video_url: string | null;
+  };
+  player_url: string;
+  player_origin: string;
 }
 
 export interface GuessCommentRead {
@@ -655,11 +677,14 @@ export const api = {
   replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false) => uploadSubmissionThroughIntent({ submission_id: id, track, acknowledge_ban_warning: acknowledgeBanWarning }, file),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
+  submissionPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/submissions/${id}/preview-manifest`, { signal }),
+  downloadSubmission: (id: number) => downloadPrepared(`/submissions/${id}/download-metadata`),
   adminSubmissions: (track?: Track | "all", signal?: AbortSignal) => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`, { signal }),
   replaceAdminSubmission: (id: number, file: File, track?: Track) => uploadSubmissionThroughIntent({ track }, file, id),
   deleteAdminSubmission: (id: number) => apiRequest<{ message: string }>(`/admin/submissions/${id}`, { method: "DELETE" }),
   batchDeleteAdminSubmissions: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/submissions/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   downloadAdminSubmission: (id: number) => downloadPrepared(`/admin/submissions/${id}/download-metadata`),
+  rebuildSubmissionPreview: (id: number) => apiRequest<PreviewManifest>(`/admin/submissions/${id}/preview/rebuild`, { method: "POST" }),
   downloadAdminSubmissions: (ids?: number[], track?: Track | "all") => {
     const params = new URLSearchParams();
     if (ids?.length) params.set("ids", ids.join(","));
@@ -671,6 +696,7 @@ export const api = {
   loveVoteQuota: (signal?: AbortSignal) => apiRequest<LoveVoteQuotaRead>("/guess-game/vote-quota", { signal }),
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
   downloadChart: (id: number) => downloadPrepared(`/guess-game/charts/${id}/download-metadata`),
+  guessPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/guess-game/charts/${id}/preview-manifest`, { signal }),
   downloadCharts: (ids: number[]) => downloadPrepared(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`, true),
   vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
   unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),

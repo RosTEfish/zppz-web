@@ -261,6 +261,23 @@ def _public_file_name(kind: str, original: str) -> str:
     return f"{kind}{Path(original).suffix.lower()}" if kind != "maidata" else "maidata.txt"
 
 
+def _select_video_member(names: list[str]) -> str | None:
+    candidates = [
+        name
+        for name in names
+        if PurePosixPath(name).name.lower() in {"bg.mp4", "mv.mp4"}
+    ]
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda name: (
+            0 if PurePosixPath(name).name.lower() == "bg.mp4" else 1,
+            *_member_sort_key(name),
+        ),
+    )
+
+
 def write_public_package(event_id: int, submission_id: int, parsed: ParsedArchive) -> str:
     """Create a neutral, identity-safe ZIP while preserving maidata designer fields."""
     settings = get_settings()
@@ -334,6 +351,47 @@ def _copy_public_files(parsed: ParsedArchive, destination: ZipFile) -> None:
     raise ArchiveParseError("仅支持 zip、7z、rar 压缩包")
 
 
+def extract_public_files(parsed: ParsedArchive, destination: Path) -> dict[str, Path]:
+    """Extract only the validated preview/public members to normalized names."""
+    if parsed.archive_path is None:
+        raise ArchiveParseError("投稿压缩包路径无效")
+    destination.mkdir(parents=True, exist_ok=True)
+    suffix = parsed.archive_path.suffix.lower()
+    if suffix == ".zip":
+        with ZipFile(parsed.archive_path, "r") as source:
+            by_original_name = {
+                getattr(info, "orig_filename", info.filename): info
+                for info in source.infolist()
+            }
+            for member in parsed.public_files:
+                source_info = by_original_name.get(member.member_name)
+                if source_info is None:
+                    raise ArchiveParseError(f"预览源文件缺少 {PurePosixPath(member.member_name).name}")
+                with source.open(source_info, "r") as input_file, (destination / member.output_name).open("wb") as output_file:
+                    _copy_stream(input_file, output_file)
+    elif suffix == ".rar":
+        if rarfile is None:
+            raise ArchiveParseError("服务器未安装 rarfile，无法解析 RAR 文件")
+        with rarfile.RarFile(parsed.archive_path, mode="r") as source:
+            for member in parsed.public_files:
+                with source.open(member.member_name, "r") as input_file, (destination / member.output_name).open("wb") as output_file:
+                    _copy_stream(input_file, output_file)
+    elif suffix == ".7z":
+        if py7zr is None:
+            raise ArchiveParseError("服务器未安装 py7zr，无法解析 7z 文件")
+        with TemporaryDirectory(prefix="zppz-preview-extract-") as temporary_dir:
+            root = Path(temporary_dir)
+            with py7zr.SevenZipFile(parsed.archive_path, mode="r") as source:
+                source.extract(path=root, targets=[member.member_name for member in parsed.public_files])
+            for member in parsed.public_files:
+                extracted = root / Path(*PurePosixPath(member.member_name).parts)
+                with extracted.open("rb") as input_file, (destination / member.output_name).open("wb") as output_file:
+                    _copy_stream(input_file, output_file)
+    else:
+        raise ArchiveParseError("仅支持 zip、7z、rar 压缩包")
+    return {member.output_name: destination / member.output_name for member in parsed.public_files}
+
+
 def _validate_target_size(name: str, size: int | None, maximum: int) -> None:
     if size is not None and size > maximum:
         raise ArchiveParseError(f"{PurePosixPath(_normalized_member_name(name)).name} 大小超出限制")
@@ -376,13 +434,12 @@ def _read_zip(path: Path) -> tuple[bytes, bytes, str, float, tuple[PublicArchive
                     getattr(by_name[cover_name], "orig_filename", by_name[cover_name].filename),
                 ),
             ]
-            mv_names = [name for name in by_name if PurePosixPath(name).name.lower() == "mv.mp4"]
-            if mv_names:
-                mv_name = min(mv_names, key=_member_sort_key)
+            video_name = _select_video_member(list(by_name))
+            if video_name:
                 public_files.append(
                     PublicArchiveMember(
-                        "mv.mp4",
-                        getattr(by_name[mv_name], "orig_filename", by_name[mv_name].filename),
+                        PurePosixPath(video_name).name.lower(),
+                        getattr(by_name[video_name], "orig_filename", by_name[video_name].filename),
                     )
                 )
             with TemporaryDirectory(prefix="zppz-audio-") as temporary_dir:
@@ -428,10 +485,8 @@ def _read_7z(path: Path) -> tuple[bytes, bytes, str, float, tuple[PublicArchiveM
             maidata_name, track_name, cover_name = _select_members(list(by_name))
             _validate_target_size(maidata_name, getattr(by_name[maidata_name], "uncompressed", None), MAX_MAIDATA_BYTES)
             _validate_target_size(cover_name, getattr(by_name[cover_name], "uncompressed", None), MAX_COVER_BYTES)
-            mv_names = [name for name in by_name if PurePosixPath(name).name.lower() == "mv.mp4"]
-            selected_names = [maidata_name, track_name, cover_name] + (
-                [min(mv_names, key=_member_sort_key)] if mv_names else []
-            )
+            video_name = _select_video_member(list(by_name))
+            selected_names = [maidata_name, track_name, cover_name] + ([video_name] if video_name else [])
             targets = [str(by_name[name].filename) for name in selected_names]
             with TemporaryDirectory(prefix="zppz-7z-") as temporary_dir:
                 root = Path(temporary_dir)
@@ -456,9 +511,10 @@ def _read_7z(path: Path) -> tuple[bytes, bytes, str, float, tuple[PublicArchiveM
         PublicArchiveMember(_public_file_name("track", track_name), str(by_name[track_name].filename)),
         PublicArchiveMember(_public_file_name("bg", cover_name), str(by_name[cover_name].filename)),
     ]
-    if mv_names:
-        mv_name = min(mv_names, key=_member_sort_key)
-        public_files.append(PublicArchiveMember("mv.mp4", str(by_name[mv_name].filename)))
+    if video_name:
+        public_files.append(
+            PublicArchiveMember(PurePosixPath(video_name).name.lower(), str(by_name[video_name].filename))
+        )
     return maidata, cover, Path(cover_name).suffix.lower(), duration, tuple(public_files)
 
 
@@ -479,7 +535,7 @@ def _read_rar(path: Path) -> tuple[bytes, bytes, str, float, tuple[PublicArchive
             _validate_target_size(cover_name, by_name[cover_name].file_size, MAX_COVER_BYTES)
             maidata = archive.read(by_name[maidata_name])
             cover = archive.read(by_name[cover_name])
-            mv_names = [name for name in by_name if PurePosixPath(name).name.lower() == "mv.mp4"]
+            video_name = _select_video_member(list(by_name))
             with TemporaryDirectory(prefix="zppz-audio-") as temporary_dir:
                 audio_path = Path(temporary_dir) / Path(track_name).name
                 with archive.open(by_name[track_name], "r") as source, audio_path.open("wb") as destination:
@@ -494,9 +550,10 @@ def _read_rar(path: Path) -> tuple[bytes, bytes, str, float, tuple[PublicArchive
         PublicArchiveMember(_public_file_name("track", track_name), by_name[track_name].filename),
         PublicArchiveMember(_public_file_name("bg", cover_name), by_name[cover_name].filename),
     ]
-    if mv_names:
-        mv_name = min(mv_names, key=_member_sort_key)
-        public_files.append(PublicArchiveMember("mv.mp4", by_name[mv_name].filename))
+    if video_name:
+        public_files.append(
+            PublicArchiveMember(PurePosixPath(video_name).name.lower(), by_name[video_name].filename)
+        )
     return maidata, cover, Path(cover_name).suffix.lower(), duration, tuple(public_files)
 
 

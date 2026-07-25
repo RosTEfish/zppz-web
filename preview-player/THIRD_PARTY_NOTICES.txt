@@ -1,0 +1,20 @@
+Majdata preview player
+======================
+
+This distribution includes an unmodified WebGL build of MajdataView and the
+minimal bridge required to load user-authorized chart assets.
+
+MajdataView
+-----------
+Project: https://github.com/TeamMajdata/MajdataView
+License: GNU General Public License v3.0 (GPL-3.0)
+Pinned source commit: ad734f1272159a52cbd948c27c68cfa7cf1dc536
+
+MajdataNet
+----------
+Project: https://github.com/TeamMajdata/MajdataNet
+License: GNU General Public License v3.0 (GPL-3.0)
+Pinned WebGL distribution commit: 15581b147bfd7d1155b62f5fc19cb748bdc5a9fc
+
+The corresponding source archive and GPL license are published in the same
+immutable version directory as the player.

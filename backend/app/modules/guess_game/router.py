@@ -48,6 +48,7 @@ from app.modules.guess_game.service import list_comments, put_vote, remove_vote,
 from app.modules.guess_game.stats import build_guess_details, build_guess_stats
 from app.modules.guess_game.vote_quota import love_vote_quota
 from app.modules.object_storage import get_object_store
+from app.modules.preview.service import build_preview_bundle, commit_preview_nonfatal, delete_preview_bundle
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
 from app.schemas import (
     AuthorCandidatesUpdate,
@@ -517,6 +518,16 @@ def admin_import_charts(
             is_self_selected=False,
         )
         db.commit()
+        if get_settings().preview_enabled:
+            preview_bundle = build_preview_bundle(
+                db,
+                event_id=event.id,
+                source_type="admin_archive",
+                source_id=archive.id,
+                source_storage_path=archive.storage_path,
+                parsed=parsed,
+            )
+            commit_preview_nonfatal(db, preview_bundle)
     except Exception:
         db.rollback()
         delete_stored_file(storage_path)
@@ -643,6 +654,7 @@ def _stage_delete_admin_charts(
         if remaining_source:
             continue
         archive = db.get(AdminGuessArchive, source_id)
+        delete_preview_bundle(db, event_id, "admin_archive", source_id)
         if archive:
             storage_paths.add(archive.storage_path)
             db.delete(archive)

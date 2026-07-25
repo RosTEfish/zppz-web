@@ -35,6 +35,7 @@ pip_cache_dir="$deploy_state_dir/pip-cache"
 archive_path="$incoming_dir/$RELEASE_NAME.tar.gz"
 release_dir="$releases_dir/$RELEASE_NAME"
 rollback_archive="$deploy_state_dir/rollback-$RELEASE_NAME.tar.gz"
+rollback_env="$deploy_state_dir/rollback-$RELEASE_NAME.env"
 venv_dir="$app_dir/.venv"
 env_file="$app_dir/.env"
 legacy_database_path="$app_dir/backend/zppz_v2.db"
@@ -77,6 +78,10 @@ rollback_on_exit() {
     set +e
     if [ -f "$rollback_archive" ]; then
       restore_live_release
+      if [ -f "$rollback_env" ]; then
+        cp "$rollback_env" "$env_file"
+        chmod 600 "$env_file"
+      fi
       sudo -n systemctl restart "$SERVICE_NAME"
       if ! systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "The previous release could not be restarted automatically." >&2
@@ -88,6 +93,11 @@ rollback_on_exit() {
     fi
     rm -f -- "$rollback_archive"
   fi
+  if [ -f "$rollback_env" ]; then
+    cp "$rollback_env" "$env_file"
+    chmod 600 "$env_file"
+  fi
+  rm -f -- "$rollback_env"
 
   exit "$status"
 }
@@ -121,6 +131,8 @@ DB_POOL_RECYCLE=1800
 SLOW_REQUEST_MS=500
 EOF
 fi
+cp "$env_file" "$rollback_env"
+chmod 600 "$rollback_env"
 
 if [ -z "$STORAGE_CONFIG_PATH" ] || [ ! -f "$STORAGE_CONFIG_PATH" ]; then
   echo "Production object-storage configuration was not uploaded." >&2
@@ -142,7 +154,7 @@ storage_config_error=""
 while IFS='=' read -r name value; do
   [ -n "$name" ] || continue
   case "$name" in
-    OBJECT_STORAGE_BACKEND|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY|R2_UPLOAD_URL_TTL_SECONDS|R2_DOWNLOAD_URL_TTL_SECONDS|UPLOAD_INTENT_TTL_SECONDS)
+    OBJECT_STORAGE_BACKEND|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY|R2_UPLOAD_URL_TTL_SECONDS|R2_DOWNLOAD_URL_TTL_SECONDS|UPLOAD_INTENT_TTL_SECONDS|PREVIEW_ENABLED|PREVIEW_PLAYER_URL|PREVIEW_PLAYER_ORIGIN|PREVIEW_URL_TTL_SECONDS|PREVIEW_BACKFILL_POLL_SECONDS)
       next_env="$(mktemp "$deploy_state_dir/.env.next.XXXXXX")"
       grep -v "^${name}=" "$merge_env_file" > "$next_env" || true
       printf '%s=%s\n' "$name" "$value" >> "$next_env"
@@ -329,6 +341,7 @@ service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --po
   cd "$service_workdir"
   "$venv_dir/bin/python" -m app.prepare
   "$venv_dir/bin/python" -m app.manage storage-check
+  "$venv_dir/bin/python" -m app.manage preview-check
   if [ -n "$owner_user_code" ]; then
     "$venv_dir/bin/python" -m app.manage set-owner --user-code "$owner_user_code"
   else
@@ -440,9 +453,38 @@ then
   exit 1
 fi
 
+if ! (
+  set -a
+  # shellcheck disable=SC1090
+  source "$env_file"
+  set +a
+  "$venv_dir/bin/python" - <<PY
+import os
+import urllib.request
+
+if os.environ.get("PREVIEW_ENABLED", "").lower() in {"1", "true", "yes", "on"}:
+    url = os.environ.get("PREVIEW_PLAYER_URL", "")
+    if not url:
+        raise SystemExit("PREVIEW_PLAYER_URL is empty")
+    request = urllib.request.Request(url, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status >= 400:
+                raise SystemExit(f"preview player returned HTTP {response.status}")
+            if "text/html" not in response.headers.get("Content-Type", ""):
+                raise SystemExit("preview player did not return text/html")
+    except Exception as exc:
+        raise SystemExit(f"preview player health check failed for {url}: {exc}")
+PY
+)
+then
+  exit 1
+fi
+
 rollback_enabled=0
 rm -f "$archive_path"
 rm -f "$rollback_archive"
+rm -f "$rollback_env"
 
 if [ "$KEEP_RELEASES" -gt 0 ]; then
   mapfile -t old_releases < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | awk '{print $2}' | tail -n +"$((KEEP_RELEASES + 1))")

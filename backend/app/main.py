@@ -25,6 +25,7 @@ from app.modules.guess_game.router import admin_router as admin_guess_game_route
 from app.modules.guess_game.router import router as guess_game_router
 from app.modules.song_pool.router import admin_router as admin_song_pool_router
 from app.modules.song_pool.router import router as song_pool_router
+from app.modules.preview.router import router as preview_router
 from app.modules.submissions.router import admin_router as admin_submissions_router
 from app.modules.submissions.router import router as submissions_router
 from app.modules.swap.router import admin_router as admin_swap_router
@@ -42,6 +43,7 @@ LLMS_TXT_FALLBACK = "# przppz.club\n\nZPPZ Arena is an event platform for music 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    settings.validate_preview()
     check_schema_current()
     yield
 
@@ -112,6 +114,7 @@ for router in (
     submissions_router,
     swap_router,
     guess_game_router,
+    preview_router,
     admin_router,
     admin_events_router,
     users_router,

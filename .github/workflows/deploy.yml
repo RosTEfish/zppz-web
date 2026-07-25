@@ -83,6 +83,9 @@ jobs:
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
       RAW_OWNER_USER_CODE: ${{ vars.OWNER_USER_CODE }}
+      PREVIEW_ENABLED: ${{ vars.PREVIEW_ENABLED || 'false' }}
+      PREVIEW_PUBLIC_BUCKET_NAME: ${{ vars.PREVIEW_PUBLIC_BUCKET_NAME }}
+      PREVIEW_PLAYER_ORIGIN: ${{ vars.PREVIEW_PLAYER_ORIGIN }}
 
     steps:
       - name: Checkout
@@ -95,6 +98,8 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          PREVIEW_PUBLIC_ACCESS_KEY_ID: ${{ secrets.PREVIEW_PUBLIC_ACCESS_KEY_ID }}
+          PREVIEW_PUBLIC_SECRET_ACCESS_KEY: ${{ secrets.PREVIEW_PUBLIC_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           missing=0
@@ -114,6 +119,18 @@ jobs:
               missing=1
             fi
           done
+          if [ "$PREVIEW_ENABLED" = "true" ]; then
+            for name in PREVIEW_PUBLIC_BUCKET_NAME PREVIEW_PLAYER_ORIGIN PREVIEW_PUBLIC_ACCESS_KEY_ID PREVIEW_PUBLIC_SECRET_ACCESS_KEY; do
+              if [ -z "${!name}" ]; then
+                echo "::error::$name is required when PREVIEW_ENABLED=true."
+                missing=1
+              fi
+            done
+            if [[ ! "$PREVIEW_PLAYER_ORIGIN" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+              echo "::error::PREVIEW_PLAYER_ORIGIN must be a plain HTTPS origin."
+              missing=1
+            fi
+          fi
           exit "$missing"
 
       - name: Normalize SSH target
@@ -188,6 +205,11 @@ jobs:
             printf '%s\n' 'R2_UPLOAD_URL_TTL_SECONDS=600'
             printf '%s\n' 'R2_DOWNLOAD_URL_TTL_SECONDS=300'
             printf '%s\n' 'UPLOAD_INTENT_TTL_SECONDS=900'
+            printf 'PREVIEW_ENABLED=%s\n' "$PREVIEW_ENABLED"
+            printf 'PREVIEW_PLAYER_URL=%s\n' "${PREVIEW_PLAYER_URL:-}"
+            printf 'PREVIEW_PLAYER_ORIGIN=%s\n' "$PREVIEW_PLAYER_ORIGIN"
+            printf '%s\n' 'PREVIEW_URL_TTL_SECONDS=21600'
+            printf '%s\n' 'PREVIEW_BACKFILL_POLL_SECONDS=2'
           } > "$storage_config_path"
           echo "STORAGE_CONFIG_PATH=$storage_config_path" >> "$GITHUB_ENV"
 
@@ -197,6 +219,33 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python for preview publisher
+        if: env.PREVIEW_ENABLED == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Publish pinned Majdata player
+        if: env.PREVIEW_ENABLED == 'true'
+        id: preview_player
+        env:
+          PREVIEW_PUBLIC_ACCESS_KEY_ID: ${{ secrets.PREVIEW_PUBLIC_ACCESS_KEY_ID }}
+          PREVIEW_PUBLIC_SECRET_ACCESS_KEY: ${{ secrets.PREVIEW_PUBLIC_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check boto3
+          python scripts/publish_preview_player.py --verify-origin "$PREVIEW_PLAYER_ORIGIN"
+
+      - name: Add published player URL to server configuration
+        if: env.PREVIEW_ENABLED == 'true'
+        env:
+          PREVIEW_PLAYER_URL: ${{ steps.preview_player.outputs.player_url }}
+        run: |
+          set -euo pipefail
+          test -n "$PREVIEW_PLAYER_URL"
+          sed -i "s|^PREVIEW_PLAYER_URL=.*$|PREVIEW_PLAYER_URL=$PREVIEW_PLAYER_URL|" "$STORAGE_CONFIG_PATH"
+          echo "PREVIEW_PLAYER_URL=$PREVIEW_PLAYER_URL" >> "$GITHUB_ENV"
 
       - name: Build frontend
         working-directory: frontend

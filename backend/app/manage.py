@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 from typing import TypedDict
+from urllib.request import Request, urlopen
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import OWNER_ROLE, ensure_roles
 from app.db.session import SessionLocal
-from app.models import Role, User
+from app.core.config import get_settings
+from app.models import PreviewBundle, Role, User
 from app.modules.object_storage import get_object_store
+from app.modules.preview.service import manifest_payload
 
 
 class SetOwnerResult(TypedDict):
@@ -81,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     set_owner_parser = subparsers.add_parser("set-owner", help="grant the unique owner role")
     set_owner_parser.add_argument("--user-code", required=True, help="existing active account code")
     subparsers.add_parser("storage-check", help="verify configured object storage read/write access")
+    subparsers.add_parser("preview-check", help="verify preview configuration and one real manifest when available")
     args = parser.parse_args(argv)
 
     if args.command == "set-owner":
@@ -97,6 +101,35 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "storage-check":
         get_object_store().check()
         print(f"object storage check passed ({get_object_store().backend})")
+        return 0
+
+    if args.command == "preview-check":
+        settings = get_settings()
+        settings.validate_preview()
+        if not settings.preview_enabled:
+            print("preview is disabled")
+            return 0
+        with SessionLocal() as db:
+            bundle = db.scalar(
+                select(PreviewBundle)
+                .where(PreviewBundle.status == "ready")
+                .order_by(PreviewBundle.updated_at.desc())
+                .limit(1)
+            )
+            if bundle is None:
+                print("preview configuration passed; no ready manifest exists yet")
+                return 0
+            payload = manifest_payload(db, bundle, base_url="http://127.0.0.1")
+        assets = payload.get("assets")
+        if not assets:
+            raise RuntimeError("ready preview bundle did not produce assets")
+        if get_object_store().backend == "r2":
+            for name in ("maidata_url", "track_url", "background_url"):
+                request = Request(assets[name], headers={"Range": "bytes=0-0"})
+                with urlopen(request, timeout=15) as response:
+                    if response.status not in {200, 206}:
+                        raise RuntimeError(f"{name} returned HTTP {response.status}")
+        print(f"preview manifest check passed ({payload['source_version']})")
         return 0
 
     parser.error("unknown command")

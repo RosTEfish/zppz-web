@@ -365,6 +365,36 @@ class Submission(Base, TimestampMixin):
         return self.track_duration_seconds is not None and self.track_duration_seconds > 240
 
 
+class PreviewBundle(Base, TimestampMixin):
+    __tablename__ = "preview_bundles"
+    __table_args__ = (
+        UniqueConstraint("event_id", "source_type", "source_id", name="uq_preview_bundle_source"),
+        CheckConstraint("source_type IN ('submission', 'admin_archive')", name="ck_preview_bundle_source_type"),
+        CheckConstraint(
+            "status IN ('processing', 'ready', 'unsupported', 'failed')",
+            name="ck_preview_bundle_status",
+        ),
+        Index("ix_preview_bundles_event_status", "event_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="processing", nullable=False)
+    maidata_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    track_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    background_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    maidata_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    track_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    background_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    video_mime: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+
+
 class SubmissionUploadIntent(Base, TimestampMixin):
     __tablename__ = "submission_upload_intents"
 

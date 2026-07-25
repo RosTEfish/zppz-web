@@ -18,7 +18,7 @@ from app.core.security import get_current_user, is_owner, require_role
 from app.db.session import get_db
 from app.models import DrawAssignment, GuessChart, ImportIssue, Song, Submission, SubmissionUploadIntent, User
 from app.modules.banlist.service import enforce_song_allowed
-from app.modules.common import serialize_song, serialize_submission
+from app.modules.common import serialize_song, serialize_submissions
 from app.modules.downloads import (
     DOWNLOAD_TOKEN_PATTERN,
     content_disposition,
@@ -44,6 +44,7 @@ from app.modules.guess_game.importer import (
     write_public_package,
 )
 from app.modules.object_storage import get_object_store, materialized_object
+from app.modules.preview.service import build_preview_bundle, commit_preview_nonfatal, delete_preview_bundle
 from app.modules.submissions.service import (
     absolute_storage_path,
     archive_content_type,
@@ -334,6 +335,16 @@ def _create_submission(
         public_storage_path = write_public_package(event_id, row.id, parsed)
         row.public_storage_path = public_storage_path
         _sync_and_commit(db, row, parsed)
+        if get_settings().preview_enabled:
+            preview_bundle = build_preview_bundle(
+                db,
+                event_id=event_id,
+                source_type="submission",
+                source_id=row.id,
+                source_storage_path=storage_path,
+                parsed=parsed,
+            )
+            commit_preview_nonfatal(db, preview_bundle)
     except IntegrityError as exc:
         db.rollback()
         delete_stored_file(storage_path)
@@ -383,6 +394,16 @@ def _replace_submission(
         if source_kind:
             row.source_kind = source_kind
         _sync_and_commit(db, row, parsed, match_source_type=old_track)
+        if get_settings().preview_enabled:
+            preview_bundle = build_preview_bundle(
+                db,
+                event_id=row.event_id,
+                source_type="submission",
+                source_id=row.id,
+                source_storage_path=new_storage_path,
+                parsed=parsed,
+            )
+            commit_preview_nonfatal(db, preview_bundle)
     except IntegrityError as exc:
         db.rollback()
         delete_stored_file(new_storage_path)
@@ -415,6 +436,7 @@ def _delete_submission(db: Session, row: Submission) -> None:
 
 def _stage_delete_submission(db: Session, row: Submission) -> tuple[str, str | None, set[str]]:
     _, cover_paths = delete_source_charts(db, row.event_id, row.track, row.id)
+    delete_preview_bundle(db, row.event_id, "submission", row.id)
     storage_path = row.storage_path
     db.delete(row)
     return storage_path, row.public_storage_path, cover_paths
@@ -457,13 +479,16 @@ def submission_targets(user: User = Depends(get_current_user), db: Session = Dep
         ).all()
     )
     by_song_id = {row.source_song_id: row for row in submissions if row.source_song_id is not None}
+    submission_payloads = {
+        row.id: payload for row, payload in zip(submissions, serialize_submissions(db, submissions))
+    }
     return {
         "is_open": get_phase_status(db, event).can("submission"),
         "targets": [
             {
                 "song": serialize_song(song),
                 "source_kind": "self" if song.submitted_by_id == user.id else "assigned",
-                "submission": serialize_submission(by_song_id[song.id]) if song.id in by_song_id else None,
+                "submission": submission_payloads[by_song_id[song.id].id] if song.id in by_song_id else None,
             }
             for song in songs
         ],
@@ -480,7 +505,7 @@ def my_submissions(user: User = Depends(get_current_user), db: Session = Depends
         .where(Submission.event_id == event.id, Submission.user_id == user.id)
         .order_by(Submission.created_at.desc())
     ).all()
-    return [serialize_submission(row) for row in rows]
+    return serialize_submissions(db, rows)
 
 
 @router.post("/upload-intents", response_model=SubmissionUploadIntentRead)
@@ -698,6 +723,16 @@ def _complete_intent(
                 intent.status = "completed"
                 intent.result_submission_id = row.id
                 _sync_and_commit(db, row, parsed, match_source_type=old_track)
+                if get_settings().preview_enabled:
+                    preview_bundle = build_preview_bundle(
+                        db,
+                        event_id=event.id,
+                        source_type="submission",
+                        source_id=row.id,
+                        source_storage_path=final_source,
+                        parsed=parsed,
+                    )
+                    commit_preview_nonfatal(db, preview_bundle)
             except Exception:
                 db.rollback()
                 for key in created_keys:
@@ -742,7 +777,7 @@ def complete_submission_upload_intent(
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != user.id or intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return serialize_submission(_complete_intent(intent, user, db, background_tasks))
+    return serialize_submissions(db, [_complete_intent(intent, user, db, background_tasks)])[0]
 
 
 @router.post("", response_model=StoredFileRead, deprecated=True)
@@ -780,7 +815,7 @@ def upload_submission(
         is_admin=False,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submission(_complete_intent(intent, user, db, background_tasks))
+    return serialize_submissions(db, [_complete_intent(intent, user, db, background_tasks)])[0]
 
 
 @router.post("/{submission_id}/replace", response_model=StoredFileRead, deprecated=True)
@@ -824,7 +859,7 @@ def replace_submission(
         is_admin=False,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submission(_complete_intent(intent, user, db, background_tasks))
+    return serialize_submissions(db, [_complete_intent(intent, user, db, background_tasks)])[0]
 
 
 @router.patch("/{submission_id}/track", response_model=StoredFileRead)
@@ -868,7 +903,7 @@ def update_submission_track(
     assert row is not None
     row.user = user
     row.source_song = song
-    return serialize_submission(row)
+    return serialize_submissions(db, [row])[0]
 
 
 # Compatibility endpoints for clients that previously treated J submissions separately.
@@ -881,7 +916,7 @@ def my_j_track(user: User = Depends(get_current_user), db: Session = Depends(get
         .options(*_submission_options())
         .where(Submission.event_id == event.id, Submission.user_id == user.id, Submission.track == "j")
     )
-    return {"submission": serialize_submission(row) if row else None}
+    return {"submission": serialize_submissions(db, [row])[0] if row else None}
 
 
 @router.delete("/j-track")
@@ -914,6 +949,49 @@ def delete_submission(submission_id: int, user: User = Depends(get_current_user)
     return {"message": "投稿已删除"}
 
 
+@router.get("/{submission_id}/download")
+def download_own_submission(
+    submission_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    event = get_current_event(db)
+    row = db.get(Submission, submission_id)
+    if not row or row.event_id != event.id or (row.user_id != user.id and not _can_manage_submissions(user)):
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    store = get_object_store()
+    download_url = store.create_download_url(row.storage_path, row.file_name)
+    if download_url:
+        return RedirectResponse(download_url, status_code=307, headers={"Cache-Control": "private, no-store"})
+    path = absolute_storage_path(row.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="投稿文件不存在")
+    return file_download_response(path, row.file_name)
+
+
+@router.get("/{submission_id}/download-metadata", response_model=DownloadPreparation)
+def own_submission_download_metadata(
+    submission_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = get_current_event(db)
+    row = db.get(Submission, submission_id)
+    if not row or row.event_id != event.id or (row.user_id != user.id and not _can_manage_submissions(user)):
+        raise HTTPException(status_code=404, detail="投稿不存在")
+    store = get_object_store()
+    try:
+        info = store.head(row.storage_path)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="投稿文件不存在") from exc
+    download_url = store.create_download_url(row.storage_path, row.file_name)
+    return {
+        "download_url": download_url or f"{get_settings().api_prefix}/submissions/{submission_id}/download",
+        "file_name": row.file_name,
+        "file_size": info.size,
+    }
+
+
 @admin_router.get("", response_model=list[StoredFileRead])
 def admin_list_submissions(
     track: str | None = Query(None),
@@ -929,7 +1007,7 @@ def admin_list_submissions(
     )
     if track:
         stmt = stmt.where(Submission.track == _normalize_track(track))
-    return [serialize_submission(row) for row in db.scalars(stmt).all()]
+    return serialize_submissions(db, db.scalars(stmt).all())
 
 
 @admin_router.post("/{submission_id}/upload-intents", response_model=SubmissionUploadIntentRead)
@@ -972,7 +1050,7 @@ def complete_admin_submission_upload_intent(
     intent = db.get(SubmissionUploadIntent, intent_id)
     if not intent or intent.user_id != admin.id or not intent.is_admin:
         raise HTTPException(status_code=404, detail="上传意图不存在")
-    return serialize_submission(_complete_intent(intent, admin, db, background_tasks))
+    return serialize_submissions(db, [_complete_intent(intent, admin, db, background_tasks)])[0]
 
 
 @admin_router.post("/batch-delete", response_model=BatchDeleteResponse)
@@ -1046,7 +1124,7 @@ def admin_replace_submission(
         is_admin=True,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submission(_complete_intent(intent, admin, db, background_tasks))
+    return serialize_submissions(db, [_complete_intent(intent, admin, db, background_tasks)])[0]
 
 
 @admin_router.delete("/{submission_id}")

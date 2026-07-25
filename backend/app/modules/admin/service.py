@@ -19,6 +19,7 @@ from app.models import (
     EventPhase,
     EventPhaseSnapshot,
     EventSetting,
+    AdminGuessArchive,
     GuessAuthorCandidate,
     GuessAuthorGuess,
     GuessChart,
@@ -26,6 +27,7 @@ from app.models import (
     GuessVote,
     ImportIssue,
     JTrackSubmission,
+    PreviewBundle,
     Role,
     Song,
     Submission,
@@ -195,11 +197,21 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
         if event_ids
         else 0
     )
+    deleted["preview_bundles"] = (
+        _delete_rows(db, delete(PreviewBundle).where(PreviewBundle.event_id.in_(event_ids)))
+        if event_ids
+        else 0
+    )
     deleted["submissions"] = (
         _delete_rows(db, delete(Submission).where(Submission.event_id.in_(event_ids))) if event_ids else 0
     )
     deleted["j_track_submissions"] = (
         _delete_rows(db, delete(JTrackSubmission).where(JTrackSubmission.event_id.in_(event_ids))) if event_ids else 0
+    )
+    deleted["admin_guess_archives"] = (
+        _delete_rows(db, delete(AdminGuessArchive).where(AdminGuessArchive.event_id.in_(event_ids)))
+        if event_ids
+        else 0
     )
     deleted["draw_assignments"] = (
         _delete_rows(db, delete(DrawAssignment).where(DrawAssignment.event_id.in_(event_ids))) if event_ids else 0
@@ -267,6 +279,28 @@ def reset_all_data(db: Session) -> dict:
             for storage_path, public_storage_path in submission_objects:
                 enqueue_storage_deletion(db, storage_path)
                 enqueue_storage_deletion(db, public_storage_path)
+            preview_objects = list(
+                db.execute(
+                    select(
+                        PreviewBundle.maidata_key,
+                        PreviewBundle.track_key,
+                        PreviewBundle.background_key,
+                        PreviewBundle.video_key,
+                    ).where(PreviewBundle.event_id.in_(select(Event.id)))
+                ).all()
+            )
+            for keys in preview_objects:
+                for object_key in keys:
+                    enqueue_storage_deletion(db, object_key)
+            admin_archive_objects = list(
+                db.scalars(
+                    select(AdminGuessArchive.storage_path).where(
+                        AdminGuessArchive.event_id.in_(select(Event.id))
+                    )
+                ).all()
+            )
+            for object_key in admin_archive_objects:
+                enqueue_storage_deletion(db, object_key)
             pending_objects = list(
                 db.scalars(
                     select(SubmissionUploadIntent.object_key).where(

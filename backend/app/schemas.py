@@ -263,6 +263,8 @@ class StoredFileRead(BaseModel):
     is_long_track: bool = False
     public_package_ready: bool = False
     validation: dict[str, bool] = Field(default_factory=dict)
+    preview_status: Literal["processing", "ready", "unsupported", "failed"] | None = None
+    preview_message: str = ""
     source_song: SongRead | None = None
     user: UserRead | None = None
     created_at: datetime
@@ -421,6 +423,7 @@ class GuessChartRead(BaseModel):
     funny_votes: int = 0
     my_votes: list[str] = []
     love_vote_bucket: Literal["below_14", "at_least_14"]
+    can_preview: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -445,6 +448,7 @@ class PublicGuessChartRead(BaseModel):
     can_vote: bool = False
     can_comment: bool = False
     can_author_guess: bool = False
+    can_preview: bool = False
     love_votes: int = 0
     funny_votes: int = 0
     my_votes: list[str] = Field(default_factory=list)
@@ -456,6 +460,31 @@ class PublicGuessChartRead(BaseModel):
 class AdminGuessChartRead(GuessChartRead):
     track_duration_seconds: float | None = None
     is_long_track: bool = False
+
+
+class PreviewLevelRead(BaseModel):
+    slot: int = Field(ge=1, le=7)
+    difficulty_index: int = Field(ge=0, le=6)
+    level: str
+
+
+class PreviewAssetsRead(BaseModel):
+    maidata_url: str
+    track_url: str
+    background_url: str
+    video_url: str | None = None
+
+
+class PreviewManifestRead(BaseModel):
+    status: Literal["ready", "processing", "unsupported", "failed"]
+    message: str
+    source_version: str
+    expires_at: datetime | None = None
+    selected_level_slot: int | None = None
+    levels: list[PreviewLevelRead] = Field(default_factory=list)
+    assets: PreviewAssetsRead | None = None
+    player_url: str = ""
+    player_origin: str = ""
 
 
 class VoteRequest(BaseModel):

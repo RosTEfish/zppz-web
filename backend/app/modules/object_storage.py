@@ -82,6 +82,10 @@ class LocalObjectStore:
         del key, file_name
         return None
 
+    def create_inline_url(self, key: str, content_type: str, expires_in: int) -> str | None:
+        del key, content_type, expires_in
+        return None
+
     def check(self) -> None:
         get_settings().data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,6 +166,18 @@ class R2ObjectStore:
                 "ResponseContentDisposition": content_disposition(file_name),
             },
             ExpiresIn=get_settings().r2_download_url_ttl_seconds,
+        )
+
+    def create_inline_url(self, key: str, content_type: str, expires_in: int) -> str:
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "ResponseContentType": content_type,
+                "ResponseContentDisposition": "inline",
+            },
+            ExpiresIn=expires_in,
         )
 
     def check(self) -> None:

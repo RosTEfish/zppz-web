@@ -4,8 +4,9 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.security import user_payload
-from app.models import GuessChart, GuessVote, Song, Submission
+from app.models import GuessChart, GuessVote, PreviewBundle, Song, Submission
 from app.modules.guess_game.vote_quota import love_vote_bucket
 
 
@@ -21,7 +22,7 @@ def serialize_song(song: Song) -> dict:
     }
 
 
-def serialize_submission(item: Submission) -> dict:
+def serialize_submission(item: Submission, preview_bundle: PreviewBundle | None = None) -> dict:
     return {
         "id": item.id,
         "file_name": item.file_name,
@@ -39,10 +40,31 @@ def serialize_submission(item: Submission) -> dict:
             "background": True,
             "duration": bool(item.track_duration_seconds and item.track_duration_seconds > 0),
         },
+        "preview_status": preview_bundle.status if preview_bundle else None,
+        "preview_message": preview_bundle.error_message if preview_bundle else "",
         "source_song": serialize_song(item.source_song) if item.source_song else None,
         "user": user_payload(item.user) if item.user else None,
         "created_at": item.created_at,
     }
+
+
+def serialize_submissions(db: Session, items: Sequence[Submission]) -> list[dict]:
+    if not items:
+        return []
+    ids = [item.id for item in items]
+    preview_by_source = {
+        bundle.source_id: bundle
+        for bundle in db.scalars(
+            select(PreviewBundle).where(
+                PreviewBundle.source_type == "submission",
+                PreviewBundle.source_id.in_(ids),
+            )
+        ).all()
+    }
+    return [
+        serialize_submission(item, preview_by_source.get(item.id))
+        for item in items
+    ]
 
 
 def _chart_payload(
@@ -129,6 +151,15 @@ def serialize_charts(
             select(Submission.id, Submission.track_duration_seconds).where(Submission.id.in_(submission_ids))
         ).all()
     ) if submission_ids else {}
+    ready_submission_ids = set(
+        db.scalars(
+            select(PreviewBundle.source_id).where(
+                PreviewBundle.source_type == "submission",
+                PreviewBundle.source_id.in_(submission_ids),
+                PreviewBundle.status == "ready",
+            )
+        ).all()
+    ) if submission_ids else set()
     votable_chart_ids = [
         chart.id for chart in charts if chart.source_submission_type != "exhibition"
     ]
@@ -151,7 +182,7 @@ def serialize_charts(
         ):
             my_votes_by_chart.setdefault(chart_id, []).append(vote_type)
 
-    return [
+    payloads = [
         _chart_payload(
             chart,
             love_votes=vote_counts.get(chart.id, {}).get("love", 0),
@@ -163,3 +194,14 @@ def serialize_charts(
         )
         for chart in charts
     ]
+    if get_settings().preview_enabled:
+        for payload, chart in zip(payloads, charts):
+            payload["can_preview"] = (
+                chart.source_submission_id is not None
+                and (
+                    chart.source_submission_type == "admin"
+                    or int(chart.source_submission_id) in ready_submission_ids
+                    or chart.source_submission_type in {"normal", "j", "exhibition"}
+                )
+            )
+    return payloads
