@@ -150,7 +150,11 @@ def test_parser_reads_only_required_7z_members(tmp_path: Path):
     assert parsed.cover_bytes == b"cover"
 
 
-def test_public_package_uses_member_references_and_preserves_selected_files(tmp_path: Path):
+@pytest.mark.parametrize("video_name", ["mv.mp4", "pv.mp4"])
+def test_public_package_uses_member_references_and_preserves_selected_files(
+    tmp_path: Path,
+    video_name: str,
+):
     path = tmp_path / "streamed.zip"
     with ZipFile(path, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -159,7 +163,7 @@ def test_public_package_uses_member_references_and_preserves_selected_files(tmp_
         )
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
         archive.writestr("nested/bg.png", b"cover")
-        archive.writestr("nested/mv.mp4", b"video-payload")
+        archive.writestr(f"nested/{video_name}", b"video-payload")
 
     parsed = parse_archive(path)
     assert parsed.archive_path == path
@@ -167,12 +171,12 @@ def test_public_package_uses_member_references_and_preserves_selected_files(tmp_
         ("maidata.txt", "nested/maidata.txt"),
         ("track.mp3", "nested/track.mp3"),
         ("bg.png", "nested/bg.png"),
-        ("mv.mp4", "nested/mv.mp4"),
+        (video_name, f"nested/{video_name}"),
     ]
 
     relative = write_public_package(1, 1, parsed)
     with ZipFile(get_settings().data_dir / relative) as archive:
-        assert archive.read("mv.mp4") == b"video-payload"
+        assert archive.read(video_name) == b"video-payload"
         assert b"&des=Designer" in archive.read("maidata.txt")
 
 

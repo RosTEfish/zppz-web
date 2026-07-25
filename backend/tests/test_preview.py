@@ -37,7 +37,7 @@ def reset_db_and_preview_settings():
     settings.preview_enabled, settings.preview_player_url, settings.preview_player_origin = old
 
 
-def _archive_bytes() -> bytes:
+def _archive_bytes(video_name: str = "bg.mp4") -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -47,14 +47,14 @@ def _archive_bytes() -> bytes:
         )
         archive.writestr("nested/bg.jpg", b"jpeg")
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
-        archive.writestr("nested/bg.mp4", b"optional-video")
+        archive.writestr(f"nested/{video_name}", b"optional-video")
     return buffer.getvalue()
 
 
-def _create_ready_preview() -> tuple[int, int]:
+def _create_ready_preview(video_name: str = "bg.mp4") -> tuple[int, int]:
     settings = get_settings()
     source_path = settings.uploads_dir / "preview-source.zip"
-    source_path.write_bytes(_archive_bytes())
+    source_path.write_bytes(_archive_bytes(video_name))
     parsed = parse_archive(source_path)
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
@@ -130,7 +130,7 @@ def test_preview_builds_versioned_local_assets_and_signed_urls():
 
 
 def test_guess_manifest_returns_only_the_visible_chart_difficulty():
-    _, chart_id = _create_ready_preview()
+    _, chart_id = _create_ready_preview("pv.mp4")
     with TestClient(app) as client:
         response = client.get(f"/api/v1/guess-game/charts/{chart_id}/preview-manifest")
     assert response.status_code == 200, response.text

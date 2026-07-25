@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover - exercised only in incomplete local ins
 SUPPORTED_ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar"}
 COVER_SUFFIXES = {".png", ".jpg", ".webp"}
 AUDIO_SUFFIXES = {".mp3", ".ogg"}
+VIDEO_MEMBER_NAMES = ("bg.mp4", "mv.mp4", "pv.mp4")
 LEVEL_PATTERN = re.compile(r"^&lv_([1-7])=(.+)$", re.IGNORECASE)
 DESIGNER_PATTERN = re.compile(r"^&des([1-7])=(.*)$", re.IGNORECASE)
 INOTE_PATTERN = re.compile(
@@ -262,17 +263,18 @@ def _public_file_name(kind: str, original: str) -> str:
 
 
 def _select_video_member(names: list[str]) -> str | None:
+    priorities = {name: index for index, name in enumerate(VIDEO_MEMBER_NAMES)}
     candidates = [
         name
         for name in names
-        if PurePosixPath(name).name.lower() in {"bg.mp4", "mv.mp4"}
+        if PurePosixPath(name).name.lower() in priorities
     ]
     if not candidates:
         return None
     return min(
         candidates,
         key=lambda name: (
-            0 if PurePosixPath(name).name.lower() == "bg.mp4" else 1,
+            priorities[PurePosixPath(name).name.lower()],
             *_member_sort_key(name),
         ),
     )

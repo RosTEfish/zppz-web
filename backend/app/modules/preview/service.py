@@ -73,7 +73,11 @@ def _normalized_files(parsed: ParsedArchive) -> tuple[str, str, str, str | None]
         "",
     )
     video = next(
-        (names[name] for name in ("bg.mp4", "mv.mp4", "video.mp4") if name in names),
+        (
+            names[name]
+            for name in ("bg.mp4", "mv.mp4", "pv.mp4", "video.mp4")
+            if name in names
+        ),
         None,
     )
     return "maidata.txt", track, background, video
