@@ -37,14 +37,18 @@ archive_path="$incoming_dir/$RELEASE_NAME.tar.gz"
 release_dir="$releases_dir/$RELEASE_NAME"
 rollback_archive="$deploy_state_dir/rollback-$RELEASE_NAME.tar.gz"
 rollback_env="$deploy_state_dir/rollback-$RELEASE_NAME.env"
+rollback_service_unit="$deploy_state_dir/rollback-$RELEASE_NAME.service"
 venv_dir="$app_dir/.venv"
 env_file="$app_dir/.env"
 legacy_database_path="$app_dir/backend/zppz_v2.db"
 service_file="/etc/systemd/system/$SERVICE_NAME.service"
 worker_service_file="/etc/systemd/system/$WORKER_SERVICE_NAME.service"
 worker_unit_preexisting=0
+worker_unit_created=0
+worker_service_mode="combined"
 if systemctl cat "$WORKER_SERVICE_NAME" >/dev/null 2>&1; then
   worker_unit_preexisting=1
+  worker_service_mode="separate"
 fi
 
 if [[ "$app_dir" != /* || "$app_dir" == "/" ]]; then
@@ -89,13 +93,15 @@ rollback_on_exit() {
         cp "$rollback_env" "$env_file"
         chmod 600 "$env_file"
       fi
+      if [ -f "$rollback_service_unit" ]; then
+        sudo -n tee "$service_file" < "$rollback_service_unit" >/dev/null
+        sudo -n systemctl daemon-reload
+      fi
       sudo -n systemctl restart "$SERVICE_NAME"
       if [ "$worker_unit_preexisting" -eq 1 ]; then
         sudo -n systemctl restart "$WORKER_SERVICE_NAME"
-      else
+      elif [ "$worker_unit_created" -eq 1 ]; then
         sudo -n systemctl disable --now "$WORKER_SERVICE_NAME" >/dev/null 2>&1 || true
-        sudo -n rm -f -- "$worker_service_file"
-        sudo -n systemctl daemon-reload
       fi
       if ! systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "The previous release could not be restarted automatically." >&2
@@ -117,6 +123,7 @@ rollback_on_exit() {
     chmod 600 "$env_file"
   fi
   rm -f -- "$rollback_env"
+  rm -f -- "$rollback_service_unit"
 
   exit "$status"
 }
@@ -129,6 +136,9 @@ if [ ! -f "$archive_path" ]; then
 fi
 
 mkdir -p "$incoming_dir" "$releases_dir" "$pip_cache_dir" "$app_dir/logs" "$app_dir/data"
+if [ -f "$service_file" ]; then
+  cp "$service_file" "$rollback_service_unit"
+fi
 
 if [ ! -f "$env_file" ]; then
   umask 077
@@ -323,7 +333,9 @@ rollback_enabled=1
 
 # Stop the old worker before replacing code or migrating the shared database.
 # The web service remains online until the new release is ready to activate.
-sudo -n systemctl stop "$WORKER_SERVICE_NAME" >/dev/null 2>&1 || true
+if [ "$worker_unit_preexisting" -eq 1 ]; then
+  sudo -n systemctl stop "$WORKER_SERVICE_NAME" >/dev/null 2>&1 || true
+fi
 
 # Copy the built release into the live application directory. Runtime data lives
 # outside the archive and is preserved in place.
@@ -378,28 +390,8 @@ sudo -n systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
   fi
 )
 
-sudo -n tee "$service_file" >/dev/null <<EOF
-[Unit]
-Description=ZPPZ Web
-After=network.target
-
-[Service]
-Type=simple
-User=$RUN_USER
-Group=$RUN_GROUP
-WorkingDirectory=$service_workdir
-EnvironmentFile=-$env_file
-Environment=PORT=$APP_PORT
-Environment=DATA_DIR=$app_dir/data
-ExecStart=$service_exec
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo -n tee "$worker_service_file" >/dev/null <<EOF
+worker_unit_candidate="$(mktemp "$deploy_state_dir/.worker-unit.XXXXXX")"
+cat > "$worker_unit_candidate" <<EOF
 [Unit]
 Description=ZPPZ Submission Processing Worker
 After=network-online.target
@@ -424,9 +416,53 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 EOF
 
+if [ "$worker_unit_preexisting" -eq 1 ]; then
+  if ! sudo -n tee "$worker_service_file" < "$worker_unit_candidate" >/dev/null 2>&1; then
+    echo "::warning::The existing Worker unit could not be updated; keeping its current definition." >&2
+  fi
+elif sudo -n tee "$worker_service_file" < "$worker_unit_candidate" >/dev/null 2>&1; then
+  worker_unit_created=1
+  worker_service_mode="separate"
+else
+  echo "::warning::No passwordless permission to create $worker_service_file; running the single Worker inside the Web service cgroup." >&2
+fi
+rm -f -- "$worker_unit_candidate"
+
+if [ "$worker_service_mode" = "combined" ]; then
+  service_exec="/bin/bash $app_dir/scripts/run_web_with_worker.sh"
+fi
+
+sudo -n tee "$service_file" >/dev/null <<EOF
+[Unit]
+Description=ZPPZ Web
+After=network.target
+
+[Service]
+Type=simple
+User=$RUN_USER
+Group=$RUN_GROUP
+WorkingDirectory=$service_workdir
+EnvironmentFile=-$env_file
+Environment=PORT=$APP_PORT
+Environment=DATA_DIR=$app_dir/data
+Environment=ZPPZ_PYTHON_BIN=$venv_dir/bin/python
+Environment=ZPPZ_APP_PORT=$APP_PORT
+Environment=ZPPZ_WEB_CONCURRENCY=$WEB_CONCURRENCY
+ExecStart=$service_exec
+KillMode=control-group
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 sudo -n systemctl daemon-reload
 sudo -n systemctl enable "$SERVICE_NAME"
-sudo -n systemctl enable "$WORKER_SERVICE_NAME"
+if [ "$worker_service_mode" = "separate" ]; then
+  sudo -n systemctl enable "$WORKER_SERVICE_NAME"
+fi
 
 pkill -TERM -u "$RUN_USER" -f "uvicorn app.main:app" || true
 sleep 2
@@ -479,14 +515,23 @@ if targets:
         print("Port $APP_PORT is still occupied, but no killable process was visible to $RUN_USER.")
 PY
 
-sudo -n systemctl restart "$WORKER_SERVICE_NAME"
+if [ "$worker_service_mode" = "separate" ]; then
+  sudo -n systemctl restart "$WORKER_SERVICE_NAME"
+fi
 sudo -n systemctl restart "$SERVICE_NAME"
 
 sleep 3
-if ! systemctl is-active --quiet "$WORKER_SERVICE_NAME"; then
-  echo "Service $WORKER_SERVICE_NAME failed to stay active after restart." >&2
-  systemctl --no-pager --full status "$WORKER_SERVICE_NAME" >&2 || true
-  journalctl -u "$WORKER_SERVICE_NAME" --no-pager -n 160 >&2 || true
+if [ "$worker_service_mode" = "separate" ]; then
+  if ! systemctl is-active --quiet "$WORKER_SERVICE_NAME"; then
+    echo "Service $WORKER_SERVICE_NAME failed to stay active after restart." >&2
+    systemctl --no-pager --full status "$WORKER_SERVICE_NAME" >&2 || true
+    journalctl -u "$WORKER_SERVICE_NAME" --no-pager -n 160 >&2 || true
+    exit 1
+  fi
+elif ! pgrep -u "$RUN_USER" -f "$venv_dir/bin/python -m app.worker" >/dev/null; then
+  echo "The submission Worker did not stay active inside $SERVICE_NAME." >&2
+  systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
+  journalctl -u "$SERVICE_NAME" --no-pager -n 160 >&2 || true
   exit 1
 fi
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
@@ -570,6 +615,7 @@ rollback_enabled=0
 rm -f "$archive_path"
 rm -f "$rollback_archive"
 rm -f "$rollback_env"
+rm -f "$rollback_service_unit"
 
 if [ "$KEEP_RELEASES" -gt 0 ]; then
   mapfile -t old_releases < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | awk '{print $2}' | tail -n +"$((KEEP_RELEASES + 1))")
@@ -579,4 +625,8 @@ if [ "$KEEP_RELEASES" -gt 0 ]; then
 fi
 
 sudo -n systemctl --no-pager --full status "$SERVICE_NAME"
-sudo -n systemctl --no-pager --full status "$WORKER_SERVICE_NAME"
+if [ "$worker_service_mode" = "separate" ]; then
+  sudo -n systemctl --no-pager --full status "$WORKER_SERVICE_NAME"
+else
+  echo "Submission Worker is active inside the $SERVICE_NAME cgroup."
+fi

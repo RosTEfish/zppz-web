@@ -25,7 +25,8 @@ jobs:
       - name: Verify deployment script
         run: |
           bash -n scripts/deploy_remote.sh
-          shellcheck scripts/deploy_remote.sh
+          bash -n scripts/run_web_with_worker.sh
+          shellcheck scripts/deploy_remote.sh scripts/run_web_with_worker.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
