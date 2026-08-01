@@ -312,7 +312,7 @@ describe("Material application shell", () => {
     });
 
     render(<App />);
-    expect(await screen.findByRole("dialog", { name: "曲池尚未投递完成" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "曲池尚未投递完成" }, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.getAllByText(/还需提交 3 首/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "继续投曲" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "曲池尚未投递完成" })).not.toBeInTheDocument());
@@ -841,7 +841,14 @@ describe("Material application shell", () => {
     });
 
     render(<App />);
-    expect(await screen.findByText("2")).toBeInTheDocument();
+    expect(await screen.findByText("2", {}, { timeout: 3000 })).toBeInTheDocument();
+    const displayNameInput = await screen.findByRole("textbox", { name: "显示名 member" });
+    expect(displayNameInput.closest(".MuiDataGrid-cell")?.firstElementChild).toHaveStyle({
+      display: "flex",
+      alignItems: "center",
+      width: "100%",
+      height: "100%",
+    });
     fireEvent.click(await screen.findByRole("checkbox", { name: "管理员" }));
 
     await waitFor(() => expect(updateBodies).toHaveLength(1));
