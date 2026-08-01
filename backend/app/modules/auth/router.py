@@ -10,6 +10,7 @@ from app.core.security import (
     hash_password,
     issue_session,
     sync_identity_role,
+    USER_IDENTITIES,
     user_payload,
     verify_password,
 )
@@ -24,8 +25,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)) -> dict:
-    if payload.identity not in {"participant", "audience"}:
-        raise HTTPException(status_code=400, detail="身份只能是 participant 或 audience")
+    if payload.identity not in USER_IDENTITIES:
+        raise HTTPException(status_code=400, detail="身份只能是 participant、audience 或 guest")
     if db.scalar(select(User).where(User.user_code == payload.user_code)):
         raise HTTPException(status_code=409, detail="这个参赛 ID 已被注册")
     roles = ensure_roles(db)

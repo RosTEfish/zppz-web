@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.core.security import get_current_user, require_role
+from app.core.security import SONG_POOL_IDENTITIES, get_current_user, require_role
 from app.db.session import get_db
 from app.models import Song, Submission, User
 from app.modules.banlist.service import enforce_song_allowed
@@ -34,6 +34,8 @@ def my_songs(user: User = Depends(get_current_user), db: Session = Depends(get_d
 
 @router.post("/me", response_model=SongRead)
 def create_song(payload: SongCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    if user.identity not in SONG_POOL_IDENTITIES:
+        raise HTTPException(status_code=403, detail="访客身份不参与曲池投曲")
     event = get_current_event(db)
     if not get_phase_status(db, event).can("song_pool_edit"):
         raise HTTPException(status_code=409, detail="当前阶段不能提交曲池")
@@ -49,6 +51,8 @@ def create_song(payload: SongCreate, user: User = Depends(get_current_user), db:
 
 @router.put("/me/{song_id}", response_model=SongRead)
 def update_my_song(song_id: int, payload: SongCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    if user.identity not in SONG_POOL_IDENTITIES:
+        raise HTTPException(status_code=403, detail="访客身份不参与曲池投曲")
     event = get_current_event(db)
     if not get_phase_status(db, event).can("song_pool_edit"):
         raise HTTPException(status_code=409, detail="当前阶段不能修改曲池")

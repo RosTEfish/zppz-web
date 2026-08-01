@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.core.security import has_admin_access
+from app.core.security import SONG_POOL_IDENTITIES, has_admin_access
 from app.models import (
     DrawAssignment,
     Event,
@@ -214,6 +214,8 @@ def incomplete_song_pool_users(
     )
     incomplete: list[tuple[User, int, int]] = []
     for user in users:
+        if user.identity not in SONG_POOL_IDENTITIES:
+            continue
         limit = participant_limit if user.identity == "participant" else audience_limit
         count = int(song_counts.get(user.id, 0))
         if count < limit:
@@ -292,6 +294,8 @@ def assert_submission_ready(
 def assert_song_limit(db: Session, user_id: int, identity: str) -> None:
     from app.models import Song
 
+    if identity not in SONG_POOL_IDENTITIES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="访客身份不参与曲池投曲")
     event = get_current_event(db)
     limit = event.settings.participant_song_limit if identity == "participant" else event.settings.audience_song_limit
     count = db.scalar(select(func.count()).select_from(Song).where(Song.event_id == event.id, Song.submitted_by_id == user_id))

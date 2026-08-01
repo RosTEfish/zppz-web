@@ -29,9 +29,10 @@ export default function SongPoolPage() {
   const { event } = useConfig();
   const { user } = useAuth();
   const banCheck = useBanCheck(watch("song_name"), watch("artist"));
-  const limit = user?.identity === "participant" ? event?.settings.participant_song_limit : event?.settings.audience_song_limit;
+  const isGuest = user?.identity === "guest";
+  const limit = isGuest ? 0 : user?.identity === "participant" ? event?.settings.participant_song_limit : event?.settings.audience_song_limit;
   const songCount = songs.data?.length ?? 0;
-  const incomplete = songs.data !== null && limit !== undefined && songCount < limit;
+  const incomplete = !isGuest && songs.data !== null && limit !== undefined && songCount < limit;
 
   useEffect(() => {
     if (songs.data === null || limit === undefined) return;
@@ -68,9 +69,10 @@ export default function SongPoolPage() {
 
   return (
     <Stack spacing={3}>
-      <PageHeader icon={Music2} title="我的曲池" meta={`${songs.data?.length ?? 0} / ${limit ?? "-"} 首`} />
+      <PageHeader icon={Music2} title="我的曲池" meta={isGuest ? "访客身份不参与投曲" : `${songs.data?.length ?? 0} / ${limit ?? "-"} 首`} />
+      {isGuest ? <Alert severity="info">访客可以正常浏览赛事和参与开放的互动，但不需要向曲池投曲，也不会参与曲目抽取。</Alert> : null}
       {incomplete ? <Alert severity="warning">曲池尚未投满，还需提交 {Math.max((limit ?? 0) - songCount, 0)} 首曲目后才能进入抽签阶段。</Alert> : null}
-      <Paper component="form" onSubmit={createSong} variant="outlined" sx={{ p: 2 }}>
+      {!isGuest ? <Paper component="form" onSubmit={createSong} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1.4fr 2fr auto" }, gap: 1.5, alignItems: "center" }}>
           <TextField size="small" label="曲名" {...register("song_name")} error={Boolean(errors.song_name)} helperText={errors.song_name?.message} />
@@ -80,11 +82,11 @@ export default function SongPoolPage() {
         </Box>
         <BanCheckPanel state={banCheck} />
         </Stack>
-      </Paper>
+      </Paper> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
       <BanSearchPanel />
       <ResourceState loading={songs.loading} error={songs.error} empty={!songs.data?.length ? "暂无曲目" : undefined} />
-      {songs.data?.length ? <SongTable songs={songs.data} onEdit={setEditing} onDelete={remove} /> : null}
+      {songs.data?.length ? <SongTable songs={songs.data} onEdit={isGuest ? undefined : setEditing} onDelete={remove} /> : null}
       <SongDialog song={editing} onClose={() => setEditing(null)} onSave={async (payload) => { if (!editing) return; await api.updateMySong(editing.id, payload); setEditing(null); await songs.reload(); }} />
       <Dialog open={incompleteOpen && incomplete} onClose={() => setIncompleteOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>曲池尚未投递完成</DialogTitle>

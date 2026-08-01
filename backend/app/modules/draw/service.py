@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.security import SONG_POOL_IDENTITIES
 from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, User
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
@@ -91,7 +92,13 @@ def _run_global_draw_once(db: Session, *, allow_redraw: bool) -> list[DrawAssign
         # returned history instead of silently dropping them.
         _retire_active_assignments(db, event.id)
 
-    songs = list(db.scalars(select(Song).where(Song.event_id == event.id)).all())
+    songs = list(
+        db.scalars(
+            select(Song)
+            .join(User, User.id == Song.submitted_by_id)
+            .where(Song.event_id == event.id, User.identity.in_(SONG_POOL_IDENTITIES))
+        ).all()
+    )
     if not participants:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有可参与全局分配的选手")
     if not songs:

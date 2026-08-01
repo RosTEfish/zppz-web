@@ -10,6 +10,7 @@ import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
 import beianIcon from "./assets/beian.png";
 import { announcementSignature, shouldShowAnnouncement } from "./components/announcementState";
 import { preloadAdminTab } from "./pages/admin/adminTabLoaders";
+import { identityLabel } from "./identity";
 
 const DRAWER_WIDTH = 248;
 
@@ -129,7 +130,7 @@ function AppShell() {
       <Box sx={{ flex: 1 }} />
       <Divider />
       <Box sx={{ p: 1.5 }}>
-        {isLoggedIn ? <Stack spacing={1}><ListItemButton component={Link} to="/account" selected={location.pathname === "/account"} onPointerEnter={() => void loadAccountPage()} onFocus={() => void loadAccountPage()} sx={{ borderRadius: 1, px: 1 }}><ListItemIcon sx={{ minWidth: 34 }}><CircleUserRound size={20} /></ListItemIcon><ListItemText primary={<Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography>} secondary={<Typography variant="caption" color="text.secondary" noWrap>{user?.identity === "participant" ? "参赛者" : "观众"} · 账号设置</Typography>} /><Settings size={16} /></ListItemButton><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
+        {isLoggedIn ? <Stack spacing={1}><ListItemButton component={Link} to="/account" selected={location.pathname === "/account"} onPointerEnter={() => void loadAccountPage()} onFocus={() => void loadAccountPage()} sx={{ borderRadius: 1, px: 1 }}><ListItemIcon sx={{ minWidth: 34 }}><CircleUserRound size={20} /></ListItemIcon><ListItemText primary={<Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography>} secondary={<Typography variant="caption" color="text.secondary" noWrap>{identityLabel(user?.identity)} · 账号设置</Typography>} /><Settings size={16} /></ListItemButton><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
       </Box>
     </Box>
   );

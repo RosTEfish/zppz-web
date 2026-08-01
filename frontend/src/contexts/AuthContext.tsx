@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo } from 
 import useSWR from "swr";
 import { api, UserRead } from "../api/v1";
 import { queryKeys } from "../api/queryKeys";
+import type { Identity } from "../identity";
 
 interface AuthContextType {
   user: UserRead | null;
@@ -13,7 +14,7 @@ interface AuthContextType {
   login: (id: string, password: string) => Promise<{ user: UserRead }>;
   logout: () => Promise<void>;
   register: (id: string, qq: string, password: string, identity?: string) => Promise<{ user: UserRead }>;
-  updateProfile: (displayName: string, identity: "participant" | "audience") => Promise<{ user: UserRead }>;
+  updateProfile: (displayName: string, identity: Identity) => Promise<{ user: UserRead }>;
   changePassword: (oldPassword: string, newPassword: string, confirmPassword?: string) => Promise<unknown>;
 }
 
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return api.changePassword(oldPassword, newPassword);
   }, []);
 
-  const updateProfile = useCallback(async (displayName: string, identity: "participant" | "audience") => {
+  const updateProfile = useCallback(async (displayName: string, identity: Identity) => {
     const data = await api.updateProfile(displayName, identity);
     await mutate((current) => current ? { ...current, user: data.user } : current, { revalidate: !bootstrap });
     return data;

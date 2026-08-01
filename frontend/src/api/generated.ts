@@ -1947,7 +1947,7 @@ export interface components {
              * Identity
              * @enum {string}
              */
-            identity: "participant" | "audience";
+            identity: "participant" | "audience" | "guest";
             /**
              * Is Active
              * @default true
@@ -2889,7 +2889,7 @@ export interface components {
              * Identity
              * @enum {string}
              */
-            identity: "participant" | "audience";
+            identity: "participant" | "audience" | "guest";
         };
         /** UserRead */
         UserRead: {

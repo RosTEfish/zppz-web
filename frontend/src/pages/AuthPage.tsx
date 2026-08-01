@@ -38,7 +38,7 @@ export default function AuthPage() {
           <TextField label="账号" {...register("user_code")} error={Boolean(errors.user_code)} helperText={errors.user_code?.message} autoComplete="username" />
           {mode === "register" ? <TextField label="QQ" {...register("qq_id")} error={Boolean(errors.qq_id)} helperText={errors.qq_id?.message} /> : null}
           <TextField label="密码" type="password" {...register("password")} error={Boolean(errors.password)} helperText={errors.password?.message} autoComplete={mode === "login" ? "current-password" : "new-password"} />
-          {mode === "register" ? <Controller name="identity" control={control} render={({ field, fieldState }) => <FormControl error={Boolean(fieldState.error)}><InputLabel>身份</InputLabel><Select {...field} label="身份"><MenuItem value="participant">参赛者</MenuItem><MenuItem value="audience">观众</MenuItem></Select>{fieldState.error ? <FormHelperText>{fieldState.error.message}</FormHelperText> : null}</FormControl>} /> : null}
+          {mode === "register" ? <Controller name="identity" control={control} render={({ field, fieldState }) => <FormControl error={Boolean(fieldState.error)}><InputLabel>身份</InputLabel><Select {...field} label="身份"><MenuItem value="participant">参赛者（投曲并参与抽取）</MenuItem><MenuItem value="audience">观众（投曲但不参与抽取）</MenuItem><MenuItem value="guest">访客（不投曲、不参与抽取）</MenuItem></Select>{fieldState.error ? <FormHelperText>{fieldState.error.message}</FormHelperText> : null}</FormControl>} /> : null}
           {error ? <Alert severity="error">{error}</Alert> : null}
           <Button type="submit" variant="contained" disabled={isSubmitting} startIcon={isSubmitting ? <CircularProgress size={16} /> : <LogIn size={17} />}>{mode === "login" ? "登录" : "注册并登录"}</Button>
         </Stack>

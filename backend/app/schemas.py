@@ -48,7 +48,7 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     display_name: str
-    identity: Literal["participant", "audience"]
+    identity: Literal["participant", "audience", "guest"]
 
     @field_validator("display_name", mode="before")
     @classmethod
@@ -575,7 +575,7 @@ class AuthorCandidatesUpdate(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
-    identity: Literal["participant", "audience"]
+    identity: Literal["participant", "audience", "guest"]
     roles: list[str]
     display_name: str = ""
     is_active: bool = True

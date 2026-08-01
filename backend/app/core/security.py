@@ -22,6 +22,8 @@ _SESSION_CLEANUP_BATCH_SIZE = 500
 OWNER_ROLE = "owner"
 ADMIN_ROLE = "admin"
 OWNER_INHERITED_ROLES = {ADMIN_ROLE, "pool_editor"}
+USER_IDENTITIES = frozenset({"participant", "audience", "guest"})
+SONG_POOL_IDENTITIES = frozenset({"participant", "audience"})
 
 
 def hash_password(password: str) -> str:
@@ -182,6 +184,7 @@ def ensure_roles(db: Session, *, commit: bool = True) -> dict[str, Role]:
         "pool_editor": "曲池编辑",
         "participant": "参赛者",
         "audience": "观众",
+        "guest": "访客",
     }
     existing = {role.name: role for role in db.scalars(select(Role)).all()}
     changed = False
@@ -199,9 +202,9 @@ def ensure_roles(db: Session, *, commit: bool = True) -> dict[str, Role]:
 
 
 def sync_identity_role(user: User, identity: str, roles: dict[str, Role]) -> None:
-    """Keep the user's identity field and participant/audience role in sync."""
-    if identity not in {"participant", "audience"}:
+    """Keep the user's identity field and identity role in sync."""
+    if identity not in USER_IDENTITIES:
         raise ValueError(f"Unsupported user identity: {identity}")
     user.identity = identity
-    preserved_roles = [role for role in user.roles if role.name not in {"participant", "audience"}]
+    preserved_roles = [role for role in user.roles if role.name not in USER_IDENTITIES]
     user.roles = [*preserved_roles, roles[identity]]

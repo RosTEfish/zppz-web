@@ -89,6 +89,38 @@ def test_register_login_and_me(client: TestClient):
     assert bootstrap.json()["user"]["user_code"] == "player1"
 
 
+def test_guest_can_login_and_interact_without_joining_song_pool_or_draw(client: TestClient):
+    register_user(client, "guest1", "guest")
+
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["user"]["identity"] == "guest"
+    assert me.json()["user"]["roles"] == ["guest"]
+    assert client.get("/api/v1/guess/vote-quota").status_code == 200
+
+    blocked_song = client.post(
+        "/api/v1/song-pool/me",
+        json={"song_name": "guest-song", "artist": "artist", "remark": ""},
+    )
+    assert blocked_song.status_code == 403
+    assert blocked_song.json()["detail"] == "访客身份不参与曲池投曲"
+
+    register_user(client, "player1")
+    with SessionLocal() as db:
+        event = get_current_event(db)
+        event.settings.participant_song_limit = 1
+        event.settings.audience_song_limit = 1
+        db.commit()
+    add_song_for("admin", "admin-song")
+    add_song_for("player1", "player-song")
+    set_manual_draw()
+
+    login_user(client, "admin")
+    drawn = client.post("/api/v1/admin/draw")
+    assert drawn.status_code == 200, drawn.text
+    assert {row["assigned_to"]["user_code"] for row in drawn.json()} == {"admin", "player1"}
+
+
 def test_user_can_update_display_name_and_identity_during_registration(client: TestClient):
     register_user(client, "profile-player")
 

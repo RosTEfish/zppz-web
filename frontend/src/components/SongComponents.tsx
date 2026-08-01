@@ -14,7 +14,7 @@ const EMPTY_SONG: SongPayload = { song_name: "", artist: "", remark: "" };
 const EMPTY_SONG_FORM: SongFormValues = { song_name: "", artist: "", remark: "" };
 
 
-export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, selectedIds, onToggleSelection, onToggleAll }: { songs: SongRead[]; onEdit: (song: SongRead) => void; onDelete: (song: SongRead) => void; showSubmitter?: boolean; selectedIds?: ReadonlySet<number>; onToggleSelection?: (songId: number) => void; onToggleAll?: (checked: boolean) => void }) {
+export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, selectedIds, onToggleSelection, onToggleAll }: { songs: SongRead[]; onEdit?: (song: SongRead) => void; onDelete?: (song: SongRead) => void; showSubmitter?: boolean; selectedIds?: ReadonlySet<number>; onToggleSelection?: (songId: number) => void; onToggleAll?: (checked: boolean) => void }) {
   const selectionEnabled = Boolean(onToggleSelection && onToggleAll);
   const columns: GridColDef<SongRead>[] = [
     { field: "song_name", headerName: "曲目", minWidth: 180, flex: 1, renderCell: ({ row }) => <Stack sx={{ justifyContent: "center", height: "100%" }}><Typography variant="body2" sx={{ fontWeight: 650 }}>{row.song_name}</Typography><Typography variant="caption" color="text.secondary">#{row.id}</Typography></Stack> },
@@ -22,7 +22,7 @@ export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, sele
     { field: "song_type", headerName: "分类", width: 90, renderCell: ({ value }) => <Chip size="small" label={value} /> },
     ...(showSubmitter ? [{ field: "submitter", headerName: "投稿人", minWidth: 130, flex: 0.6, valueGetter: (_value, row) => row.submitter?.display_name || row.submitter?.user_code || "-" } satisfies GridColDef<SongRead>] : []),
     { field: "remark", headerName: "备注", minWidth: 180, flex: 1, valueGetter: (value) => value || "-" },
-    { field: "actions", headerName: "操作", width: 112, sortable: false, filterable: false, renderCell: ({ row }) => <><Tooltip title="编辑"><IconButton size="small" aria-label={`编辑 ${row.song_name}`} onClick={() => onEdit(row)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" aria-label={`删除 ${row.song_name}`} color="error" onClick={() => onDelete(row)}><Trash2 size={16} /></IconButton></Tooltip></> },
+    ...((onEdit || onDelete) ? [{ field: "actions", headerName: "操作", width: 112, sortable: false, filterable: false, renderCell: ({ row }) => <>{onEdit ? <Tooltip title="编辑"><IconButton size="small" aria-label={`编辑 ${row.song_name}`} onClick={() => onEdit(row)}><Pencil size={16} /></IconButton></Tooltip> : null}{onDelete ? <Tooltip title="删除"><IconButton size="small" aria-label={`删除 ${row.song_name}`} color="error" onClick={() => onDelete(row)}><Trash2 size={16} /></IconButton></Tooltip> : null}</> } satisfies GridColDef<SongRead>] : []),
   ];
   const rowSelectionModel: GridRowSelectionModel = { type: "include", ids: new Set(selectedIds ?? []) };
   function updateSelection(model: GridRowSelectionModel) {

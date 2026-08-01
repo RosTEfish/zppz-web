@@ -14,12 +14,11 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { Eye, KeyRound, Save, ShieldCheck, Trophy, UserRoundCog } from "lucide-react";
+import { Eye, KeyRound, Save, ShieldCheck, Trophy, UserRound, UserRoundCog } from "lucide-react";
 import { PageHeader } from "../components/PagePrimitives";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
-
-type Identity = "participant" | "audience";
+import type { Identity } from "../identity";
 
 export default function AccountPage() {
   const { user, updateProfile, changePassword } = useAuth();
@@ -110,12 +109,13 @@ export default function AccountPage() {
             />
             <FormControl>
               <Typography component="legend" variant="body2" sx={{ mb: 1, fontWeight: 700 }}>赛事身份</Typography>
-              <RadioGroup row value={profile.identity} onChange={(event) => setProfile((current) => ({ ...current, identity: event.target.value as Identity }))} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 1.25 }}>
-                <IdentityChoice value="participant" selected={profile.identity === "participant"} disabled={!identityEditable} icon={<Trophy size={20} />} title="参赛者" description="参与曲目分配并提交参赛作品" />
-                <IdentityChoice value="audience" selected={profile.identity === "audience"} disabled={!identityEditable} icon={<Eye size={20} />} title="观众" description="浏览赛事并参与开放的互动环节" />
+              <RadioGroup row value={profile.identity} onChange={(event) => setProfile((current) => ({ ...current, identity: event.target.value as Identity }))} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 1.25 }}>
+                <IdentityChoice value="participant" selected={profile.identity === "participant"} disabled={!identityEditable} icon={<Trophy size={20} />} title="参赛者" description="投曲、参与曲目分配并提交参赛作品" />
+                <IdentityChoice value="audience" selected={profile.identity === "audience"} disabled={!identityEditable} icon={<Eye size={20} />} title="观众" description="为曲池投曲，不参与抽取，可浏览互动" />
+                <IdentityChoice value="guest" selected={profile.identity === "guest"} disabled={!identityEditable} icon={<UserRound size={20} />} title="访客" description="不投曲、不参与抽取，可浏览和互动" />
               </RadioGroup>
             </FormControl>
-            {!identityEditable ? <Alert severity="info">{configLoading || !phases ? "正在确认当前赛事阶段，身份暂不可修改。" : "身份仅可在报名阶段修改；当前仍可保存显示名。"}</Alert> : <Alert severity="success" icon={<ShieldCheck size={20} />}>当前处于报名阶段，可以自由选择参赛者或观众身份。</Alert>}
+            {!identityEditable ? <Alert severity="info">{configLoading || !phases ? "正在确认当前赛事阶段，身份暂不可修改。" : "身份仅可在报名阶段修改；当前仍可保存显示名。"}</Alert> : <Alert severity="success" icon={<ShieldCheck size={20} />}>当前处于报名阶段，可以自由选择参赛者、观众或访客身份。</Alert>}
             {profileError ? <Alert severity="error">{profileError}</Alert> : null}
             {profileMessage ? <Alert severity="success">{profileMessage}</Alert> : null}
             <Button type="submit" variant="contained" disabled={profileBusy} startIcon={profileBusy ? <CircularProgress size={16} color="inherit" /> : <Save size={17} />} sx={{ alignSelf: { sm: "flex-start" }, minWidth: 132 }}>保存资料</Button>

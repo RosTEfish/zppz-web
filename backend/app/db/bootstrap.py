@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import OWNER_ROLE, ensure_roles, hash_password
+from app.core.security import OWNER_ROLE, USER_IDENTITIES, ensure_roles, hash_password
 from app.db.session import Base, engine
 from app.models import Event, EventSetting, User
 
@@ -51,7 +51,7 @@ def sync_permissions_file(db: Session, roles: dict) -> None:
         if not user:
             continue
 
-        if "identity" in row and row["identity"] in {"participant", "audience"}:
+        if "identity" in row and row["identity"] in USER_IDENTITIES:
             user.identity = row["identity"]
             changed = True
         if "display_name" in row:

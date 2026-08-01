@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import OWNER_ROLE, ensure_roles, hash_password, is_owner, require_role, sync_identity_role, user_payload
+from app.core.security import OWNER_ROLE, USER_IDENTITIES, ensure_roles, hash_password, is_owner, require_role, sync_identity_role, user_payload
 from app.db.session import get_db
 from app.models import Role, User
 from app.schemas import AdminUserUpdate, ResetPasswordRequest, UserRead
@@ -62,7 +62,7 @@ def update_user(
     requested_names = {
         str(name)
         for name in payload.roles
-        if str(name) in roles and str(name) not in {OWNER_ROLE, "participant", "audience"}
+        if str(name) in roles and str(name) not in ({OWNER_ROLE} | USER_IDENTITIES)
     }
     if target_is_owner:
         requested_names.add(OWNER_ROLE)

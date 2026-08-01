@@ -5,7 +5,7 @@ export const authSchema = z.object({
   user_code: z.string().trim().min(1, "请输入账号").max(64, "账号不能超过 64 个字符"),
   qq_id: z.string().trim().max(32, "QQ 不能超过 32 个字符"),
   password: z.string().min(1, "请输入密码").max(128, "密码不能超过 128 个字符"),
-  identity: z.enum(["participant", "audience"]),
+  identity: z.enum(["participant", "audience", "guest"]),
 }).superRefine((value, context) => {
   if (value.mode !== "register") return;
   if (value.user_code.length < 2) context.addIssue({ code: "custom", path: ["user_code"], message: "账号至少 2 个字符" });

@@ -319,6 +319,32 @@ describe("Material application shell", () => {
     expect(screen.getByText(/曲池尚未投满/)).toBeInTheDocument();
   });
 
+  it("shows guests a non-participating song-pool view", async () => {
+    window.history.pushState({}, "", "/songs");
+    const guest = {
+      id: 10,
+      user_code: "guest",
+      qq_id: "10",
+      identity: "guest",
+      display_name: "访客用户",
+      roles: ["guest"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    mockApi(async (path) => {
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: guest });
+      if (path.endsWith("/song-pool/me")) return json([]);
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    expect(await screen.findByText("访客身份不参与投曲", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByText(/不需要向曲池投曲/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "曲池尚未投递完成" })).not.toBeInTheDocument();
+  });
+
   it("lets users submit a song without choosing a category", async () => {
     window.history.pushState({}, "", "/songs");
     const participant = {
@@ -666,7 +692,7 @@ describe("Material application shell", () => {
     });
 
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "赛事阶段" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "赛事阶段" }, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.getAllByText("开始", { selector: "label" })).toHaveLength(4);
     expect(screen.getAllByText("结束", { selector: "label" })).toHaveLength(4);
     expect(screen.queryByText("揭晓")).not.toBeInTheDocument();
