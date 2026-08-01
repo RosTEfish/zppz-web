@@ -269,7 +269,7 @@ describe("v1 API helpers", () => {
   });
 
   it("forwards abort signals on JSON requests", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "clear", matches: [] }), {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ status: "clear", matches: [] }), {
       status: 200,
       headers: { "content-type": "application/json" },
     }));
@@ -277,7 +277,12 @@ describe("v1 API helpers", () => {
     const controller = new AbortController();
 
     await expect(api.checkBan("title", "artist", controller.signal)).resolves.toMatchObject({ status: "clear" });
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/banlist/check", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/banlist/check", expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      headers: expect.objectContaining({}),
+    }));
+    const requestHeaders = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(requestHeaders.get("Content-Type")).toBe("application/json");
   });
 
   it("prepares large downloads and starts a native browser download", async () => {
