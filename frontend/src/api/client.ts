@@ -48,7 +48,11 @@ function errorMessage(detail: unknown): string {
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if ((typeof FormData !== "undefined" && options.body instanceof FormData) || options.signal) {
-    const response = await globalThis.fetch(path, { credentials: "include", ...options });
+    const headers = new Headers(options.headers);
+    if (typeof options.body === "string" && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    const response = await globalThis.fetch(path, { credentials: "include", ...options, headers });
     const data = response.status === 204 ? undefined : await response.json();
     if (!response.ok) throw new ApiError(errorMessage(data), response.status, data);
     return data as T;
