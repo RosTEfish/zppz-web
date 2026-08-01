@@ -151,7 +151,8 @@ function SubmissionPageContent() {
   );
 
   function choice(target: SubmissionTargetRead): Track {
-    return trackChoices[target.song.id] || target.submission?.track || "normal";
+    const storedTrack = target.submission?.track;
+    return trackChoices[target.song.id] || (storedTrack === "j" || storedTrack === "exhibition" ? storedTrack : "normal");
   }
 
   function chooseTrack(songId: number, nextTrack: Track) {

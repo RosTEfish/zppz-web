@@ -1,83 +1,27 @@
-import { request } from "./client";
+import type { components } from "./generated";
+import { apiRequest } from "./base";
+import { downloadDirect, downloadPrepared } from "./downloads";
+import { uploadSubmissionThroughIntent } from "./uploads";
+import type { SubmissionUploadOptions } from "./uploads";
+export { apiRequest } from "./base";
 export { ApiError } from "./client";
 export type { components as OpenApiComponents, paths as OpenApiPaths } from "./generated";
+export { formatDuration, formatMB, formatTime } from "./format";
+export { submissionContentType } from "./uploads";
+export type { SubmissionUploadOptions, SubmissionUploadProgress } from "./uploads";
 
 export type Track = "normal" | "j" | "exhibition";
 export type EventPhaseName = "registration" | "submission_1" | "submission_2" | "guess";
 
-export interface PhaseCapabilities {
-  song_pool_edit: boolean;
-  submission: boolean;
-  swap: boolean;
-  normal_submission_public: boolean;
-  author_guess: boolean;
-  quality_vote: boolean;
-}
+export type PhaseCapabilities = components["schemas"]["PhaseCapabilitiesRead"];
+export type EventPhaseWindow = components["schemas"]["EventPhaseRead"];
+export type EventPhaseSnapshotRead = components["schemas"]["EventPhaseSnapshotRead"];
+export type EventPhasesRead = components["schemas"]["EventPhasesRead"];
+export type EventPhasesUpdate = components["schemas"]["EventPhasesUpdate"];
 
-export interface EventPhaseWindow {
-  phase: EventPhaseName;
-  starts_at: string;
-  ends_at: string;
-}
-
-export interface EventPhaseSnapshotRead {
-  id: number;
-  original_phase: string;
-  starts_at: string;
-  ends_at: string;
-  source_id?: number | null;
-  migration_revision: string;
-  created_at?: string | null;
-}
-
-export interface EventPhasesRead {
-  phase_mode: "auto" | "manual";
-  manual_phase?: EventPhaseName | null;
-  active_phase: EventPhaseName | null;
-  phases: EventPhaseWindow[];
-  phase_snapshots?: EventPhaseSnapshotRead[];
-  capabilities: PhaseCapabilities;
-  next_transition_at?: string | null;
-  /** UTC timestamp captured by the API, used to correct an inaccurate client clock. */
-  server_time?: string;
-}
-
-export interface EventPhasesUpdate {
-  phase_mode: "auto" | "manual";
-  manual_phase?: EventPhaseName | null;
-  phases: EventPhaseWindow[];
-}
-
-export interface UserRead {
-  id: number;
-  user_code: string;
-  qq_id: string;
-  identity: "participant" | "audience" | string;
-  display_name: string;
-  roles: string[];
-  is_admin: boolean;
-  is_owner: boolean;
-  is_pool_editor: boolean;
-  is_active?: boolean;
-}
-
-export interface EventRead {
-  id: number;
-  name: string;
-  slug: string;
-  is_current: boolean;
-  settings: EventSettingsRead;
-}
-
-export interface EventSettingsRead {
-  participant_song_limit: number;
-  audience_song_limit: number;
-  draw_songs_per_participant: number;
-  true_love_vote_limit_below_14: number;
-  true_love_vote_limit_at_least_14: number;
-  funny_vote_limit: number;
-  announcement_text: string;
-}
+export type UserRead = components["schemas"]["UserRead"];
+export type EventRead = components["schemas"]["EventRead"];
+export type EventSettingsRead = components["schemas"]["EventSettingsRead"];
 
 export interface EventUpdatePayload {
   name: string;
@@ -90,67 +34,14 @@ export interface EventUpdatePayload {
   announcement_text: string;
 }
 
-export interface BootstrapRead {
-  event: EventRead;
-  user: UserRead | null;
-}
+export type BootstrapRead = components["schemas"]["BootstrapRead"];
+export type GuessAvailabilityRead = components["schemas"]["GuessAvailabilityRead"];
+export type DownloadPreparation = components["schemas"]["DownloadPreparation"];
 
-export interface GuessAvailabilityRead {
-  available: boolean;
-}
+export type SubmissionUploadIntent = components["schemas"]["SubmissionUploadIntentRead"];
+export type SubmissionProcessingJob = components["schemas"]["SubmissionProcessingJobRead"];
 
-export interface DownloadPreparation {
-  download_url: string;
-  file_name: string;
-  file_size: number;
-}
-
-export interface SubmissionUploadIntent {
-  id: string;
-  upload_url: string;
-  method: "PUT";
-  headers: Record<string, string>;
-  expires_at: string;
-}
-
-export interface SubmissionProcessingJob {
-  id: string;
-  intent_id: string | null;
-  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
-  stage: "uploaded" | "validating" | "accepted" | "preview_core" | "public_package" | "video" | "cleanup" | "complete";
-  message: string;
-  file_name: string;
-  file_size: number;
-  source_song_id: number | null;
-  replace_submission_id: number | null;
-  submission: StoredFileRead | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SubmissionUploadProgress {
-  phase: "preparing" | "uploading" | "confirming";
-  loaded: number;
-  total: number;
-  percent: number;
-  bytesPerSecond: number;
-  etaSeconds: number | null;
-}
-
-export interface SubmissionUploadOptions {
-  signal?: AbortSignal;
-  onProgress?: (progress: SubmissionUploadProgress) => void;
-}
-
-export interface SongRead {
-  id: number;
-  song_name: string;
-  artist: string;
-  song_type: string;
-  remark: string;
-  submitter?: UserRead | null;
-  created_at: string;
-}
+export type SongRead = components["schemas"]["SongRead"];
 
 export interface SongPayload {
   song_name: string;
@@ -162,77 +53,14 @@ export interface SongPayload {
 
 export type BanCheckStatus = "exact" | "review" | "clear" | "unavailable";
 
-export interface BanMatchRead {
-  entry_id: number;
-  title: string;
-  artist: string;
-  round: string;
-  note: string;
-  match_type: "exact" | "fuzzy" | "alias" | string;
-  score?: number | null;
-  reason: string;
-}
-
-export interface BanCheckRead {
-  status: BanCheckStatus;
-  matches: BanMatchRead[];
-  import_id?: number | null;
-}
-
-export interface BanSearchRead {
-  items: BanMatchRead[];
-  import_id?: number | null;
-}
-
-export interface BanImportRead {
-  id: number;
-  file_name: string;
-  file_sha256: string;
-  status: "draft" | "published" | "superseded" | string;
-  entry_count: number;
-  issue_count: number;
-  uploaded_by_id?: number | null;
-  published_at?: string | null;
-  created_at: string;
-}
-
-export interface BanImportPreviewRead extends BanImportRead {
-  entries: Array<{ id: number; round: string; title: string; artist: string; note: string }>;
-  issues: string[];
-}
-
-export interface StoredFileRead {
-  id: number;
-  file_name: string;
-  file_size: number;
-  review_status: string;
-  review_note: string;
-  source_kind: "self" | "assigned" | string;
-  track: Track;
-  source_song?: SongRead | null;
-  user?: UserRead | null;
-  created_at: string;
-  track_duration_seconds?: number | null;
-  public_package_ready?: boolean;
-  public_package_status?: "processing" | "ready" | "failed";
-  public_package_message?: string;
-  validation?: { maidata: boolean; track: boolean; background: boolean; duration: boolean };
-  preview_status?: PreviewStatus | null;
-  preview_message?: string;
-  video_status?: "none" | "processing" | "ready" | "failed";
-  video_message?: string;
-}
-
-export interface SubmissionTargetRead {
-  song: SongRead;
-  source_kind: "self" | "assigned";
-  submission?: StoredFileRead | null;
-}
-
-export interface SubmissionTargetsResponse {
-  is_open: boolean;
-  targets: SubmissionTargetRead[];
-}
+export type BanMatchRead = components["schemas"]["BanMatchRead"];
+export type BanCheckRead = Omit<components["schemas"]["BanCheckResponse"], "status"> & { status: BanCheckStatus };
+export type BanSearchRead = components["schemas"]["BanSearchResponse"];
+export type BanImportRead = components["schemas"]["BanImportRead"];
+export type BanImportPreviewRead = components["schemas"]["BanImportPreview"];
+export type StoredFileRead = components["schemas"]["StoredFileRead"];
+export type SubmissionTargetRead = components["schemas"]["SubmissionTargetRead"];
+export type SubmissionTargetsResponse = components["schemas"]["SubmissionTargetsResponse"];
 
 export interface DrawAssignmentRead {
   id: number;
@@ -483,237 +311,6 @@ export interface LoveVoteQuotaRead {
   at_least_14: LoveVoteQuotaTier;
 }
 
-const API_PREFIX = "/api/v1";
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  return request<T>(`${API_PREFIX}${path}`, options);
-}
-
-function triggerBrowserDownload(preparation: DownloadPreparation): void {
-  const anchor = document.createElement("a");
-  anchor.href = preparation.download_url;
-  anchor.download = preparation.file_name;
-  anchor.rel = "noopener";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-}
-
-const DOWNLOAD_COOKIE_PREFIX = "zppz_download_";
-const DOWNLOAD_START_TIMEOUT_MS = 5 * 60 * 1000;
-const DOWNLOAD_COOKIE_POLL_MS = 100;
-
-function createDownloadToken(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-}
-
-function addDownloadToken(downloadUrl: string, token: string): string {
-  const url = new URL(downloadUrl, window.location.origin);
-  url.searchParams.set("download_token", token);
-  return url.origin === window.location.origin
-    ? `${url.pathname}${url.search}${url.hash}`
-    : url.toString();
-}
-
-function clearDownloadConfirmation(cookieName: string): void {
-  const secure = window.location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `${cookieName}=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
-}
-
-function waitForDownloadConfirmation(token: string): Promise<void> {
-  const cookieName = `${DOWNLOAD_COOKIE_PREFIX}${token}`;
-  return new Promise((resolve, reject) => {
-    let intervalId: number | undefined;
-    let timeoutId: number | undefined;
-    const cleanup = () => {
-      if (intervalId !== undefined) window.clearInterval(intervalId);
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    };
-    const check = () => {
-      const confirmed = document.cookie
-        .split("; ")
-        .some((item) => item === `${cookieName}=1`);
-      if (!confirmed) return;
-      cleanup();
-      clearDownloadConfirmation(cookieName);
-      resolve();
-    };
-    intervalId = window.setInterval(check, DOWNLOAD_COOKIE_POLL_MS);
-    timeoutId = window.setTimeout(() => {
-      cleanup();
-      clearDownloadConfirmation(cookieName);
-      reject(new Error("浏览器未确认下载开始，请检查下载拦截设置后重试"));
-    }, DOWNLOAD_START_TIMEOUT_MS);
-    check();
-  });
-}
-
-async function downloadDirect(path: string, fileName: string): Promise<void> {
-  triggerBrowserDownload({ download_url: `${API_PREFIX}${path}`, file_name: fileName, file_size: 0 });
-}
-
-async function downloadPrepared(metadataPath: string, waitForBrowserStart = false): Promise<void> {
-  const preparation = await apiRequest<DownloadPreparation>(metadataPath);
-  if (!waitForBrowserStart) {
-    triggerBrowserDownload(preparation);
-    return;
-  }
-  const token = createDownloadToken();
-  triggerBrowserDownload({
-    ...preparation,
-    download_url: addDownloadToken(preparation.download_url, token),
-  });
-  await waitForDownloadConfirmation(token);
-}
-
-const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-const ARCHIVE_CONTENT_TYPES: Record<string, string> = {
-  ".zip": "application/zip",
-  ".7z": "application/x-7z-compressed",
-  ".rar": "application/vnd.rar",
-};
-
-export function submissionContentType(fileName: string): string {
-  const dot = fileName.lastIndexOf(".");
-  const extension = dot >= 0 ? fileName.slice(dot).toLowerCase() : "";
-  const contentType = ARCHIVE_CONTENT_TYPES[extension];
-  if (!contentType) throw new Error("仅支持 ZIP、7Z 和 RAR 投稿压缩包");
-  return contentType;
-}
-
-function validateSubmissionFile(file: File): string {
-  const contentType = submissionContentType(file.name);
-  if (file.size <= 0) throw new Error("投稿文件不能为空");
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error("投稿文件不能超过 100 MB");
-  return contentType;
-}
-
-function abortedUploadError(): DOMException {
-  return new DOMException("上传已取消", "AbortError");
-}
-
-function putSubmissionFile(
-  intent: SubmissionUploadIntent,
-  file: File,
-  options: SubmissionUploadOptions,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const samples: Array<{ at: number; loaded: number }> = [];
-    let lastUiUpdate = 0;
-    let settled = false;
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      options.signal?.removeEventListener("abort", abort);
-      callback();
-    };
-    const abort = () => {
-      xhr.abort();
-      finish(() => reject(abortedUploadError()));
-    };
-    xhr.open(intent.method, intent.upload_url, true);
-    xhr.timeout = 30 * 60 * 1000;
-    xhr.withCredentials = intent.upload_url.startsWith("/");
-    Object.entries(intent.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
-    xhr.upload.onprogress = (event) => {
-      const now = performance.now();
-      samples.push({ at: now, loaded: event.loaded });
-      while (samples.length > 1 && samples[0].at < now - 3000) samples.shift();
-      if (now - lastUiUpdate < 250 && event.loaded < event.total) return;
-      lastUiUpdate = now;
-      const first = samples[0];
-      const elapsedSeconds = first ? Math.max((now - first.at) / 1000, 0.001) : 0;
-      const bytesPerSecond = first ? Math.max((event.loaded - first.loaded) / elapsedSeconds, 0) : 0;
-      const total = event.lengthComputable ? event.total : file.size;
-      const remaining = Math.max(total - event.loaded, 0);
-      options.onProgress?.({
-        phase: "uploading",
-        loaded: event.loaded,
-        total,
-        percent: total > 0 ? Math.min((event.loaded / total) * 100, 100) : 0,
-        bytesPerSecond,
-        etaSeconds: bytesPerSecond > 0 ? remaining / bytesPerSecond : null,
-      });
-    };
-    xhr.onerror = () => finish(() => reject(new Error("对象存储上传网络中断，请检查网络后重试")));
-    xhr.ontimeout = () => finish(() => reject(new Error("对象存储上传超时，请重新上传")));
-    xhr.onabort = () => finish(() => reject(abortedUploadError()));
-    xhr.onload = () => finish(() => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        options.onProgress?.({
-          phase: "confirming",
-          loaded: file.size,
-          total: file.size,
-          percent: 100,
-          bytesPerSecond: 0,
-          etaSeconds: null,
-        });
-        resolve();
-        return;
-      }
-      reject(new Error(xhr.responseText || `对象存储上传失败（HTTP ${xhr.status}）`));
-    });
-    if (options.signal?.aborted) {
-      abort();
-      return;
-    }
-    options.signal?.addEventListener("abort", abort, { once: true });
-    xhr.send(file);
-  });
-}
-
-async function uploadSubmissionThroughIntent(
-  payload: Record<string, unknown>,
-  file: File,
-  adminSubmissionId?: number,
-  options: SubmissionUploadOptions = {},
-): Promise<SubmissionProcessingJob> {
-  const content_type = validateSubmissionFile(file);
-  options.onProgress?.({
-    phase: "preparing",
-    loaded: 0,
-    total: file.size,
-    percent: 0,
-    bytesPerSecond: 0,
-    etaSeconds: null,
-  });
-  const metadata = { ...payload, file_name: file.name, file_size: file.size, content_type };
-  const base = adminSubmissionId === undefined
-    ? "/submissions/upload-intents"
-    : `/admin/submissions/${adminSubmissionId}/upload-intents`;
-  const intent = await apiRequest<SubmissionUploadIntent>(base, { method: "POST", body: JSON.stringify(metadata) });
-  try {
-    await putSubmissionFile(intent, file, options);
-  } catch (error) {
-    const cancelPath = adminSubmissionId === undefined
-      ? `/submissions/upload-intents/${intent.id}`
-      : `/admin/submissions/upload-intents/${intent.id}`;
-    await apiRequest<void>(cancelPath, { method: "DELETE" }).catch(() => undefined);
-    throw error;
-  }
-  const completePath = adminSubmissionId === undefined
-    ? `/submissions/upload-intents/${intent.id}/complete`
-    : `/admin/submissions/upload-intents/${intent.id}/complete`;
-  try {
-    return await apiRequest<SubmissionProcessingJob>(completePath, { method: "POST" });
-  } catch (completionError) {
-    const statusPath = adminSubmissionId === undefined
-      ? `/submissions/upload-intents/${intent.id}/status`
-      : `/admin/submissions/upload-intents/${intent.id}/status`;
-    try {
-      return await apiRequest<SubmissionProcessingJob>(statusPath, { cache: "no-store" });
-    } catch {
-      const cancelPath = adminSubmissionId === undefined
-        ? `/submissions/upload-intents/${intent.id}`
-        : `/admin/submissions/upload-intents/${intent.id}`;
-      await apiRequest<void>(cancelPath, { method: "DELETE" }).catch(() => undefined);
-      throw completionError;
-    }
-  }
-}
-
 export const api = {
   bootstrap: () => apiRequest<BootstrapRead>("/bootstrap"),
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
@@ -828,18 +425,3 @@ export const api = {
   updateUser: (id: number, payload: { identity: string; roles: string[]; display_name: string; is_active: boolean }) => apiRequest<UserRead>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   siteStats: (signal?: AbortSignal) => apiRequest<Record<string, number>>("/admin/stats", { signal }),
 };
-
-export function formatMB(size: number): string {
-  return `${(size / 1024 / 1024).toFixed(2)} MB`;
-}
-
-export function formatTime(value?: string | null): string {
-  if (!value) return "未设置";
-  return new Date(value).toLocaleString("zh-CN", { hour12: false });
-}
-
-export function formatDuration(value?: number | null): string {
-  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) return "--:--";
-  const totalSeconds = Math.floor(value);
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}

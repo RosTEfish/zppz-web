@@ -32,7 +32,6 @@ const client = createClient<paths>({
       cache: apiRequest.cache,
       credentials: apiRequest.credentials,
       redirect: apiRequest.redirect,
-      signal: apiRequest.signal,
     });
   },
 });

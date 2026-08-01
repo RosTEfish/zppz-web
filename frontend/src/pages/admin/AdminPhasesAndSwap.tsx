@@ -3,10 +3,8 @@ import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogT
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import dayjs, { type Dayjs } from "dayjs";
+import type { Dayjs } from "dayjs";
 import "dayjs/locale/zh-cn";
-import timezone from "dayjs/plugin/timezone";
-import utc from "dayjs/plugin/utc";
 import { ArrowLeftRight, ArrowRight, Save } from "lucide-react";
 import { api, formatTime, type EventPhaseName, type EventPhasesUpdate, type SwapAuditAssignmentRead, type SwapAuditRequestRead, type SwapAuditRoundRead } from "../../api/v1";
 import { PHASE_LABELS } from "../../components/EventPhaseStatus";
@@ -14,12 +12,9 @@ import { LoadingBlock, useApiResource } from "../../components/PagePrimitives";
 import { queryKeys } from "../../api/queryKeys";
 import { useSnackbar } from "notistack";
 import { useConfig } from "../../contexts/ConfigContext";
+import { BUSINESS_TIMEZONE, toBusinessTime, toUtcIso } from "./phaseDateTime";
 
 const PHASE_ORDER = Object.keys(PHASE_LABELS) as EventPhaseName[];
-const BUSINESS_TIMEZONE = "Asia/Shanghai";
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
 
 export default function AdminPhasesAndSwap() {
   const { enqueueSnackbar } = useSnackbar();
@@ -44,7 +39,7 @@ export default function AdminPhasesAndSwap() {
   const updateWindow = (phase: EventPhaseName, key: "starts_at" | "ends_at", value: Dayjs | null) => {
     setForm((current) => current ? {
       ...current,
-      phases: current.phases.map((item) => item.phase === phase ? { ...item, [key]: value?.isValid() ? value.utc().toISOString() : "" } : item),
+      phases: current.phases.map((item) => item.phase === phase ? { ...item, [key]: toUtcIso(value) } : item),
     } : current);
   };
 
@@ -145,8 +140,4 @@ function SwapAuditRequestCard({ request }: { request: SwapAuditRequestRead }) {
 
 function SwapAuditSong({ label, assignment }: { label: string; assignment?: SwapAuditAssignmentRead | null }) {
   return <Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="caption" color="text.secondary">{label}</Typography>{assignment ? <><Typography sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{assignment.song.song_name}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{assignment.song.artist}</Typography></> : <Typography variant="body2" color="text.secondary">暂无替换曲目</Typography>}</Box>;
-}
-
-function toBusinessTime(value?: string | null): Dayjs | null {
-  return value ? dayjs.utc(value).tz(BUSINESS_TIMEZONE) : null;
 }
