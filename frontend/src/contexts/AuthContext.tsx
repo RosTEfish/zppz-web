@@ -1,5 +1,7 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
+import useSWR from "swr";
 import { api, UserRead } from "../api/v1";
+import { queryKeys } from "../api/queryKeys";
 
 interface AuthContextType {
   user: UserRead | null;
@@ -17,36 +19,28 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserRead | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.bootstrap()
-      .then((data) => setUser(data.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: bootstrap, isLoading: loading, mutate } = useSWR(queryKeys.bootstrap, api.bootstrap);
+  const user = bootstrap?.user ?? null;
 
   const login = useCallback(async (id: string, password: string) => {
     const data = await api.login(id, password);
-    setUser(data.user);
+    await mutate((current) => current ? { ...current, user: data.user } : current, { revalidate: !bootstrap });
     return data;
-  }, []);
+  }, [bootstrap, mutate]);
 
   const logout = useCallback(async () => {
-    setUser(null);
     try {
       await api.logout();
     } finally {
-      setUser(null);
+      await mutate((current) => current ? { ...current, user: null } : current, { revalidate: false });
     }
-  }, []);
+  }, [mutate]);
 
   const register = useCallback(async (id: string, qq: string, password: string, identity = "audience") => {
     const data = await api.register(id, qq, password, identity);
-    setUser(data.user);
+    await mutate((current) => current ? { ...current, user: data.user } : current, { revalidate: !bootstrap });
     return data;
-  }, []);
+  }, [bootstrap, mutate]);
 
   const changePassword = useCallback(async (oldPassword: string, newPassword: string, confirmPassword?: string) => {
     if (confirmPassword !== undefined && newPassword !== confirmPassword) {

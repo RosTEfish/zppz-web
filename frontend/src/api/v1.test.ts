@@ -254,18 +254,35 @@ describe("v1 API helpers", () => {
     ]);
   });
 
-  it("deduplicates concurrent bootstrap requests", async () => {
-    let resolveResponse: ((response: Response) => void) | undefined;
-    const response = new Promise<Response>((resolve) => { resolveResponse = resolve; });
-    const fetchMock = vi.fn(() => response);
+  it("exposes FastAPI error metadata through ApiError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "denied" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    })));
+
+    await expect(api.bootstrap()).rejects.toMatchObject({
+      name: "ApiError",
+      message: "denied",
+      status: 403,
+      detail: { detail: "denied" },
+    });
+  });
+
+  it("forwards abort signals on JSON requests", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ status: "clear", matches: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
     vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
 
-    const first = api.bootstrap();
-    const second = api.bootstrap();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolveResponse?.(new Response(JSON.stringify({ event: {}, user: null }), { status: 200, headers: { "content-type": "application/json" } }));
-
-    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    await expect(api.checkBan("title", "artist", controller.signal)).resolves.toMatchObject({ status: "clear" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/banlist/check", expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      headers: expect.objectContaining({}),
+    }));
+    const requestHeaders = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect(requestHeaders.get("Content-Type")).toBe("application/json");
   });
 
   it("prepares large downloads and starts a native browser download", async () => {

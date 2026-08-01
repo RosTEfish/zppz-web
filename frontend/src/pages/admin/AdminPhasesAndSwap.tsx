@@ -1,21 +1,29 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Typography } from "@mui/material";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import type { Dayjs } from "dayjs";
+import "dayjs/locale/zh-cn";
 import { ArrowLeftRight, ArrowRight, Save } from "lucide-react";
 import { api, formatTime, type EventPhaseName, type EventPhasesUpdate, type SwapAuditAssignmentRead, type SwapAuditRequestRead, type SwapAuditRoundRead } from "../../api/v1";
 import { PHASE_LABELS } from "../../components/EventPhaseStatus";
-import { LoadingBlock, useResource } from "../../components/PagePrimitives";
+import { LoadingBlock, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
+import { useSnackbar } from "notistack";
 import { useConfig } from "../../contexts/ConfigContext";
+import { BUSINESS_TIMEZONE, toBusinessTime, toUtcIso } from "./phaseDateTime";
 
 const PHASE_ORDER = Object.keys(PHASE_LABELS) as EventPhaseName[];
 
 export default function AdminPhasesAndSwap() {
+  const { enqueueSnackbar } = useSnackbar();
   const { phases, refreshConfig } = useConfig();
   const [form, setForm] = useState<EventPhasesUpdate | null>(null);
   const [confirmPhase, setConfirmPhase] = useState<EventPhaseName | null>(null);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const audit = useResource(api.swapAudit, []);
+  const audit = useApiResource(queryKeys.admin.swapAudit, api.swapAudit);
 
   useEffect(() => {
     if (!phases) return;
@@ -28,10 +36,10 @@ export default function AdminPhasesAndSwap() {
 
   if (!form) return <LoadingBlock />;
 
-  const updateWindow = (phase: EventPhaseName, key: "starts_at" | "ends_at", value: string) => {
+  const updateWindow = (phase: EventPhaseName, key: "starts_at" | "ends_at", value: Dayjs | null) => {
     setForm((current) => current ? {
       ...current,
-      phases: current.phases.map((item) => item.phase === phase ? { ...item, [key]: value ? new Date(value).toISOString() : "" } : item),
+      phases: current.phases.map((item) => item.phase === phase ? { ...item, [key]: toUtcIso(value) } : item),
     } : current);
   };
 
@@ -46,7 +54,7 @@ export default function AdminPhasesAndSwap() {
     try {
       await api.updateEventPhases({ ...nextForm, phases: nextForm.phases.filter((item) => item.starts_at && item.ends_at) });
       await refreshConfig();
-      setMessage("阶段设置已保存");
+      enqueueSnackbar("阶段设置已保存", { variant: "success" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "阶段设置保存失败");
     } finally {
@@ -73,17 +81,31 @@ export default function AdminPhasesAndSwap() {
             </FormControl>
           </Stack>
         </Stack>
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5, mt: 2 }}>
-          {form.phases.map((item) => (
-            <Paper key={item.phase} variant="outlined" sx={{ p: 1.5 }}>
-              <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>{PHASE_LABELS[item.phase]}</Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                <TextField fullWidth size="small" type="datetime-local" label="开始" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(item.starts_at)} onChange={(event) => updateWindow(item.phase, "starts_at", event.target.value)} />
-                <TextField fullWidth size="small" type="datetime-local" label="结束" slotProps={{ inputLabel: { shrink: true } }} value={toDateTimeInput(item.ends_at)} onChange={(event) => updateWindow(item.phase, "ends_at", event.target.value)} />
-              </Stack>
-            </Paper>
-          ))}
-        </Box>
+        <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="zh-cn">
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5, mt: 2 }}>
+            {form.phases.map((item) => (
+              <Paper key={item.phase} variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>{PHASE_LABELS[item.phase]}</Typography>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                  <DateTimePicker
+                    label="开始"
+                    timezone={BUSINESS_TIMEZONE}
+                    value={toBusinessTime(item.starts_at)}
+                    onChange={(value) => updateWindow(item.phase, "starts_at", value)}
+                    slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                  />
+                  <DateTimePicker
+                    label="结束"
+                    timezone={BUSINESS_TIMEZONE}
+                    value={toBusinessTime(item.ends_at)}
+                    onChange={(value) => updateWindow(item.phase, "ends_at", value)}
+                    slotProps={{ textField: { fullWidth: true, size: "small" } }}
+                  />
+                </Stack>
+              </Paper>
+            ))}
+          </Box>
+        </LocalizationProvider>
         <Button variant="contained" startIcon={<Save size={16} />} disabled={busy} onClick={() => void save()} sx={{ mt: 2 }}>保存时间表</Button>
       </Paper>
 
@@ -96,7 +118,6 @@ export default function AdminPhasesAndSwap() {
         {audit.data?.rounds?.length ? <Stack spacing={1} sx={{ mt: 2 }}>{audit.data.rounds.map((round) => <SwapAuditSummary key={round.id} round={round} />)}</Stack> : null}
         {audit.data?.requests.length ? <Stack spacing={1.5} sx={{ mt: 2 }}>{audit.data.requests.map((request) => <SwapAuditRequestCard key={request.id} request={request} />)}</Stack> : <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>暂无换曲审计记录</Typography>}
       </Paper>
-      {message ? <Alert severity="success" aria-live="polite">{message}</Alert> : null}
       {error ? <Alert severity="error" aria-live="polite">{error}</Alert> : null}
 
       <Dialog open={Boolean(confirmPhase)} onClose={() => setConfirmPhase(null)}>
@@ -119,11 +140,4 @@ function SwapAuditRequestCard({ request }: { request: SwapAuditRequestRead }) {
 
 function SwapAuditSong({ label, assignment }: { label: string; assignment?: SwapAuditAssignmentRead | null }) {
   return <Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="caption" color="text.secondary">{label}</Typography>{assignment ? <><Typography sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{assignment.song.song_name}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{assignment.song.artist}</Typography></> : <Typography variant="body2" color="text.secondary">暂无替换曲目</Typography>}</Box>;
-}
-
-function toDateTimeInput(value?: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }

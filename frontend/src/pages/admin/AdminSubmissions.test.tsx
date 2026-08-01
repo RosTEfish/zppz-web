@@ -1,6 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AdminSubmissions from "./AdminSubmissions";
+import { SnackbarProvider } from "notistack";
+import { SWRConfig } from "swr";
+import { mockApi } from "../../testServer";
 
 
 function json(body: unknown, status = 200): Response {
@@ -19,8 +22,7 @@ describe("AdminSubmissions", () => {
     let metadataAttempt = 0;
     let resolveMetadata: ((response: Response) => void) | undefined;
     const metadata = new Promise<Response>((resolve) => { resolveMetadata = resolve; });
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi((path) => {
       if (path.endsWith("/admin/submissions")) {
         return Promise.resolve(json([{
           id: 11,
@@ -41,7 +43,7 @@ describe("AdminSubmissions", () => {
         return Promise.resolve(json({ detail: "批量下载准备失败" }, 503));
       }
       return Promise.resolve(json({ detail: "not found" }, 404));
-    }));
+    });
     let clickCount = 0;
     let clickedHref = "";
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
@@ -49,7 +51,7 @@ describe("AdminSubmissions", () => {
       clickedHref = this.getAttribute("href") || "";
     });
 
-    render(<AdminSubmissions />);
+    render(<SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}><SnackbarProvider><AdminSubmissions /></SnackbarProvider></SWRConfig>);
     expect(await screen.findByText("测试曲目")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "全选" }));
     fireEvent.click(screen.getByRole("button", { name: "下载 1 份" }));
@@ -64,7 +66,7 @@ describe("AdminSubmissions", () => {
     }));
     await waitFor(() => expect(clickedHref).toContain("download_token="));
     expect(screen.getByRole("dialog", { name: "正在准备批量下载" })).toBeInTheDocument();
-    expect(screen.getByLabelText("选择 source.zip")).toBeDisabled();
+    expect(document.querySelector('input[type="checkbox"][aria-label="取消选择投稿"]')).toBeDisabled();
 
     const token = new URL(clickedHref, window.location.origin).searchParams.get("download_token");
     document.cookie = `zppz_download_${token}=1; Path=/; SameSite=Lax`;
