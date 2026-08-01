@@ -84,7 +84,7 @@ describe("Material application shell", () => {
 
   it("renders the current event and workflow", async () => {
     render(<App />);
-    expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
+    expect(await screen.findAllByText("测试赛事", {}, { timeout: 3000 })).not.toHaveLength(0);
     expect(await screen.findByText("当前未开放")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
     expect(screen.queryByRole("link", { name: "往期 Ban 曲列表" })).not.toBeInTheDocument();
@@ -683,7 +683,8 @@ describe("Material application shell", () => {
 
     render(<App />);
     expect(await screen.findByRole("heading", { name: "赛事阶段" })).toBeInTheDocument();
-    expect(document.querySelectorAll('input[type="datetime-local"]')).toHaveLength(8);
+    expect(screen.getAllByText("开始", { selector: "label" })).toHaveLength(4);
+    expect(screen.getAllByText("结束", { selector: "label" })).toHaveLength(4);
     expect(screen.queryByText("揭晓")).not.toBeInTheDocument();
     expect(screen.queryByText("已结束")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));

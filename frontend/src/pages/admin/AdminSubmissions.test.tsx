@@ -65,7 +65,7 @@ describe("AdminSubmissions", () => {
     }));
     await waitFor(() => expect(clickedHref).toContain("download_token="));
     expect(screen.getByRole("dialog", { name: "正在准备批量下载" })).toBeInTheDocument();
-    expect(screen.getByLabelText("选择 source.zip")).toBeDisabled();
+    expect(document.querySelector('input[type="checkbox"][aria-label="取消选择投稿"]')).toBeDisabled();
 
     const token = new URL(clickedHref, window.location.origin).searchParams.get("download_token");
     document.cookie = `zppz_download_${token}=1; Path=/; SameSite=Lax`;

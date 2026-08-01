@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
+import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, IconButton, InputLabel, MenuItem, Paper, Select, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import { Pencil, Save, Trash2 } from "lucide-react";
+import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
+import { dataGridZhCN } from "./dataGridLocale";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { SongPayload, SongRead } from "../api/v1";
@@ -14,14 +16,21 @@ const EMPTY_SONG_FORM: SongFormValues = { song_name: "", artist: "", remark: "" 
 
 export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, selectedIds, onToggleSelection, onToggleAll }: { songs: SongRead[]; onEdit: (song: SongRead) => void; onDelete: (song: SongRead) => void; showSubmitter?: boolean; selectedIds?: ReadonlySet<number>; onToggleSelection?: (songId: number) => void; onToggleAll?: (checked: boolean) => void }) {
   const selectionEnabled = Boolean(onToggleSelection && onToggleAll);
-  const selectedCount = songs.reduce((count, song) => count + (selectedIds?.has(song.id) ? 1 : 0), 0);
-  return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table size="small"><TableHead><TableRow>{selectionEnabled ? <TableCell padding="checkbox"><Checkbox checked={selectedCount === songs.length} indeterminate={selectedCount > 0 && selectedCount < songs.length} onChange={(event) => onToggleAll?.(event.target.checked)} slotProps={{ input: { "aria-label": "选择全部曲目" } }} /></TableCell> : null}<TableCell>曲目</TableCell><TableCell>曲师</TableCell><TableCell>分类</TableCell>{showSubmitter ? <TableCell>投稿人</TableCell> : null}<TableCell>备注</TableCell><TableCell align="right">操作</TableCell></TableRow></TableHead>
-        <TableBody>{songs.map((song) => <TableRow key={song.id} hover selected={selectedIds?.has(song.id)}>{selectionEnabled ? <TableCell padding="checkbox"><Checkbox checked={selectedIds?.has(song.id) ?? false} onChange={() => onToggleSelection?.(song.id)} slotProps={{ input: { "aria-label": `选择 ${song.song_name}` } }} /></TableCell> : null}<TableCell><Typography sx={{ fontWeight: 650 }}>{song.song_name}</Typography><Typography variant="caption" color="text.secondary">#{song.id}</Typography></TableCell><TableCell>{song.artist}</TableCell><TableCell><Chip size="small" label={song.song_type} /></TableCell>{showSubmitter ? <TableCell>{song.submitter?.display_name || song.submitter?.user_code || "-"}</TableCell> : null}<TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{song.remark || "-"}</TableCell><TableCell align="right"><Tooltip title="编辑"><IconButton size="small" aria-label={`编辑 ${song.song_name}`} onClick={() => onEdit(song)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" aria-label={`删除 ${song.song_name}`} color="error" onClick={() => onDelete(song)}><Trash2 size={16} /></IconButton></Tooltip></TableCell></TableRow>)}</TableBody>
-      </Table>
-    </TableContainer>
-  );
+  const columns: GridColDef<SongRead>[] = [
+    { field: "song_name", headerName: "曲目", minWidth: 180, flex: 1, renderCell: ({ row }) => <Stack sx={{ justifyContent: "center", height: "100%" }}><Typography variant="body2" sx={{ fontWeight: 650 }}>{row.song_name}</Typography><Typography variant="caption" color="text.secondary">#{row.id}</Typography></Stack> },
+    { field: "artist", headerName: "曲师", minWidth: 140, flex: 0.7 },
+    { field: "song_type", headerName: "分类", width: 90, renderCell: ({ value }) => <Chip size="small" label={value} /> },
+    ...(showSubmitter ? [{ field: "submitter", headerName: "投稿人", minWidth: 130, flex: 0.6, valueGetter: (_value, row) => row.submitter?.display_name || row.submitter?.user_code || "-" } satisfies GridColDef<SongRead>] : []),
+    { field: "remark", headerName: "备注", minWidth: 180, flex: 1, valueGetter: (value) => value || "-" },
+    { field: "actions", headerName: "操作", width: 112, sortable: false, filterable: false, renderCell: ({ row }) => <><Tooltip title="编辑"><IconButton size="small" aria-label={`编辑 ${row.song_name}`} onClick={() => onEdit(row)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" aria-label={`删除 ${row.song_name}`} color="error" onClick={() => onDelete(row)}><Trash2 size={16} /></IconButton></Tooltip></> },
+  ];
+  const rowSelectionModel: GridRowSelectionModel = { type: "include", ids: new Set(selectedIds ?? []) };
+  function updateSelection(model: GridRowSelectionModel) {
+    const next = model.type === "include" ? new Set(model.ids) : new Set(songs.map((song) => song.id).filter((id) => !model.ids.has(id)));
+    if (next.size === 0 || next.size === songs.length) { onToggleAll?.(next.size === songs.length); return; }
+    for (const song of songs) if (next.has(song.id) !== Boolean(selectedIds?.has(song.id))) onToggleSelection?.(song.id);
+  }
+  return <Paper variant="outlined" sx={{ height: Math.min(650, 112 + songs.length * 52), minHeight: 260 }}><DataGrid rows={songs} columns={columns} getRowId={(row) => row.id} checkboxSelection={selectionEnabled} disableRowSelectionOnClick rowSelectionModel={selectionEnabled ? rowSelectionModel : undefined} onRowSelectionModelChange={selectionEnabled ? updateSelection : undefined} initialState={{ pagination: { paginationModel: { pageSize: 25, page: 0 } } }} pageSizeOptions={[25, 50, 100]} localeText={dataGridZhCN} sx={{ border: 0 }} /></Paper>;
 }
 
 
