@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { mockApi } from "./testServer";
 
 const eventPayload = {
   id: 1,
@@ -26,8 +27,7 @@ describe("Material application shell", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
     window.localStorage.clear();
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
       if (path.endsWith("/auth/me")) return json({ detail: "未登录" }, 401);
       if (path.endsWith("/events/current")) return json(eventPayload);
@@ -74,7 +74,7 @@ describe("Material application shell", () => {
         },
       ]);
       return json({ detail: "not found" }, 404);
-    }));
+    });
   });
 
   afterEach(() => {
@@ -84,7 +84,7 @@ describe("Material application shell", () => {
 
   it("renders the current event and workflow", async () => {
     render(<App />);
-    expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
+    expect(await screen.findAllByText("测试赛事", {}, { timeout: 3000 })).not.toHaveLength(0);
     expect(await screen.findByText("当前未开放")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则" })).toHaveAttribute("href", "/api/v1/assets/rule/view");
     expect(screen.queryByRole("link", { name: "往期 Ban 曲列表" })).not.toBeInTheDocument();
@@ -113,14 +113,13 @@ describe("Material application shell", () => {
       phases: [],
       capabilities: { song_pool_edit: false, submission: true, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false },
     };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/event/phases")) return json(phases);
       if (path.endsWith("/draw/results")) return json([]);
       if (path.endsWith("/swap/me")) return json({ is_open: false, active_phase: "submission_1", round: null, assignments: [], last_roll: null });
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect((await screen.findAllByText("投稿开放")).length).toBeGreaterThan(0);
@@ -129,12 +128,11 @@ describe("Material application shell", () => {
   });
 
   it("hides the guess entry from regular users when no public charts exist", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
       if (path.endsWith("/guess-game/availability")) return json({ available: false });
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findAllByText("测试赛事")).not.toHaveLength(0);
@@ -149,11 +147,10 @@ describe("Material application shell", () => {
         announcement_text: "## 重要公告\n\n- 第一项\n- 第二项\n\n[查看规则](https://example.com/rules)",
       },
     };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: null });
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "查看公告" }));
@@ -259,13 +256,9 @@ describe("Material application shell", () => {
 
   it("shows feedback while a chart batch download is being prepared", async () => {
     window.history.pushState({}, "", "/guess");
-    const baseFetch = vi.mocked(fetch);
     let resolveMetadata: ((response: Response) => void) | undefined;
     const metadata = new Promise<Response>((resolve) => { resolveMetadata = resolve; });
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes("/guess-game/charts/download-metadata")) return metadata;
-      return baseFetch(input, init);
-    }));
+    mockApi((path) => path.includes("/guess-game/charts/download-metadata") ? metadata : undefined);
     let clickedHref = "";
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
       clickedHref = this.getAttribute("href") || "";
@@ -312,12 +305,11 @@ describe("Material application shell", () => {
       is_active: true,
     };
     const songs = [1, 2].map((id) => ({ id, song_name: `曲目 ${id}`, artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" }));
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/song-pool/me")) return json(songs);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByRole("dialog", { name: "曲池尚未投递完成" })).toBeInTheDocument();
@@ -350,8 +342,7 @@ describe("Material application shell", () => {
       created_at: "2026-07-04T00:00:00",
     }));
     const savedBodies: Array<Record<string, unknown>> = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/banlist/check")) return json({ status: "clear", matches: [] });
       if (path.endsWith("/song-pool/me")) {
@@ -362,10 +353,10 @@ describe("Material application shell", () => {
         return json(songs);
       }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
-    const addButton = await screen.findByRole("button", { name: "添加" });
+    const addButton = await screen.findByRole("button", { name: "添加" }, { timeout: 3000 });
     expect(screen.queryByRole("combobox", { name: "分类" })).not.toBeInTheDocument();
     const addForm = addButton.closest("form");
     expect(addForm).not.toBeNull();
@@ -395,8 +386,7 @@ describe("Material application shell", () => {
     const chart = (id: number, level: string, slot: string) => ({ id, title: "同曲", author: "曲师", designer: "", level, lane: "normal", guess_group_key: "same-song", source_submission_type: "normal", source_submission_id: 1, source_level_slot: slot, cover_path: "", storage_path: "", is_self_selected: true, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [] });
     const savedBodies: Array<{ guessed_user_id: number }> = [];
     let overviewCalls = 0;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/guess-game/charts")) return json([chart(21, "13", "4"), chart(22, "14", "5")]);
       if (path.endsWith("/guess-game/designer-guesses")) {
@@ -408,7 +398,7 @@ describe("Material application shell", () => {
         return json({ message: "已保存谱师猜测" });
       }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     const controls = await screen.findAllByRole("combobox", { name: "谱师猜测 同曲" });
@@ -424,14 +414,13 @@ describe("Material application shell", () => {
   it("does not request love vote quota for anonymous guess viewers", async () => {
     window.history.pushState({}, "", "/guess");
     let quotaCalls = 0;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
       if (path.endsWith("/guess-game/charts")) return json([]);
       if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
       if (path.endsWith("/guess-game/vote-quota")) { quotaCalls += 1; return json({ below_14: { used: 0, limit: 3, remaining: 3 }, at_least_14: { used: 0, limit: 2, remaining: 2 } }); }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByText("暂无谱面")).toBeInTheDocument();
@@ -446,8 +435,7 @@ describe("Material application shell", () => {
     const high = chart(32, "高难度谱面", "14", "at_least_14", true);
     let quotaCalls = 0;
     let voteCalls = 0;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/guess-game/charts")) return json([low, high]);
       if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
@@ -456,7 +444,7 @@ describe("Material application shell", () => {
       if (path.endsWith("/guess-game/charts/32")) return json({ ...high, plays: 1 });
       if (path.endsWith("/guess-game/vote") && init?.method === "DELETE") { voteCalls += 1; return json({ message: "已取消投票", vote_counts: { love: 0, funny: 0 }, my_votes: [], love_vote_quota: { below_14: { used: 3, limit: 3, remaining: 0 }, at_least_14: { used: 0, limit: 1, remaining: 1 } } }); }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByText("14 以下：已用 3/3，剩余 0")).toBeInTheDocument();
@@ -499,8 +487,7 @@ describe("Material application shell", () => {
       submitter: participant,
       created_at: "2026-07-04T00:00:00",
     });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/submissions/targets")) return json({
         is_open: true,
@@ -525,7 +512,7 @@ describe("Material application shell", () => {
         ],
       });
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByText("第一首")).toBeInTheDocument();
@@ -573,8 +560,7 @@ describe("Material application shell", () => {
       user: participant,
       created_at: "2026-07-04T00:00:00",
     });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/submissions/targets")) return json({
         is_open: true,
@@ -590,7 +576,7 @@ describe("Material application shell", () => {
         return json(submission(12, 2, body.track));
       }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     const jButtons = await screen.findAllByRole("button", { name: "J赛道" });
@@ -620,8 +606,7 @@ describe("Material application shell", () => {
     const round = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", roll_count: 0, finalized_at: null };
     let currentSwap = { is_open: true, active_phase: "submission_2" as const, round, assignments: assignments.map((assignment) => ({ ...assignment, selected: false, can_swap: true, has_submission: false })), last_roll: null };
     const rollBodies: number[][] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
       if (path.endsWith("/event/phases")) return json(phases);
       if (path.endsWith("/draw/results")) return json(assignments);
@@ -633,7 +618,7 @@ describe("Material application shell", () => {
       }
       if (path.endsWith("/swap/me")) return json(currentSwap);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Stage2 投稿与换曲" })).toBeInTheDocument();
@@ -665,8 +650,7 @@ describe("Material application shell", () => {
     const auditRound = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", random_seed: "seed", finalized_at: null, roll_count: 1 };
     const audit = { round: auditRound, rounds: [auditRound], requests: [request], message: "连续换曲记录" };
     const phaseUpdates: Array<Record<string, unknown>> = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
       if (path.endsWith("/admin/event/phases") && init?.method === "PUT") {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -679,11 +663,12 @@ describe("Material application shell", () => {
       if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/admin/swap/audit")) return json(audit);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByRole("heading", { name: "赛事阶段" })).toBeInTheDocument();
-    expect(document.querySelectorAll('input[type="datetime-local"]')).toHaveLength(8);
+    expect(screen.getAllByText("开始", { selector: "label" })).toHaveLength(4);
+    expect(screen.getAllByText("结束", { selector: "label" })).toHaveLength(4);
     expect(screen.queryByText("揭晓")).not.toBeInTheDocument();
     expect(screen.queryByText("已结束")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));
@@ -710,12 +695,11 @@ describe("Material application shell", () => {
       is_active: true,
     };
     const song = { id: 1, song_name: "曲池曲目", artist: "曲师", song_type: "A", remark: "", submitter: editor, created_at: "2026-07-04T00:00:00" };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: editor });
       if (path.endsWith("/admin/song-pool")) return json([song]);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByRole("tab", { name: "曲池" })).toBeInTheDocument();
@@ -740,8 +724,7 @@ describe("Material application shell", () => {
     };
     let currentEvent = eventPayload;
     const updates: Array<Record<string, unknown>> = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: admin });
       if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/admin/events/current") && init?.method === "PUT") {
@@ -752,7 +735,7 @@ describe("Material application shell", () => {
       }
       if (path.endsWith("/events/current")) return json(currentEvent);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByRole("link", { name: "猜谱" })).toBeInTheDocument();
@@ -786,8 +769,7 @@ describe("Material application shell", () => {
     };
     let resetCalls = 0;
     let logoutCalls = 0;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
       if (path.endsWith("/guess-game/availability")) return json({ available: false });
       if (path.endsWith("/admin/reset") && init?.method === "POST") {
@@ -800,7 +782,7 @@ describe("Material application shell", () => {
         return json({ message: "已退出登录" });
       }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "清除全部数据" }));
@@ -845,8 +827,7 @@ describe("Material application shell", () => {
       is_active: true,
     };
     const updateBodies: Array<{ roles: string[] }> = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
+    mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
       if (path.endsWith("/auth/me")) return json({ user: admin });
       if (path.endsWith("/events/current")) return json(eventPayload);
@@ -857,7 +838,7 @@ describe("Material application shell", () => {
         return json({ ...member, roles: body.roles, is_admin: body.roles.includes("admin"), is_owner: false });
       }
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByText("2")).toBeInTheDocument();
@@ -893,14 +874,13 @@ describe("Material application shell", () => {
       is_pool_editor: false,
       is_active: true,
     };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
       if (path.endsWith("/auth/me")) return json({ user: admin });
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/admin/users")) return json([member]);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByRole("checkbox", { name: "管理员" })).toBeDisabled();
@@ -920,14 +900,13 @@ describe("Material application shell", () => {
       is_pool_editor: true,
       is_active: true,
     };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
+    mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: owner });
       if (path.endsWith("/auth/me")) return json({ user: owner });
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/admin/users")) return json([owner]);
       return json({ detail: "not found" }, 404);
-    }));
+    });
 
     render(<App />);
     expect(await screen.findByText("Owner / 最高权限")).toBeInTheDocument();

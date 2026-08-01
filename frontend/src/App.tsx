@@ -2,6 +2,7 @@ import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useSta
 import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { CircleUserRound, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { SWRConfig } from "swr";
 import { LoadingBlock } from "./components/PagePrimitives";
 import HomePageSkeleton from "./components/HomePageSkeleton";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -36,16 +37,23 @@ const SubmissionPage = lazy(loadSubmissionPage);
 const GuessPage = lazy(loadGuessPage);
 const AdminPage = lazy(loadAdminPage);
 const AnnouncementDialog = lazy(loadAnnouncementDialog);
+const InteractionProviders = lazy(() => import("./components/InteractionProviders"));
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <ConfigProvider>
-          <AppShell />
-        </ConfigProvider>
-      </AuthProvider>
-    </BrowserRouter>
+    <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+      <Suspense fallback={null}>
+        <InteractionProviders>
+          <BrowserRouter>
+            <AuthProvider>
+              <ConfigProvider>
+                <AppShell />
+              </ConfigProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </InteractionProviders>
+      </Suspense>
+    </SWRConfig>
   );
 }
 

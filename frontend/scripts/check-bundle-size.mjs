@@ -28,6 +28,17 @@ if (entrySize.bytes > rawLimit || entrySize.gzipBytes > gzipLimit) {
 }
 console.log(`Entry bundle ${format(entrySize.bytes)} raw / ${format(entrySize.gzipBytes)} gzip is within budget`);
 
+const javascriptFiles = [...new Set(Object.values(manifest).map((item) => item.file).filter((file) => file?.endsWith(".js")))];
+for (const file of javascriptFiles) {
+  const size = await sizeOf(file);
+  if (size.bytes > rawLimit || size.gzipBytes > gzipLimit) {
+    throw new Error(
+      `JavaScript chunk ${file} ${format(size.bytes)} raw / ${format(size.gzipBytes)} gzip exceeds `
+      + `the ${format(rawLimit)} raw / ${format(gzipLimit)} gzip budget`,
+    );
+  }
+}
+
 const routeChunks = await Promise.all(
   Object.entries(manifest)
     .filter(([source, item]) => source.includes("src/pages/") && item.file?.endsWith(".js"))

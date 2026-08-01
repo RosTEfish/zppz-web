@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Checkbox, Chip, Divider, FormControlLabel, Paper, Stack, Typography } from "@mui/material";
 import { ArrowLeftRight, RefreshCw } from "lucide-react";
 import { api, type SwapMeRead, type SwapRollRead } from "../api/v1";
-import { ResourceState, type Resource, useResource } from "./PagePrimitives";
+import { ResourceState, type ApiResource, useApiResource } from "./PagePrimitives";
+import { queryKeys } from "../api/queryKeys";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
@@ -10,12 +11,12 @@ export default function Stage2SwapPanel({ onUpdated }: { onUpdated?: (data: Swap
   const { user } = useAuth();
   const { phases } = useConfig();
   const enabled = user?.identity === "participant" && Boolean(phases?.capabilities.swap);
-  const resource = useResource(api.mySwap, [], enabled);
+  const resource = useApiResource(queryKeys.swap, api.mySwap, enabled);
   if (!enabled) return null;
   return <Stage2SwapPanelContent resource={resource} onUpdated={onUpdated} />;
 }
 
-function Stage2SwapPanelContent({ resource, onUpdated }: { resource: Resource<SwapMeRead>; onUpdated?: (data: SwapMeRead) => void }) {
+function Stage2SwapPanelContent({ resource, onUpdated }: { resource: ApiResource<SwapMeRead>; onUpdated?: (data: SwapMeRead) => void }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

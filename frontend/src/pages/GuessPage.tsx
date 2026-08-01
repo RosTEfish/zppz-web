@@ -1,10 +1,12 @@
 import { type ComponentProps, memo, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, Chip, Dialog, DialogContent, DialogTitle as MuiDialogTitle, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Alert, Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, Chip, Dialog, DialogContent, DialogTitle as MuiDialogTitle, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { useSnackbar } from "notistack";
 import { CheckCheck, ClipboardList, Clock3, Download, Eye, Heart, MessageSquare, Music2, SlidersHorizontal, Sparkles, Vote, X } from "lucide-react";
 import { api, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
 import { ChartPreviewStage } from "../components/ChartPreviewDialog";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
-import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
+import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
+import { queryKeys } from "../api/queryKeys";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
@@ -98,11 +100,12 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
 });
 
 export default function GuessPage() {
+  const { enqueueSnackbar } = useSnackbar();
   const { phases } = useConfig();
   const { isLoggedIn } = useAuth();
-  const charts = useResource(api.guessCharts, []);
-  const designerGuesses = useResource(api.designerGuesses, []);
-  const voteQuota = useResource(api.loveVoteQuota, [], isLoggedIn);
+  const charts = useApiResource(queryKeys.guess.charts, api.guessCharts);
+  const designerGuesses = useApiResource(queryKeys.guess.designer, api.designerGuesses);
+  const voteQuota = useApiResource(queryKeys.guess.quota, api.loveVoteQuota, isLoggedIn);
   const [active, setActive] = useState<GuessChartRead | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selecting, setSelecting] = useState(false);
@@ -111,7 +114,6 @@ export default function GuessPage() {
   const [selfFilter, setSelfFilter] = useState<GuessSelfFilter>("all");
   const [busyGuessGroup, setBusyGuessGroup] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const [downloadMessage, setDownloadMessage] = useState("");
   const [error, setError] = useState("");
   const allCharts = charts.data ?? EMPTY_GUESS_CHARTS;
   const candidates = designerGuesses.data?.candidates ?? EMPTY_DESIGNER_CANDIDATES;
@@ -165,7 +167,7 @@ export default function GuessPage() {
     setError("");
     try {
       await api.downloadCharts([...selected]);
-      setDownloadMessage("下载请求已开始，请查看浏览器下载列表");
+      enqueueSnackbar("下载请求已开始，请查看浏览器下载列表", { variant: "success" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "下载失败");
     } finally {
@@ -183,7 +185,6 @@ export default function GuessPage() {
       {filteredCharts.length ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>{filteredCharts.map((chart) => <GuessChartCard key={chart.id} chart={chart} selecting={selecting} selected={selected.has(chart.id)} selectionDisabled={downloading} candidates={candidates} candidateLabels={candidateLabels} canGuess={canGuess} guessedUserId={guessedByChart.get(chart.id)} guessBusy={busyGuessGroup === chartGroupIdentity(chart)} onOpen={open} onGuess={saveDesignerGuess} />)}</Box> : allCharts.length ? <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center" }}><Typography color="text.secondary">没有符合当前筛选条件的谱面</Typography><Button variant="outlined" sx={{ mt: 2 }} disabled={downloading} onClick={resetFilters}>清除筛选</Button></Paper> : null}
       <GuessDetailDialog chart={active} designerGuesses={designerGuesses.data} candidateLabels={candidateLabels} voteQuota={voteQuota.data} guessedUserId={active ? guessedByChart.get(active.id) : null} guessBusy={Boolean(active && busyGuessGroup === chartGroupIdentity(active))} canVote={phases?.capabilities.quality_vote ?? true} canComment={phases?.capabilities.quality_vote ?? true} canReadHistory={phases?.capabilities.normal_submission_public ?? false} onGuess={saveDesignerGuess} onClose={() => setActive(null)} onChanged={(next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }} onQuotaChanged={voteQuota.setData} />
       <DownloadPreparationDialog open={downloading} count={selected.size} unit="项" />
-      <Snackbar open={Boolean(downloadMessage)} autoHideDuration={5000} onClose={() => setDownloadMessage("")} message={downloadMessage} slotProps={{ content: { "aria-live": "polite" } }} />
     </Stack>
   );
 }

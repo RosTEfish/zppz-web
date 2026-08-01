@@ -1,14 +1,22 @@
-import { useEffect, useState } from "react";
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Switch, TextField, Tooltip, Typography } from "@mui/material";
+import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
 import { Check, FileArchive, Pencil, RefreshCw, Save as SaveIcon, Trash2 } from "lucide-react";
 import { api, type AuthorCandidateAdmin, type GuessChartRead } from "../../api/v1";
-import { type Resource, ResourceState, useResource } from "../../components/PagePrimitives";
+import { type ApiResource, ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 import { BatchDeleteDialog } from "./AdminShared";
+import { useConfirm } from "material-ui-confirm";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { chartSchema, type ChartFormValues } from "../../forms/schemas";
+import { dataGridZhCN } from "../../components/dataGridLocale";
 
 export default function AdminGuess() {
-  const charts = useResource(api.adminCharts, []);
-  const issues = useResource(api.importIssues, []);
-  const candidates = useResource(api.authorCandidates, []);
+  const charts = useApiResource(queryKeys.guess.adminCharts, api.adminCharts);
+  const issues = useApiResource(queryKeys.guess.issues, api.importIssues);
+  const candidates = useApiResource(queryKeys.guess.candidates, api.authorCandidates);
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<GuessChartRead | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -17,12 +25,22 @@ export default function AdminGuess() {
   const [error, setError] = useState("");
   async function importArchive(file?: File) { if (!file) return; try { const result = await api.importCharts(file); setSummary(`已新增 ${result.charts.length} 张谱面`); setSelected(new Set()); await Promise.all([charts.reload(), issues.reload()]); } catch (err) { setError(err instanceof Error ? err.message : "导入失败"); } }
   async function parseAll() { try { const result = await api.parseSubmissions(); setSummary(`扫描 ${result.scanned}，新增 ${result.created}，更新 ${result.updated}，删除 ${result.deleted}，问题 ${result.issues}`); setSelected(new Set()); await Promise.all([charts.reload(), issues.reload()]); } catch (err) { setError(err instanceof Error ? err.message : "解析失败"); } }
-  async function remove(chart: GuessChartRead) { if (!window.confirm(`确认删除《${chart.title}》${chart.level}？`)) return; try { await api.deleteChart(chart.id); setSelected((current) => { const next = new Set(current); next.delete(chart.id); return next; }); charts.updateData((items) => items.filter((item) => item.id !== chart.id)); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } }
+  async function remove(chart: GuessChartRead) { const result = await confirm({ title: "删除谱面", description: `确认删除《${chart.title}》${chart.level}？此操作不可撤销。`, confirmationButtonProps: { color: "error" } }); if (!result.confirmed) return; try { await api.deleteChart(chart.id); setSelected((current) => { const next = new Set(current); next.delete(chart.id); return next; }); charts.updateData((items) => items.filter((item) => item.id !== chart.id)); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } }
   async function removeSelected() { setDeleting(true); setError(""); try { const result = await api.batchDeleteAdminCharts([...selected]); setSummary(result.message); charts.updateData((items) => items.filter((item) => !selected.has(item.id))); setSelected(new Set()); setDeleteOpen(false); await issues.reload(); } catch (err) { setError(err instanceof Error ? err.message : "批量删除失败"); setDeleteOpen(false); } finally { setDeleting(false); } }
+  const columns = useMemo<GridColDef<GuessChartRead>[]>(() => [
+    { field: "title", headerName: "谱面", minWidth: 180, flex: 1 },
+    { field: "author", headerName: "曲师", minWidth: 130, flex: 0.7 },
+    { field: "designer", headerName: "谱师", minWidth: 130, flex: 0.7, valueGetter: (value) => value || "-" },
+    { field: "level", headerName: "等级", width: 90 },
+    { field: "lane", headerName: "赛道", width: 90, valueFormatter: (value) => value === "j" ? "J" : value === "exhibition" ? "场外" : "普通" },
+    { field: "source_submission_type", headerName: "来源", width: 110 },
+    { field: "actions", headerName: "操作", width: 110, sortable: false, filterable: false, renderCell: ({ row }) => <><Tooltip title="编辑"><IconButton size="small" aria-label={`编辑谱面 ${row.title} ${row.level}`} onClick={() => setEditing(row)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" color="error" aria-label={`删除谱面 ${row.title} ${row.level}`} onClick={() => void remove(row)}><Trash2 size={16} /></IconButton></Tooltip></> },
+  ], []);
+  const selectionModel: GridRowSelectionModel = { type: "include", ids: new Set(selected) };
   return <Stack spacing={3}>
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}><Button component="label" variant="contained" startIcon={<FileArchive size={17} />}>新增谱面<input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { void importArchive(event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button><Button variant="outlined" startIcon={<RefreshCw size={17} />} onClick={() => void parseAll()}>重新解析全部来源</Button><Button variant="outlined" startIcon={<Check size={17} />} disabled={!charts.data?.length} onClick={() => setSelected(new Set(charts.data?.map((chart) => chart.id) || []))}>全选</Button><Button color="error" variant="outlined" startIcon={<Trash2 size={17} />} disabled={!selected.size} onClick={() => setDeleteOpen(true)}>删除 {selected.size} 项</Button></Stack>
     {summary ? <Alert severity="success">{summary}</Alert> : null}{error ? <Alert severity="error">{error}</Alert> : null}<ResourceState loading={charts.loading} error={charts.error} empty={!charts.data?.length ? "暂无谱面" : undefined} />
-    {charts.data?.length ? <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell padding="checkbox"><Checkbox checked={selected.size === charts.data.length} indeterminate={selected.size > 0 && selected.size < charts.data.length} onChange={(event) => setSelected(event.target.checked ? new Set(charts.data?.map((chart) => chart.id)) : new Set())} slotProps={{ input: { "aria-label": "选择全部谱面" } }} /></TableCell><TableCell>谱面</TableCell><TableCell>曲师</TableCell><TableCell>谱师</TableCell><TableCell>等级</TableCell><TableCell>赛道</TableCell><TableCell>来源</TableCell><TableCell align="right">操作</TableCell></TableRow></TableHead><TableBody>{charts.data.map((chart) => <TableRow key={chart.id} selected={selected.has(chart.id)} sx={{ contentVisibility: "auto", containIntrinsicSize: "48px" }}><TableCell padding="checkbox"><Checkbox checked={selected.has(chart.id)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(chart.id)) next.delete(chart.id); else next.add(chart.id); return next; })} slotProps={{ input: { "aria-label": `选择 ${chart.title} ${chart.level}` } }} /></TableCell><TableCell sx={{ fontWeight: 650 }}>{chart.title}</TableCell><TableCell>{chart.author}</TableCell><TableCell>{chart.designer || "-"}</TableCell><TableCell>{chart.level}</TableCell><TableCell>{chart.lane === "j" ? "J" : chart.lane === "exhibition" ? "场外" : "普通"}</TableCell><TableCell>{chart.source_submission_type}</TableCell><TableCell align="right"><Tooltip title="编辑"><IconButton size="small" aria-label={`编辑谱面 ${chart.title} ${chart.level}`} onClick={() => setEditing(chart)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" color="error" aria-label={`删除谱面 ${chart.title} ${chart.level}`} onClick={() => void remove(chart)}><Trash2 size={16} /></IconButton></Tooltip></TableCell></TableRow>)}</TableBody></Table></TableContainer> : null}
+    {charts.data?.length ? <Paper variant="outlined" sx={{ height: Math.min(700, 112 + charts.data.length * 52), minHeight: 320 }}><DataGrid rows={charts.data} columns={columns} getRowId={(row) => row.id} checkboxSelection disableRowSelectionOnClick rowSelectionModel={selectionModel} onRowSelectionModelChange={(model) => setSelected(new Set([...model.ids].map(Number)))} initialState={{ pagination: { paginationModel: { page: 0, pageSize: 25 } } }} pageSizeOptions={[25, 50, 100]} localeText={dataGridZhCN} sx={{ border: 0 }} /></Paper> : null}
     <AuthorCandidatesEditor resource={candidates} setError={setError} />
     {issues.data?.length ? <Paper variant="outlined" sx={{ p: 2 }}><Typography variant="h3" sx={{ mb: 1.5 }}>解析问题</Typography><Stack spacing={1}>{issues.data.map((issue) => <Alert key={issue.id} severity="warning"><strong>{issue.file_name || issue.source_type}</strong>：{issue.message}</Alert>)}</Stack></Paper> : null}
     <ChartEditDialog chart={editing} onClose={() => setEditing(null)} onSaved={(updated) => { charts.updateData((items) => items.map((item) => item.id === updated.id ? updated : item)); setEditing(null); }} />
@@ -30,7 +48,7 @@ export default function AdminGuess() {
   </Stack>;
 }
 
-function AuthorCandidatesEditor({ resource, setError }: { resource: Resource<AuthorCandidateAdmin[]>; setError: (value: string) => void }) {
+function AuthorCandidatesEditor({ resource, setError }: { resource: ApiResource<AuthorCandidateAdmin[]>; setError: (value: string) => void }) {
   const [rows, setRows] = useState<AuthorCandidateAdmin[]>([]);
   useEffect(() => { if (resource.data) setRows(resource.data); }, [resource.data]);
   async function save() { try { await api.saveAuthorCandidates(rows.map((row) => ({ user_id: row.user.id, display_id: row.display_id }))); await resource.reload(); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); } }
@@ -38,9 +56,10 @@ function AuthorCandidatesEditor({ resource, setError }: { resource: Resource<Aut
 }
 
 function ChartEditDialog({ chart, onClose, onSaved }: { chart: GuessChartRead | null; onClose: () => void; onSaved: (chart: GuessChartRead) => void }) {
-  const [form, setForm] = useState({ title: "", author: "", designer: "", level: "", lane: "normal", guess_group_key: "", is_self_selected: false });
   const [error, setError] = useState("");
-  useEffect(() => { if (chart) setForm({ title: chart.title, author: chart.author, designer: chart.designer, level: chart.level, lane: chart.lane, guess_group_key: chart.guess_group_key, is_self_selected: chart.is_self_selected }); }, [chart]);
+  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<ChartFormValues>({ resolver: zodResolver(chartSchema), defaultValues: { title: "", author: "", designer: "", level: "", lane: "normal", guess_group_key: "", is_self_selected: false } });
+  useEffect(() => { if (chart) reset({ title: chart.title, author: chart.author, designer: chart.designer, level: chart.level, lane: chart.lane as ChartFormValues["lane"], guess_group_key: chart.guess_group_key, is_self_selected: chart.is_self_selected }); }, [chart, reset]);
   if (!chart) return null;
-  return <Dialog open onClose={onClose} fullWidth maxWidth="sm"><DialogTitle>编辑谱面</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField label="标题" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /><TextField label="曲师" value={form.author} onChange={(event) => setForm({ ...form, author: event.target.value })} /><TextField label="谱师" value={form.designer} onChange={(event) => setForm({ ...form, designer: event.target.value })} /><TextField label="等级" value={form.level} onChange={(event) => setForm({ ...form, level: event.target.value })} /><FormControl><InputLabel>赛道</InputLabel><Select label="赛道" value={form.lane} onChange={(event) => setForm({ ...form, lane: event.target.value })}><MenuItem value="normal">普通</MenuItem><MenuItem value="j">J</MenuItem><MenuItem value="exhibition">场外</MenuItem></Select></FormControl><TextField label="猜测分组" value={form.guess_group_key} onChange={(event) => setForm({ ...form, guess_group_key: event.target.value })} /><FormControlLabel control={<Switch checked={form.is_self_selected} onChange={(event) => setForm({ ...form, is_self_selected: event.target.checked })} />} label="自选谱面" />{error ? <Alert severity="error">{error}</Alert> : null}</Stack></DialogContent><DialogActions><Button onClick={onClose}>取消</Button><Button variant="contained" startIcon={<SaveIcon size={16} />} onClick={() => void api.updateChart(chart.id, form).then(onSaved).catch((err) => setError(err.message))}>保存</Button></DialogActions></Dialog>;
+  const save = handleSubmit(async (form) => { setError(""); try { onSaved(await api.updateChart(chart.id, form)); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); } });
+  return <Dialog open onClose={isSubmitting ? undefined : onClose} fullWidth maxWidth="sm"><DialogTitle>编辑谱面</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField label="标题" {...register("title")} error={Boolean(errors.title)} helperText={errors.title?.message} /><TextField label="曲师" {...register("author")} error={Boolean(errors.author)} helperText={errors.author?.message} /><TextField label="谱师" {...register("designer")} error={Boolean(errors.designer)} helperText={errors.designer?.message} /><TextField label="等级" {...register("level")} error={Boolean(errors.level)} helperText={errors.level?.message} /><Controller name="lane" control={control} render={({ field, fieldState }) => <FormControl error={Boolean(fieldState.error)}><InputLabel>赛道</InputLabel><Select {...field} label="赛道"><MenuItem value="normal">普通</MenuItem><MenuItem value="j">J</MenuItem><MenuItem value="exhibition">场外</MenuItem></Select>{fieldState.error ? <FormHelperText>{fieldState.error.message}</FormHelperText> : null}</FormControl>} /><TextField label="猜测分组" {...register("guess_group_key")} error={Boolean(errors.guess_group_key)} helperText={errors.guess_group_key?.message} /><Controller name="is_self_selected" control={control} render={({ field }) => <FormControlLabel control={<Switch checked={field.value} onChange={field.onChange} />} label="自选谱面" />} />{error ? <Alert severity="error">{error}</Alert> : null}</Stack></DialogContent><DialogActions><Button disabled={isSubmitting} onClick={onClose}>取消</Button><Button variant="contained" disabled={isSubmitting} startIcon={<SaveIcon size={16} />} onClick={() => void save()}>保存</Button></DialogActions></Dialog>;
 }

@@ -1,45 +1,43 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useResource } from "./PagePrimitives";
+import { SWRConfig } from "swr";
+import { useApiResource } from "./PagePrimitives";
 
-
-describe("useResource", () => {
+describe("useApiResource", () => {
   afterEach(() => {
     document.body.innerHTML = "";
   });
 
-  it("aborts superseded requests and ignores their late results", async () => {
-    const requests: Array<{
-      version: number;
-      signal: AbortSignal;
-      resolve: (value: string) => void;
-    }> = [];
+  it("deduplicates matching keys and ignores stale key results", async () => {
+    const requests: Array<{ version: number; resolve: (value: string) => void }> = [];
 
     function Probe({ version }: { version: number }) {
-      const resource = useResource(
-        (signal) => new Promise<string>((resolve) => {
-          requests.push({ version, signal, resolve });
-        }),
-        [version],
-      );
+      const resource = useApiResource(["probe", version], () => new Promise<string>((resolve) => {
+        requests.push({ version, resolve });
+      }));
       return <div>{resource.loading ? "loading" : resource.data}</div>;
     }
 
-    const view = render(<Probe version={1} />);
+    const view = render(
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 10_000 }}>
+        <Probe version={1} />
+        <Probe version={1} />
+      </SWRConfig>,
+    );
     await waitFor(() => expect(requests).toHaveLength(1));
 
-    view.rerender(<Probe version={2} />);
+    view.rerender(
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 10_000 }}>
+        <Probe version={2} />
+        <Probe version={2} />
+      </SWRConfig>,
+    );
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[0].signal.aborted).toBe(true);
 
     await act(async () => requests[1].resolve("new result"));
-    expect(screen.getByText("new result")).toBeInTheDocument();
+    expect(screen.getAllByText("new result")).toHaveLength(2);
 
     await act(async () => requests[0].resolve("stale result"));
-    expect(screen.getByText("new result")).toBeInTheDocument();
     expect(screen.queryByText("stale result")).not.toBeInTheDocument();
-
-    view.unmount();
-    expect(requests[1].signal.aborted).toBe(true);
   });
 });

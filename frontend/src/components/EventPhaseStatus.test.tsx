@@ -29,12 +29,15 @@ describe("event phase status", () => {
 
   it("shows both bounds for each phase in the timeline", () => {
     const phases: EventPhasesRead = {
+      event_id: 1,
+      timezone: "Asia/Shanghai",
       phase_mode: "auto",
       active_phase: "guess",
       server_time: "2026-07-19T00:00:00Z",
       next_transition_at: "2026-07-20T14:00:00Z",
       phases: [
         {
+          id: 1,
           phase: "guess",
           starts_at: "2026-07-18T02:00:00Z",
           ends_at: "2026-07-20T14:00:00Z",
@@ -54,6 +57,8 @@ describe("event phase status", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const phases: EventPhasesRead = {
+      event_id: 1,
+      timezone: "Asia/Shanghai",
       phase_mode: "auto",
       active_phase: "guess",
       server_time: "2026-01-01T01:00:00Z",
@@ -70,12 +75,15 @@ describe("event phase status", () => {
 
   it("shows a non-phase read-only status after the guess deadline", () => {
     const phases: EventPhasesRead = {
+      event_id: 1,
+      timezone: "Asia/Shanghai",
       phase_mode: "auto",
       active_phase: null,
       server_time: "2026-01-02T03:00:00Z",
       next_transition_at: null,
       phases: [
         {
+          id: 1,
           phase: "guess",
           starts_at: "2026-01-02T01:00:00Z",
           ends_at: "2026-01-02T02:00:00Z",

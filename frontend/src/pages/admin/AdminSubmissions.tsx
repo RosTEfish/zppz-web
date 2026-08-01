@@ -1,22 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Checkbox, Chip, IconButton, Paper, Snackbar, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, Tooltip, Typography } from "@mui/material";
-import { Check, Download, Eye, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import { api, formatDuration, formatMB, formatTime, type StoredFileRead, type SubmissionProcessingJob, type Track } from "../../api/v1";
+import { Alert, Button, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { useConfirm } from "material-ui-confirm";
+import { useSnackbar } from "notistack";
+import { Check, Download, Trash2 } from "lucide-react";
+import { api, type StoredFileRead, type SubmissionProcessingJob, type Track } from "../../api/v1";
 import { ChartPreviewDialog } from "../../components/ChartPreviewDialog";
 import { DownloadPreparationDialog } from "../../components/DownloadPreparationDialog";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 import { useSubmissionUploadDialog } from "../../components/SubmissionUploadDialog";
 import { BatchDeleteDialog } from "./AdminShared";
+import { SubmissionDataGrid } from "./SubmissionDataGrid";
 
 export default function AdminSubmissions() {
+  const confirm = useConfirm();
+  const { enqueueSnackbar } = useSnackbar();
   const [filter, setFilter] = useState<Track | "all">("all");
-  const files = useResource((signal) => api.adminSubmissions(filter, signal), [filter]);
-  const jobs = useResource(api.adminSubmissionProcessingJobs, []);
+  const files = useApiResource(queryKeys.submissions.admin(filter), () => api.adminSubmissions(filter));
+  const jobs = useApiResource(queryKeys.submissions.adminJobs, api.adminSubmissionProcessingJobs, true, {
+    refreshInterval: (current) => current?.some((job) => job.status === "queued" || job.status === "processing") ? 3000 : 0,
+    refreshWhenHidden: false,
+  });
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [previewFile, setPreviewFile] = useState<StoredFileRead | null>(null);
   const handleQueued = useCallback((job: SubmissionProcessingJob) => {
@@ -25,33 +33,22 @@ export default function AdminSubmissions() {
   const uploadDialog = useSubmissionUploadDialog(handleQueued);
   const hasActiveJobs = jobs.data?.some((job) => job.status === "queued" || job.status === "processing") ?? false;
   useEffect(() => {
-    if (!hasActiveJobs) return;
-    const refresh = () => {
-      if (document.visibilityState !== "visible") return;
-      void Promise.all([jobs.reload(), files.reload()]);
-    };
-    const timer = window.setInterval(refresh, 3000);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [files.reload, hasActiveJobs, jobs.reload]);
-  async function remove(file: StoredFileRead) { if (!window.confirm(`确认删除 ${file.file_name}？`)) return; try { await api.deleteAdminSubmission(file.id); setSelected((current) => { const next = new Set(current); next.delete(file.id); return next; }); files.updateData((items) => items.filter((item) => item.id !== file.id)); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } }
+    if (hasActiveJobs && !jobs.validating) void files.reload();
+  }, [files.reload, hasActiveJobs, jobs.data, jobs.validating]);
+  async function remove(file: StoredFileRead) { const result = await confirm({ title: "删除投稿", description: `确认删除 ${file.file_name}？此操作不可撤销。`, confirmationButtonProps: { color: "error" } }); if (!result.confirmed) return; try { await api.deleteAdminSubmission(file.id); setSelected((current) => { const next = new Set(current); next.delete(file.id); return next; }); files.updateData((items) => items.filter((item) => item.id !== file.id)); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } }
   async function removeSelected() { setDeleting(true); setError(""); try { await api.batchDeleteAdminSubmissions([...selected]); files.updateData((items) => items.filter((item) => !selected.has(item.id))); setSelected(new Set()); setDeleteOpen(false); } catch (err) { setError(err instanceof Error ? err.message : "批量删除失败"); setDeleteOpen(false); } finally { setDeleting(false); } }
-  async function downloadSelected() { if (!selected.size || downloading) return; setDownloading(true); setError(""); try { await api.downloadAdminSubmissions([...selected], filter); setMessage("下载请求已开始，请查看浏览器下载列表"); } catch (err) { setError(err instanceof Error ? err.message : "下载失败"); } finally { setDownloading(false); } }
-  async function rebuildPreview(file: StoredFileRead) { setError(""); try { const manifest = await api.rebuildSubmissionPreview(file.id); files.updateData((items) => items.map((item) => item.id === file.id ? { ...item, preview_status: manifest.status, preview_message: manifest.message } : item)); setMessage("预览素材已进入重新生成队列"); } catch (err) { setError(err instanceof Error ? err.message : "重新生成预览失败"); } }
-  async function rebuildResources(file: StoredFileRead) { setError(""); try { const job = await api.rebuildSubmissionResources(file.id); handleQueued(job); setMessage("投稿资源已进入重新生成队列"); } catch (err) { setError(err instanceof Error ? err.message : "重新生成资源失败"); } }
+  async function downloadSelected() { if (!selected.size || downloading) return; setDownloading(true); setError(""); try { await api.downloadAdminSubmissions([...selected], filter); enqueueSnackbar("下载请求已开始，请查看浏览器下载列表", { variant: "success" }); } catch (err) { setError(err instanceof Error ? err.message : "下载失败"); } finally { setDownloading(false); } }
+  async function rebuildPreview(file: StoredFileRead) { setError(""); try { const manifest = await api.rebuildSubmissionPreview(file.id); files.updateData((items) => items.map((item) => item.id === file.id ? { ...item, preview_status: manifest.status, preview_message: manifest.message } : item)); enqueueSnackbar("预览素材已进入重新生成队列", { variant: "info" }); } catch (err) { setError(err instanceof Error ? err.message : "重新生成预览失败"); } }
+  async function rebuildResources(file: StoredFileRead) { setError(""); try { const job = await api.rebuildSubmissionResources(file.id); handleQueued(job); enqueueSnackbar("投稿资源已进入重新生成队列", { variant: "info" }); } catch (err) { setError(err instanceof Error ? err.message : "重新生成资源失败"); } }
   async function replace(file: StoredFileRead, next?: File) { if (!next) return; setError(""); await uploadDialog.start(next, (options) => api.replaceAdminSubmission(file.id, next, undefined, options)); }
   return <Stack spacing={2}>
     <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between" }}><Tabs value={filter} onChange={(_, value) => { setFilter(value); setSelected(new Set()); }}><Tab value="all" label="全部" disabled={downloading} /><Tab value="normal" label="普通" disabled={downloading} /><Tab value="j" label="J 赛道" disabled={downloading} /><Tab value="exhibition" label="场外" disabled={downloading} /></Tabs><Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}><Button variant="outlined" startIcon={<Check size={16} />} disabled={downloading} onClick={() => setSelected(new Set(files.data?.map((item) => item.id) || []))}>全选</Button><Button variant="contained" startIcon={<Download size={16} />} disabled={!selected.size || downloading} onClick={() => void downloadSelected()}>{downloading ? "正在准备…" : `下载 ${selected.size} 份`}</Button><Button color="error" variant="outlined" startIcon={<Trash2 size={16} />} disabled={!selected.size || downloading} onClick={() => setDeleteOpen(true)}>删除 {selected.size} 份</Button></Stack></Stack>
     {error ? <Alert severity="error">{error}</Alert> : null}<ResourceState loading={(files.loading && files.data === null) || (jobs.loading && jobs.data === null)} error={files.error || jobs.error} empty={!files.data?.length && !jobs.data?.length ? "暂无投稿" : undefined} />
     {jobs.data?.map((job) => <Alert key={job.id} severity={job.status === "failed" ? "error" : "info"}><Typography variant="body2" sx={{ fontWeight: 700 }}>{job.replace_submission_id ? "投稿替换" : "新投稿"} · {job.file_name}</Typography><Typography variant="caption">{job.message}</Typography></Alert>)}
-    {files.data?.length ? <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell padding="checkbox"><Checkbox checked={selected.size === files.data.length} indeterminate={selected.size > 0 && selected.size < files.data.length} disabled={downloading} onChange={(event) => setSelected(event.target.checked ? new Set(files.data?.map((item) => item.id)) : new Set())} slotProps={{ input: { "aria-label": "选择全部投稿" } }} /></TableCell><TableCell>曲目 / 文件</TableCell><TableCell>投稿人</TableCell><TableCell>来源</TableCell><TableCell>赛道</TableCell><TableCell>时长</TableCell><TableCell>时间</TableCell><TableCell align="right">操作</TableCell></TableRow></TableHead><TableBody>{files.data.map((file) => <TableRow key={file.id} selected={selected.has(file.id)} sx={{ contentVisibility: "auto", containIntrinsicSize: "56px" }}><TableCell padding="checkbox"><Checkbox checked={selected.has(file.id)} disabled={downloading} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(file.id)) next.delete(file.id); else next.add(file.id); return next; })} slotProps={{ input: { "aria-label": `选择 ${file.file_name}` } }} /></TableCell><TableCell><Typography sx={{ fontWeight: 650 }}>{file.source_song?.song_name || "未关联曲目"}</Typography><Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{file.file_name} · {formatMB(file.file_size)}</Typography>{file.preview_status ? <Typography variant="caption" sx={{ display: "block" }} color={file.preview_status === "ready" ? "success.main" : file.preview_status === "failed" || file.preview_status === "unsupported" ? "warning.main" : "text.secondary"}>预览：{file.preview_status === "ready" ? "就绪" : file.preview_message || "准备中"}</Typography> : null}<Typography variant="caption" sx={{ display: "block" }} color={file.public_package_status === "failed" ? "error.main" : "text.secondary"}>公开包：{file.public_package_status === "ready" ? "就绪" : file.public_package_status === "failed" ? file.public_package_message || "生成失败" : "准备中"} · 视频：{file.video_status === "ready" ? "就绪" : file.video_status === "failed" ? "失败，使用静态背景" : file.video_status === "processing" ? "准备中" : "无"}</Typography></TableCell><TableCell>{file.user?.display_name || file.user?.user_code || "-"}</TableCell><TableCell>{file.track === "exhibition" ? "场外" : file.source_kind === "self" ? "自选" : "抽中"}</TableCell><TableCell><Chip size="small" color={file.track === "j" ? "secondary" : file.track === "exhibition" ? "info" : "default"} label={file.track === "j" ? "J" : file.track === "exhibition" ? "场外" : "普通"} /></TableCell><TableCell>{formatDuration(file.track_duration_seconds)}</TableCell><TableCell>{formatTime(file.created_at)}</TableCell><TableCell align="right"><Tooltip title={file.preview_status === "ready" ? "在线预览" : "预览尚未就绪"}><span><IconButton size="small" disabled={file.preview_status !== "ready"} aria-label={`预览投稿 ${file.file_name}`} onClick={() => setPreviewFile(file)}><Eye size={16} /></IconButton></span></Tooltip>{file.preview_status === "failed" || file.preview_status === "unsupported" || !file.preview_status ? <Tooltip title="重新生成预览"><IconButton size="small" aria-label={`重新生成预览 ${file.file_name}`} onClick={() => void rebuildPreview(file)}><RotateCcw size={16} /></IconButton></Tooltip> : null}{file.public_package_status === "failed" || file.video_status === "failed" ? <Tooltip title="重新生成全部投稿资源"><IconButton size="small" aria-label={`重新生成投稿资源 ${file.file_name}`} onClick={() => void rebuildResources(file)}><RotateCcw size={16} /></IconButton></Tooltip> : null}<Tooltip title={file.public_package_status === "ready" ? "下载" : "公开包尚未就绪"}><span><IconButton size="small" disabled={file.public_package_status !== "ready"} aria-label={`下载投稿 ${file.file_name}`} onClick={() => void api.downloadAdminSubmission(file.id).catch((err) => setError(err.message))}><Download size={16} /></IconButton></span></Tooltip><Tooltip title="替换"><IconButton component="label" size="small" aria-label={`替换投稿 ${file.file_name}`}><RefreshCw size={16} /><input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { const next = event.target.files?.[0]; void replace(file, next); event.currentTarget.value = ""; }} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" color="error" aria-label={`删除投稿 ${file.file_name}`} onClick={() => void remove(file)}><Trash2 size={16} /></IconButton></Tooltip></TableCell></TableRow>)}</TableBody></Table></TableContainer> : null}
+    {files.data?.length ? <SubmissionDataGrid files={files.data} selected={selected} setSelected={setSelected} downloading={downloading} setPreviewFile={setPreviewFile} rebuildPreview={rebuildPreview} rebuildResources={rebuildResources} replace={replace} remove={remove} setError={setError} /> : null}
     <BatchDeleteDialog open={deleteOpen} count={selected.size} label="份投稿" busy={deleting} onClose={() => setDeleteOpen(false)} onConfirm={() => void removeSelected()} />
     <DownloadPreparationDialog open={downloading} count={selected.size} unit="份投稿" />
     <ChartPreviewDialog open={Boolean(previewFile)} source="submission" sourceId={previewFile?.id ?? null} title={previewFile?.file_name ?? "投稿"} onClose={() => setPreviewFile(null)} onDownload={() => previewFile ? api.downloadAdminSubmission(previewFile.id) : Promise.resolve()} />
     {uploadDialog.dialog}
-    <Snackbar open={Boolean(message)} autoHideDuration={5000} onClose={() => setMessage("")} message={message} slotProps={{ content: { "aria-live": "polite" } }} />
   </Stack>;
 }

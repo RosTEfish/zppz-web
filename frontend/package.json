@@ -8,6 +8,8 @@
     "build": "vite build --configLoader runner && npm run check:bundle",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "generate:api": "node scripts/generate-api.mjs",
+    "check:api": "node scripts/generate-api.mjs --check",
     "lint": "tsc --noEmit",
     "test": "npm run test:unit && npm run test:player",
     "test:unit": "vitest run --configLoader runner",
@@ -17,13 +19,23 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@hookform/resolvers": "^5.6.0",
     "@mui/material": "^9.1.2",
+    "@mui/x-data-grid": "^9.10.1",
+    "@mui/x-date-pickers": "^9.10.1",
+    "dayjs": "^1.11.21",
     "lucide-react": "^0.546.0",
+    "material-ui-confirm": "^4.0.0",
+    "notistack": "^3.0.2",
+    "openapi-fetch": "^0.17.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-hook-form": "^7.84.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.14.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "swr": "^2.4.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
@@ -32,6 +44,8 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.4",
     "jsdom": "^26.1.0",
+    "msw": "^2.15.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^3.2.4"
