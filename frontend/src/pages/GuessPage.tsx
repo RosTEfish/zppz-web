@@ -4,7 +4,8 @@ import { CheckCheck, ClipboardList, Clock3, Download, Eye, Heart, MessageSquare,
 import { api, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
 import { ChartPreviewStage } from "../components/ChartPreviewDialog";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
-import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
+import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
+import { queryKeys } from "../api/queryKeys";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
@@ -100,9 +101,9 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
 export default function GuessPage() {
   const { phases } = useConfig();
   const { isLoggedIn } = useAuth();
-  const charts = useResource(api.guessCharts, []);
-  const designerGuesses = useResource(api.designerGuesses, []);
-  const voteQuota = useResource(api.loveVoteQuota, [], isLoggedIn);
+  const charts = useApiResource(queryKeys.guess.charts, api.guessCharts);
+  const designerGuesses = useApiResource(queryKeys.guess.designer, api.designerGuesses);
+  const voteQuota = useApiResource(queryKeys.guess.quota, api.loveVoteQuota, isLoggedIn);
   const [active, setActive] = useState<GuessChartRead | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selecting, setSelecting] = useState(false);

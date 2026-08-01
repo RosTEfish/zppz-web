@@ -3,14 +3,15 @@ import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogT
 import { Music2, Plus, Search } from "lucide-react";
 import { api, type BanMatchRead, type SongPayload, type SongRead } from "../api/v1";
 import { BanCheckPanel, canSubmitWithBanCheck, useBanCheck } from "../components/BanCheckPanel";
-import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
+import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
+import { queryKeys } from "../api/queryKeys";
 import { EMPTY_SONG, SongDialog, SongTable } from "../components/SongComponents";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
 
 export default function SongPoolPage() {
-  const songs = useResource(api.mySongs, []);
+  const songs = useApiResource(queryKeys.songs.mine, api.mySongs);
   const [form, setForm] = useState<SongPayload>(EMPTY_SONG);
   const [editing, setEditing] = useState<SongRead | null>(null);
   const [message, setMessage] = useState("");

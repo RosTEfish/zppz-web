@@ -3,11 +3,12 @@ import { Alert, Button, Stack } from "@mui/material";
 import { RefreshCw } from "lucide-react";
 import { api } from "../../api/v1";
 import { DrawList } from "../../components/DrawList";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 
 export default function AdminDraw() {
-  const rows = useResource(api.adminDrawResults, []);
-  const stats = useResource(api.adminDrawStats, []);
+  const rows = useApiResource(queryKeys.draws.admin, api.adminDrawResults);
+  const stats = useApiResource(queryKeys.draws.stats, api.adminDrawStats);
   const [error, setError] = useState("");
   async function run() { if (!window.confirm("确认执行全局曲目分配？已有完整分配会直接复用；仅在首次 Stage1 投稿前允许重新分配。")) return; try { rows.setData(await api.runDraw()); await stats.reload(); } catch (err) { setError(err instanceof Error ? err.message : "全局分配失败"); } }
   const canRedraw = stats.data?.can_redraw ?? false;

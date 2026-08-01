@@ -1,15 +1,16 @@
 import { type ReactNode, useState } from "react";
 import { Box, Chip, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, Typography } from "@mui/material";
 import { api, type GuessStats } from "../../api/v1";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 
 const DETAIL_LIMIT = 50;
 
 export default function AdminStats() {
   const [scope, setScope] = useState<"all" | "j">("all");
   const [offset, setOffset] = useState(0);
-  const stats = useResource((signal) => api.guessStats(scope, false, signal), [scope]);
-  const details = useResource((signal) => api.guessStatsDetails(scope, DETAIL_LIMIT, offset, signal), [offset, scope]);
+  const stats = useApiResource(queryKeys.guess.stats(scope), () => api.guessStats(scope, false));
+  const details = useApiResource(queryKeys.guess.details(scope, offset), () => api.guessStatsDetails(scope, DETAIL_LIMIT, offset));
   return <Stack spacing={2}><Tabs value={scope} onChange={(_, value: "all" | "j") => { setScope(value); setOffset(0); }}><Tab value="all" label="全部" /><Tab value="j" label="J 赛道" /></Tabs><ResourceState loading={stats.loading} error={stats.error} />{stats.data ? <StatsContent stats={stats.data} details={details.data?.items ?? []} detailsLoading={details.loading} detailsError={details.error} total={details.data?.total ?? 0} offset={offset} onOffsetChange={setOffset} /> : null}</Stack>;
 }
 

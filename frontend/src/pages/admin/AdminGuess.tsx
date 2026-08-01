@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
 import { Check, FileArchive, Pencil, RefreshCw, Save as SaveIcon, Trash2 } from "lucide-react";
 import { api, type AuthorCandidateAdmin, type GuessChartRead } from "../../api/v1";
-import { type Resource, ResourceState, useResource } from "../../components/PagePrimitives";
+import { type ApiResource, ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 import { BatchDeleteDialog } from "./AdminShared";
 
 export default function AdminGuess() {
-  const charts = useResource(api.adminCharts, []);
-  const issues = useResource(api.importIssues, []);
-  const candidates = useResource(api.authorCandidates, []);
+  const charts = useApiResource(queryKeys.guess.adminCharts, api.adminCharts);
+  const issues = useApiResource(queryKeys.guess.issues, api.importIssues);
+  const candidates = useApiResource(queryKeys.guess.candidates, api.authorCandidates);
   const [editing, setEditing] = useState<GuessChartRead | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -30,7 +31,7 @@ export default function AdminGuess() {
   </Stack>;
 }
 
-function AuthorCandidatesEditor({ resource, setError }: { resource: Resource<AuthorCandidateAdmin[]>; setError: (value: string) => void }) {
+function AuthorCandidatesEditor({ resource, setError }: { resource: ApiResource<AuthorCandidateAdmin[]>; setError: (value: string) => void }) {
   const [rows, setRows] = useState<AuthorCandidateAdmin[]>([]);
   useEffect(() => { if (resource.data) setRows(resource.data); }, [resource.data]);
   async function save() { try { await api.saveAuthorCandidates(rows.map((row) => ({ user_id: row.user.id, display_id: row.display_id }))); await resource.reload(); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); } }

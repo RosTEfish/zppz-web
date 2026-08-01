@@ -4,14 +4,18 @@ import { Check, Download, Eye, RefreshCw, RotateCcw, Trash2 } from "lucide-react
 import { api, formatDuration, formatMB, formatTime, type StoredFileRead, type SubmissionProcessingJob, type Track } from "../../api/v1";
 import { ChartPreviewDialog } from "../../components/ChartPreviewDialog";
 import { DownloadPreparationDialog } from "../../components/DownloadPreparationDialog";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 import { useSubmissionUploadDialog } from "../../components/SubmissionUploadDialog";
 import { BatchDeleteDialog } from "./AdminShared";
 
 export default function AdminSubmissions() {
   const [filter, setFilter] = useState<Track | "all">("all");
-  const files = useResource((signal) => api.adminSubmissions(filter, signal), [filter]);
-  const jobs = useResource(api.adminSubmissionProcessingJobs, []);
+  const files = useApiResource(queryKeys.submissions.admin(filter), () => api.adminSubmissions(filter));
+  const jobs = useApiResource(queryKeys.submissions.adminJobs, api.adminSubmissionProcessingJobs, true, {
+    refreshInterval: (current) => current?.some((job) => job.status === "queued" || job.status === "processing") ? 3000 : 0,
+    refreshWhenHidden: false,
+  });
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -25,18 +29,8 @@ export default function AdminSubmissions() {
   const uploadDialog = useSubmissionUploadDialog(handleQueued);
   const hasActiveJobs = jobs.data?.some((job) => job.status === "queued" || job.status === "processing") ?? false;
   useEffect(() => {
-    if (!hasActiveJobs) return;
-    const refresh = () => {
-      if (document.visibilityState !== "visible") return;
-      void Promise.all([jobs.reload(), files.reload()]);
-    };
-    const timer = window.setInterval(refresh, 3000);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [files.reload, hasActiveJobs, jobs.reload]);
+    if (hasActiveJobs && !jobs.validating) void files.reload();
+  }, [files.reload, hasActiveJobs, jobs.data, jobs.validating]);
   async function remove(file: StoredFileRead) { if (!window.confirm(`确认删除 ${file.file_name}？`)) return; try { await api.deleteAdminSubmission(file.id); setSelected((current) => { const next = new Set(current); next.delete(file.id); return next; }); files.updateData((items) => items.filter((item) => item.id !== file.id)); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } }
   async function removeSelected() { setDeleting(true); setError(""); try { await api.batchDeleteAdminSubmissions([...selected]); files.updateData((items) => items.filter((item) => !selected.has(item.id))); setSelected(new Set()); setDeleteOpen(false); } catch (err) { setError(err instanceof Error ? err.message : "批量删除失败"); setDeleteOpen(false); } finally { setDeleting(false); } }
   async function downloadSelected() { if (!selected.size || downloading) return; setDownloading(true); setError(""); try { await api.downloadAdminSubmissions([...selected], filter); setMessage("下载请求已开始，请查看浏览器下载列表"); } catch (err) { setError(err instanceof Error ? err.message : "下载失败"); } finally { setDownloading(false); } }

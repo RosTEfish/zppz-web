@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Alert, Button, Snackbar, Stack } from "@mui/material";
 import { FileDown, FileUp, Trash2 } from "lucide-react";
 import { api, type SongRead } from "../../api/v1";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 import { SongDialog, SongTable } from "../../components/SongComponents";
 import { BatchDeleteDialog } from "./AdminShared";
 
 export default function AdminSongs() {
-  const songs = useResource(api.adminSongs, []);
+  const songs = useApiResource(queryKeys.songs.admin, api.adminSongs);
   const [editing, setEditing] = useState<SongRead | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);

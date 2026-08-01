@@ -1,3 +1,7 @@
+import { request } from "./client";
+export { ApiError } from "./client";
+export type { components as OpenApiComponents, paths as OpenApiPaths } from "./generated";
+
 export type Track = "normal" | "j" | "exhibition";
 export type EventPhaseName = "registration" | "submission_1" | "submission_2" | "guess";
 
@@ -480,43 +484,8 @@ export interface LoveVoteQuotaRead {
 }
 
 const API_PREFIX = "/api/v1";
-const pendingGetRequests = new Map<string, Promise<unknown>>();
-
-async function parseResponse<T>(response: Response): Promise<T> {
-  const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
-  if (!response.ok) {
-    const detail = typeof payload === "object" && payload && "detail" in payload ? payload.detail : "请求失败";
-    const message = Array.isArray(detail)
-      ? detail.map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item))).join("；")
-      : String(detail);
-    throw new Error(message);
-  }
-  return payload as T;
-}
-
-async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body !== undefined && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  const response = await fetch(`${API_PREFIX}${path}`, { ...options, headers, credentials: "include" });
-  return parseResponse<T>(response);
-}
-
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const method = (options.method || "GET").toUpperCase();
-  const bypassPendingGet = options.signal || options.cache === "no-store" || options.cache === "no-cache" || options.cache === "reload";
-  if (method !== "GET" || bypassPendingGet) {
-    const result = await performRequest<T>(path, options);
-    if (method !== "GET") pendingGetRequests.clear();
-    return result;
-  }
-  const pending = pendingGetRequests.get(path);
-  if (pending) return pending as Promise<T>;
-  const task = performRequest<T>(path, options).finally(() => pendingGetRequests.delete(path));
-  pendingGetRequests.set(path, task);
-  return task;
+  return request<T>(`${API_PREFIX}${path}`, options);
 }
 
 function triggerBrowserDownload(preparation: DownloadPreparation): void {

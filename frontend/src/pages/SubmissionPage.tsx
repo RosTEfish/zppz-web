@@ -39,7 +39,8 @@ import {
   type Track,
 } from "../api/v1";
 import { ChartPreviewDialog } from "../components/ChartPreviewDialog";
-import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
+import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
+import { queryKeys } from "../api/queryKeys";
 import { useSubmissionUploadDialog } from "../components/SubmissionUploadDialog";
 import Stage2SwapPanel from "../components/Stage2SwapPanel";
 import { useAuth } from "../contexts/AuthContext";
@@ -66,9 +67,9 @@ export default function SubmissionPage() {
 }
 
 function SubmissionPageContent() {
-  const targets = useResource(api.submissionTargets, []);
-  const submissions = useResource(api.mySubmissions, []);
-  const processingJobs = useResource(api.submissionProcessingJobs, []);
+  const targets = useApiResource(queryKeys.submissions.targets, api.submissionTargets);
+  const submissions = useApiResource(queryKeys.submissions.mine, api.mySubmissions);
+  const processingJobs = useApiResource(queryKeys.submissions.jobs, api.submissionProcessingJobs);
   const [trackChoices, setTrackChoices] = useState<Record<number, Track>>({});
   const [banAcknowledgements, setBanAcknowledgements] = useState<Record<number, boolean>>({});
   const [busyId, setBusyId] = useState<number | "exhibition" | null>(null);

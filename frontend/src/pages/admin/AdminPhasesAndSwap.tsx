@@ -3,7 +3,8 @@ import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogT
 import { ArrowLeftRight, ArrowRight, Save } from "lucide-react";
 import { api, formatTime, type EventPhaseName, type EventPhasesUpdate, type SwapAuditAssignmentRead, type SwapAuditRequestRead, type SwapAuditRoundRead } from "../../api/v1";
 import { PHASE_LABELS } from "../../components/EventPhaseStatus";
-import { LoadingBlock, useResource } from "../../components/PagePrimitives";
+import { LoadingBlock, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 import { useConfig } from "../../contexts/ConfigContext";
 
 const PHASE_ORDER = Object.keys(PHASE_LABELS) as EventPhaseName[];
@@ -15,7 +16,7 @@ export default function AdminPhasesAndSwap() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const audit = useResource(api.swapAudit, []);
+  const audit = useApiResource(queryKeys.admin.swapAudit, api.swapAudit);
 
   useEffect(() => {
     if (!phases) return;

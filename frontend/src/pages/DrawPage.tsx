@@ -3,12 +3,13 @@ import { Sparkles } from "lucide-react";
 import { api, type SwapMeRead } from "../api/v1";
 import { DrawList } from "../components/DrawList";
 import Stage2SwapPanel from "../components/Stage2SwapPanel";
-import { PageHeader, ResourceState, useResource } from "../components/PagePrimitives";
+import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
+import { queryKeys } from "../api/queryKeys";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 
 export default function DrawPage() {
-  const draws = useResource(api.myDraw, []);
+  const draws = useApiResource(queryKeys.draws.mine, api.myDraw);
   const { user } = useAuth();
   const { event } = useConfig();
 

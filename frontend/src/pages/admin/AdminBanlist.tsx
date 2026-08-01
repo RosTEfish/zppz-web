@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Alert, Box, Button, Chip, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from "@mui/material";
 import { Check, FileUp, Eye, Upload } from "lucide-react";
 import { api, type BanImportPreviewRead } from "../../api/v1";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 
 
 function statusLabel(status: string): string {
@@ -13,7 +14,7 @@ function statusLabel(status: string): string {
 
 
 export default function AdminBanlist() {
-  const imports = useResource(api.adminBanlistImports, []);
+  const imports = useApiResource(queryKeys.admin.banImports, api.adminBanlistImports);
   const [preview, setPreview] = useState<BanImportPreviewRead | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");

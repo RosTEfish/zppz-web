@@ -20,7 +20,8 @@ import {
 } from "@mui/material";
 import { api, type UserRead } from "../../api/v1";
 import { useAuth } from "../../contexts/AuthContext";
-import { ResourceState, useResource } from "../../components/PagePrimitives";
+import { ResourceState, useApiResource } from "../../components/PagePrimitives";
+import { queryKeys } from "../../api/queryKeys";
 
 function updateRole(roles: string[], role: string, enabled: boolean): string[] {
   if (enabled) return roles.includes(role) ? roles : [...roles, role];
@@ -28,7 +29,7 @@ function updateRole(roles: string[], role: string, enabled: boolean): string[] {
 }
 
 export default function AdminUsers() {
-  const users = useResource(api.users, []);
+  const users = useApiResource(queryKeys.admin.users, api.users);
   const { isOwner } = useAuth();
   const [error, setError] = useState("");
 

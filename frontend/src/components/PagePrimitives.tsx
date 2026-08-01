@@ -1,11 +1,13 @@
-import { type DependencyList, type Dispatch, type ReactNode, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import { type Dispatch, type ReactNode, type SetStateAction, useCallback } from "react";
 import { Alert, Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 import type { LucideIcon } from "lucide-react";
+import useSWR, { type Key, type SWRConfiguration } from "swr";
 
 
-export type Resource<T> = {
+export type ApiResource<T> = {
   data: T | null;
   loading: boolean;
+  validating: boolean;
   error: string;
   reload: () => Promise<T | null>;
   setData: Dispatch<SetStateAction<T | null>>;
@@ -13,49 +15,37 @@ export type Resource<T> = {
 };
 
 
-export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>, dependencies: DependencyList, enabled = true): Resource<T> {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
-  const requestSequenceRef = useRef(0);
-  const reload = useCallback(async () => {
-    requestRef.current?.controller.abort();
-    const request = { id: ++requestSequenceRef.current, controller: new AbortController() };
-    requestRef.current = request;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await loader(request.controller.signal);
-      if (requestRef.current?.id !== request.id) return null;
-      setData(result);
-      return result;
-    } catch (err) {
-      if (request.controller.signal.aborted || requestRef.current?.id !== request.id) return null;
-      setError(err instanceof Error ? err.message : "加载失败");
-      return null;
-    } finally {
-      if (requestRef.current?.id === request.id) setLoading(false);
-    }
-  }, dependencies);
-  useEffect(() => {
-    if (!enabled) {
-      requestRef.current?.controller.abort();
-      requestRef.current = null;
-      setLoading(false);
-      setError("");
-      return;
-    }
-    void reload();
-    return () => {
-      requestRef.current?.controller.abort();
-      requestRef.current = null;
-    };
-  }, [enabled, reload]);
+export function useApiResource<T>(
+  key: Key,
+  loader: () => Promise<T>,
+  enabled = true,
+  configuration?: SWRConfiguration<T>,
+): ApiResource<T> {
+  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(enabled ? key : null, () => loader(), {
+    keepPreviousData: true,
+    ...configuration,
+  });
+  const reload = useCallback(async () => (await mutate()) ?? null, [mutate]);
+  const setData = useCallback<Dispatch<SetStateAction<T | null>>>((value) => {
+    void mutate((current) => {
+      const previous = current ?? null;
+      return typeof value === "function"
+        ? (value as (current: T | null) => T | null)(previous) ?? undefined
+        : value ?? undefined;
+    }, { revalidate: false });
+  }, [mutate]);
   const updateData = useCallback((updater: (current: T) => T) => {
-    setData((current) => current === null ? current : updater(current));
-  }, []);
-  return { data, loading, error, reload, setData, updateData };
+    void mutate((current) => current === undefined ? current : updater(current), { revalidate: false });
+  }, [mutate]);
+  return {
+    data: data ?? null,
+    loading: enabled && isLoading,
+    validating: isValidating,
+    error: error instanceof Error ? error.message : error ? "加载失败" : "",
+    reload,
+    setData,
+    updateData,
+  };
 }
 
 
