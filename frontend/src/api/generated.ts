@@ -1039,7 +1039,8 @@ export interface paths {
         };
         /** Me */
         get: operations["me_api_v1_auth_me_get"];
-        put?: never;
+        /** Update Me */
+        put: operations["update_me_api_v1_auth_me_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1942,8 +1943,11 @@ export interface components {
              * @default
              */
             display_name: string;
-            /** Identity */
-            identity: string;
+            /**
+             * Identity
+             * @enum {string}
+             */
+            identity: "participant" | "audience";
             /**
              * Is Active
              * @default true
@@ -2876,6 +2880,16 @@ export interface components {
         SwapSelectionUpdate: {
             /** Assignment Ids */
             assignment_ids: number[];
+        };
+        /** UpdateProfileRequest */
+        UpdateProfileRequest: {
+            /** Display Name */
+            display_name: string;
+            /**
+             * Identity
+             * @enum {string}
+             */
+            identity: "participant" | "audience";
         };
         /** UserRead */
         UserRead: {
@@ -4700,6 +4714,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+        };
+    };
+    update_me_api_v1_auth_me_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

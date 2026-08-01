@@ -1,11 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.core.security import clear_session_cookie, ensure_roles, get_current_user, hash_password, issue_session, user_payload, verify_password
+from app.core.security import (
+    clear_session_cookie,
+    ensure_roles,
+    get_current_session,
+    get_current_user,
+    hash_password,
+    issue_session,
+    sync_identity_role,
+    user_payload,
+    verify_password,
+)
 from app.db.session import get_db
-from app.models import User
-from app.schemas import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest
+from app.models import User, UserSession
+from app.modules.events.phase_policy import get_phase_status
+from app.schemas import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest, UpdateProfileRequest
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -55,11 +66,37 @@ def me(user: User = Depends(get_current_user)) -> dict:
     return {"user": user_payload(user)}
 
 
+@router.put("/me", response_model=AuthResponse)
+def update_me(
+    payload: UpdateProfileRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if payload.identity != user.identity and get_phase_status(db).active_phase != "registration":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅报名阶段可以修改参赛身份")
+    roles = ensure_roles(db, commit=False)
+    user.display_name = payload.display_name
+    sync_identity_role(user, payload.identity, roles)
+    db.commit()
+    db.refresh(user)
+    return {"user": user_payload(user)}
+
+
 @router.post("/change-password")
-def change_password(payload: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def change_password(
+    payload: ChangePasswordRequest,
+    current_session: UserSession = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = current_session.user
     if not verify_password(payload.old_password, user.password_hash):
         raise HTTPException(status_code=400, detail="旧密码不正确")
     user.password_hash = hash_password(payload.new_password)
+    db.execute(
+        delete(UserSession).where(
+            UserSession.user_id == user.id,
+            UserSession.id != current_session.id,
+        )
+    )
     db.commit()
     return {"message": "密码已更新"}
-

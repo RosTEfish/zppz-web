@@ -13,6 +13,7 @@ interface AuthContextType {
   login: (id: string, password: string) => Promise<{ user: UserRead }>;
   logout: () => Promise<void>;
   register: (id: string, qq: string, password: string, identity?: string) => Promise<{ user: UserRead }>;
+  updateProfile: (displayName: string, identity: "participant" | "audience") => Promise<{ user: UserRead }>;
   changePassword: (oldPassword: string, newPassword: string, confirmPassword?: string) => Promise<unknown>;
 }
 
@@ -49,6 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return api.changePassword(oldPassword, newPassword);
   }, []);
 
+  const updateProfile = useCallback(async (displayName: string, identity: "participant" | "audience") => {
+    const data = await api.updateProfile(displayName, identity);
+    await mutate((current) => current ? { ...current, user: data.user } : current, { revalidate: !bootstrap });
+    return data;
+  }, [bootstrap, mutate]);
+
   const value = useMemo(
     () => ({
       user,
@@ -60,9 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       register,
+      updateProfile,
       changePassword,
     }),
-    [changePassword, loading, login, logout, register, user],
+    [changePassword, loading, login, logout, register, updateProfile, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

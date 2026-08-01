@@ -113,7 +113,7 @@ def _cleanup_expired_sessions(db: Session) -> None:
         _session_cleanup_lock.release()
 
 
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+def get_current_session(request: Request, db: Session = Depends(get_db)) -> UserSession:
     token = _extract_token(request)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
@@ -123,7 +123,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = session.user
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不可用")
-    return user
+    return session
+
+
+def get_current_user(session: UserSession = Depends(get_current_session)) -> User:
+    return session.user
 
 
 def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
@@ -192,3 +196,12 @@ def ensure_roles(db: Session, *, commit: bool = True) -> dict[str, Role]:
         if commit:
             db.commit()
     return existing
+
+
+def sync_identity_role(user: User, identity: str, roles: dict[str, Role]) -> None:
+    """Keep the user's identity field and participant/audience role in sync."""
+    if identity not in {"participant", "audience"}:
+        raise ValueError(f"Unsupported user identity: {identity}")
+    user.identity = identity
+    preserved_roles = [role for role in user.roles if role.name not in {"participant", "audience"}]
+    user.roles = [*preserved_roles, roles[identity]]

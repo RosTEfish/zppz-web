@@ -89,6 +89,135 @@ def test_register_login_and_me(client: TestClient):
     assert bootstrap.json()["user"]["user_code"] == "player1"
 
 
+def test_user_can_update_display_name_and_identity_during_registration(client: TestClient):
+    register_user(client, "profile-player")
+
+    response = client.put(
+        "/api/v1/auth/me",
+        json={"display_name": "  新显示名  ", "identity": "audience"},
+    )
+
+    assert response.status_code == 200, response.text
+    user = response.json()["user"]
+    assert user["display_name"] == "新显示名"
+    assert user["identity"] == "audience"
+    assert "audience" in user["roles"]
+    assert "participant" not in user["roles"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"display_name": "   ", "identity": "participant"},
+        {"display_name": "x" * 101, "identity": "participant"},
+        {"display_name": "测试用户", "identity": "staff"},
+    ],
+)
+def test_profile_update_validates_name_and_identity(client: TestClient, payload: dict):
+    register_user(client, "invalid-profile")
+
+    response = client.put("/api/v1/auth/me", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_identity_change_is_locked_after_registration_but_name_change_remains_available(client: TestClient):
+    register_user(client, "phase-locked")
+    set_manual_draw()
+
+    blocked = client.put(
+        "/api/v1/auth/me",
+        json={"display_name": "新名称", "identity": "audience"},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == "仅报名阶段可以修改参赛身份"
+
+    renamed = client.put(
+        "/api/v1/auth/me",
+        json={"display_name": "  仍可改名  ", "identity": "participant"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["user"]["display_name"] == "仍可改名"
+
+
+def test_profile_identity_change_preserves_privileged_roles(client: TestClient):
+    login_user(client, "admin")
+
+    response = client.put(
+        "/api/v1/auth/me",
+        json={"display_name": "赛事管理员", "identity": "audience"},
+    )
+
+    assert response.status_code == 200, response.text
+    roles = set(response.json()["user"]["roles"])
+    assert {"admin", "pool_editor", "audience"}.issubset(roles)
+    assert "participant" not in roles
+
+
+def test_admin_identity_update_keeps_identity_roles_in_sync(client: TestClient):
+    register_user(client, "managed-user")
+    login_user(client, "admin")
+    users = client.get("/api/v1/admin/users").json()
+    managed = next(user for user in users if user["user_code"] == "managed-user")
+
+    response = client.put(
+        f"/api/v1/admin/users/{managed['id']}",
+        json={
+            "identity": "audience",
+            "roles": managed["roles"],
+            "display_name": managed["display_name"],
+            "is_active": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["identity"] == "audience"
+    assert "audience" in response.json()["roles"]
+    assert "participant" not in response.json()["roles"]
+
+
+def test_password_change_keeps_current_session_and_revokes_other_sessions(client: TestClient):
+    register_user(client, "multi-session")
+
+    with TestClient(app) as other_client:
+        second_login = other_client.post(
+            "/api/v1/auth/login",
+            json={"user_code": "multi-session", "password": "secret123"},
+        )
+        assert second_login.status_code == 200
+
+        wrong_password = client.post(
+            "/api/v1/auth/change-password",
+            json={"old_password": "wrong-password", "new_password": "new-secret-456"},
+        )
+        assert wrong_password.status_code == 400
+        assert wrong_password.json()["detail"] == "旧密码不正确"
+        too_short = client.post(
+            "/api/v1/auth/change-password",
+            json={"old_password": "secret123", "new_password": "short"},
+        )
+        assert too_short.status_code == 422
+
+        changed = client.post(
+            "/api/v1/auth/change-password",
+            json={"old_password": "secret123", "new_password": "new-secret-456"},
+        )
+        assert changed.status_code == 200, changed.text
+        assert client.get("/api/v1/auth/me").status_code == 200
+        assert other_client.get("/api/v1/auth/me").status_code == 401
+
+        old_login = other_client.post(
+            "/api/v1/auth/login",
+            json={"user_code": "multi-session", "password": "secret123"},
+        )
+        assert old_login.status_code == 401
+        new_login = other_client.post(
+            "/api/v1/auth/login",
+            json={"user_code": "multi-session", "password": "new-secret-456"},
+        )
+        assert new_login.status_code == 200
+
+
 def test_song_pool_requires_auth(client: TestClient):
     response = client.get("/api/v1/song-pool/me")
     assert response.status_code == 401

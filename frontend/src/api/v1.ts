@@ -316,6 +316,7 @@ export const api = {
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
   register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
   logout: () => apiRequest<{ message: string }>("/auth/logout", { method: "POST" }),
+  updateProfile: (display_name: string, identity: "participant" | "audience") => apiRequest<{ user: UserRead }>("/auth/me", { method: "PUT", body: JSON.stringify({ display_name, identity }) }),
   changePassword: (old_password: string, new_password: string) => apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
   currentEvent: (options?: RequestInit) => apiRequest<EventRead>("/events/current", options),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),

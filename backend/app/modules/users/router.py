@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import OWNER_ROLE, ensure_roles, hash_password, is_owner, require_role, user_payload
+from app.core.security import OWNER_ROLE, ensure_roles, hash_password, is_owner, require_role, sync_identity_role, user_payload
 from app.db.session import get_db
 from app.models import Role, User
 from app.schemas import AdminUserUpdate, ResetPasswordRequest, UserRead
@@ -57,13 +57,17 @@ def update_user(
         if another_active_admin is None:
             raise HTTPException(status_code=409, detail="至少需要保留一名启用中的管理员")
     roles = ensure_roles(db)
-    user.identity = payload.identity
     user.display_name = payload.display_name
     user.is_active = payload.is_active
-    requested_names = {str(name) for name in payload.roles if str(name) in roles and str(name) != OWNER_ROLE}
+    requested_names = {
+        str(name)
+        for name in payload.roles
+        if str(name) in roles and str(name) not in {OWNER_ROLE, "participant", "audience"}
+    }
     if target_is_owner:
         requested_names.add(OWNER_ROLE)
     user.roles = [role for name, role in roles.items() if name in requested_names]
+    sync_identity_role(user, payload.identity, roles)
     db.commit()
     db.refresh(user)
     return user_payload(user)

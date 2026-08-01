@@ -46,6 +46,23 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=6, max_length=128)
 
 
+class UpdateProfileRequest(BaseModel):
+    display_name: str
+    identity: Literal["participant", "audience"]
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def validate_display_name(cls, value):
+        if not isinstance(value, str):
+            raise ValueError("显示名必须是文本")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("显示名不能为空")
+        if len(normalized) > 100:
+            raise ValueError("显示名不能超过 100 个字符")
+        return normalized
+
+
 class AuthResponse(BaseModel):
     user: UserRead
 
@@ -558,7 +575,7 @@ class AuthorCandidatesUpdate(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
-    identity: str
+    identity: Literal["participant", "audience"]
     roles: list[str]
     display_name: str = ""
     is_active: bool = True

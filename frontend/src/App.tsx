@@ -1,6 +1,6 @@
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
-import { CircleUserRound, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
+import { CircleUserRound, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Settings, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { SWRConfig } from "swr";
 import { LoadingBlock } from "./components/PagePrimitives";
@@ -19,6 +19,7 @@ const loadSongPoolPage = () => import("./pages/SongPoolPage");
 const loadDrawPage = () => import("./pages/DrawPage");
 const loadSubmissionPage = () => import("./pages/SubmissionPage");
 const loadGuessPage = () => import("./pages/GuessPage");
+const loadAccountPage = () => import("./pages/AccountPage");
 const preloadAdminPage = (pathname: string) => Promise.all([
   import("./pages/AdminPage"),
   preloadAdminTab(pathname),
@@ -35,6 +36,7 @@ const SongPoolPage = lazy(loadSongPoolPage);
 const DrawPage = lazy(loadDrawPage);
 const SubmissionPage = lazy(loadSubmissionPage);
 const GuessPage = lazy(loadGuessPage);
+const AccountPage = lazy(loadAccountPage);
 const AdminPage = lazy(loadAdminPage);
 const AnnouncementDialog = lazy(loadAnnouncementDialog);
 const InteractionProviders = lazy(() => import("./components/InteractionProviders"));
@@ -127,7 +129,7 @@ function AppShell() {
       <Box sx={{ flex: 1 }} />
       <Divider />
       <Box sx={{ p: 1.5 }}>
-        {isLoggedIn ? <Stack spacing={1}><Stack direction="row" spacing={1.25} sx={{ px: 1, alignItems: "center" }}><CircleUserRound size={20} /><Box sx={{ minWidth: 0 }}><Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography><Typography variant="caption" color="text.secondary">{user?.identity === "participant" ? "参赛者" : "观众"}</Typography></Box></Stack><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
+        {isLoggedIn ? <Stack spacing={1}><ListItemButton component={Link} to="/account" selected={location.pathname === "/account"} onPointerEnter={() => void loadAccountPage()} onFocus={() => void loadAccountPage()} sx={{ borderRadius: 1, px: 1 }}><ListItemIcon sx={{ minWidth: 34 }}><CircleUserRound size={20} /></ListItemIcon><ListItemText primary={<Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography>} secondary={<Typography variant="caption" color="text.secondary" noWrap>{user?.identity === "participant" ? "参赛者" : "观众"} · 账号设置</Typography>} /><Settings size={16} /></ListItemButton><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
       </Box>
     </Box>
   );
@@ -147,6 +149,7 @@ function AppShell() {
               <Route path="/draw" element={<RequireLogin><DrawPage /></RequireLogin>} />
               <Route path="/submissions" element={<RequireLogin><SubmissionPage /></RequireLogin>} />
               <Route path="/guess" element={<GuessPage />} />
+              <Route path="/account" element={<RequireLogin><AccountPage /></RequireLogin>} />
               <Route path="/admin/:tab" element={<RequireManager><AdminPage /></RequireManager>} />
               <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
