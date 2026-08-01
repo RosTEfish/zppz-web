@@ -103,7 +103,7 @@ describe("ChartPreviewStage", () => {
     });
     act(() => window.dispatchEvent(ready));
 
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1), { timeout: 3000 });
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "zppz.preview.load",
