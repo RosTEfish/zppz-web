@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -207,7 +207,7 @@ export function ChartPreviewStage({
     return () => window.clearTimeout(timer);
   }, [active, playerReady, ready, sessionId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active || !manifest?.player_origin) return;
     const receive = (event: MessageEvent) => {
       if (
