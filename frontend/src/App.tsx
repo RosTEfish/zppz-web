@@ -37,17 +37,22 @@ const SubmissionPage = lazy(loadSubmissionPage);
 const GuessPage = lazy(loadGuessPage);
 const AdminPage = lazy(loadAdminPage);
 const AnnouncementDialog = lazy(loadAnnouncementDialog);
+const InteractionProviders = lazy(() => import("./components/InteractionProviders"));
 
 function App() {
   return (
     <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
-      <BrowserRouter>
-        <AuthProvider>
-          <ConfigProvider>
-            <AppShell />
-          </ConfigProvider>
-        </AuthProvider>
-      </BrowserRouter>
+      <Suspense fallback={null}>
+        <InteractionProviders>
+          <BrowserRouter>
+            <AuthProvider>
+              <ConfigProvider>
+                <AppShell />
+              </ConfigProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </InteractionProviders>
+      </Suspense>
     </SWRConfig>
   );
 }

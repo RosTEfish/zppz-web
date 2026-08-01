@@ -10,13 +10,14 @@ import {
   FormControlLabel,
   IconButton,
   Paper,
-  Snackbar,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
+import { useConfirm } from "material-ui-confirm";
+import { useSnackbar } from "notistack";
 import {
   Check,
   Clock3,
@@ -67,13 +68,14 @@ export default function SubmissionPage() {
 }
 
 function SubmissionPageContent() {
+  const confirm = useConfirm();
+  const { enqueueSnackbar } = useSnackbar();
   const targets = useApiResource(queryKeys.submissions.targets, api.submissionTargets);
   const submissions = useApiResource(queryKeys.submissions.mine, api.mySubmissions);
   const processingJobs = useApiResource(queryKeys.submissions.jobs, api.submissionProcessingJobs);
   const [trackChoices, setTrackChoices] = useState<Record<number, Track>>({});
   const [banAcknowledgements, setBanAcknowledgements] = useState<Record<number, boolean>>({});
   const [busyId, setBusyId] = useState<number | "exhibition" | null>(null);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [previewFile, setPreviewFile] = useState<StoredFileRead | null>(null);
   const { user } = useAuth();
@@ -187,7 +189,7 @@ function SubmissionPageContent() {
     try {
       const updated = await api.updateSubmissionTrack(target.submission.id, nextTrack);
       storeSubmission(updated, target.song.id);
-      setMessage(nextTrack === "j" ? "已切换为 J 投稿" : "已切换为普通投稿");
+      enqueueSnackbar(nextTrack === "j" ? "已切换为 J 投稿" : "已切换为普通投稿", { variant: "success" });
       await refreshGuessAvailability();
       setTrackChoices({});
     } catch (err) {
@@ -227,7 +229,8 @@ function SubmissionPageContent() {
   }
 
   async function remove(file: StoredFileRead, songId?: number) {
-    if (!window.confirm(`确认删除“${file.file_name}”？`)) return;
+    const result = await confirm({ title: "删除投稿", description: `确认删除“${file.file_name}”？此操作不可撤销。`, confirmationButtonProps: { color: "error" } });
+    if (!result.confirmed) return;
     setBusyId(songId ?? "exhibition");
     try {
       await api.deleteSubmission(file.id);
@@ -390,13 +393,6 @@ function SubmissionPageContent() {
         }
       />
       {uploadDialog.dialog}
-      <Snackbar
-        open={Boolean(message)}
-        autoHideDuration={3000}
-        onClose={() => setMessage("")}
-        message={message}
-        slotProps={{ content: { "aria-live": "polite" } }}
-      />
     </Stack>
   );
 }

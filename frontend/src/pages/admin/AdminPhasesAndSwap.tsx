@@ -5,15 +5,16 @@ import { api, formatTime, type EventPhaseName, type EventPhasesUpdate, type Swap
 import { PHASE_LABELS } from "../../components/EventPhaseStatus";
 import { LoadingBlock, useApiResource } from "../../components/PagePrimitives";
 import { queryKeys } from "../../api/queryKeys";
+import { useSnackbar } from "notistack";
 import { useConfig } from "../../contexts/ConfigContext";
 
 const PHASE_ORDER = Object.keys(PHASE_LABELS) as EventPhaseName[];
 
 export default function AdminPhasesAndSwap() {
+  const { enqueueSnackbar } = useSnackbar();
   const { phases, refreshConfig } = useConfig();
   const [form, setForm] = useState<EventPhasesUpdate | null>(null);
   const [confirmPhase, setConfirmPhase] = useState<EventPhaseName | null>(null);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const audit = useApiResource(queryKeys.admin.swapAudit, api.swapAudit);
@@ -47,7 +48,7 @@ export default function AdminPhasesAndSwap() {
     try {
       await api.updateEventPhases({ ...nextForm, phases: nextForm.phases.filter((item) => item.starts_at && item.ends_at) });
       await refreshConfig();
-      setMessage("阶段设置已保存");
+      enqueueSnackbar("阶段设置已保存", { variant: "success" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "阶段设置保存失败");
     } finally {
@@ -97,7 +98,6 @@ export default function AdminPhasesAndSwap() {
         {audit.data?.rounds?.length ? <Stack spacing={1} sx={{ mt: 2 }}>{audit.data.rounds.map((round) => <SwapAuditSummary key={round.id} round={round} />)}</Stack> : null}
         {audit.data?.requests.length ? <Stack spacing={1.5} sx={{ mt: 2 }}>{audit.data.requests.map((request) => <SwapAuditRequestCard key={request.id} request={request} />)}</Stack> : <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>暂无换曲审计记录</Typography>}
       </Paper>
-      {message ? <Alert severity="success" aria-live="polite">{message}</Alert> : null}
       {error ? <Alert severity="error" aria-live="polite">{error}</Alert> : null}
 
       <Dialog open={Boolean(confirmPhase)} onClose={() => setConfirmPhase(null)}>

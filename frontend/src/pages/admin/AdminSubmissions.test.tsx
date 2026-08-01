@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AdminSubmissions from "./AdminSubmissions";
+import { SnackbarProvider } from "notistack";
 
 
 function json(body: unknown, status = 200): Response {
@@ -49,7 +50,7 @@ describe("AdminSubmissions", () => {
       clickedHref = this.getAttribute("href") || "";
     });
 
-    render(<AdminSubmissions />);
+    render(<SnackbarProvider><AdminSubmissions /></SnackbarProvider>);
     expect(await screen.findByText("测试曲目")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "全选" }));
     fireEvent.click(screen.getByRole("button", { name: "下载 1 份" }));
