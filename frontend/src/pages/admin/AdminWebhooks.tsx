@@ -29,6 +29,8 @@ const STATUS_META: Record<string, { label: string; color: "success" | "warning" 
   revoked: { label: "已停用", color: "default" },
 };
 
+const fetchWebhookIntegrations = () => api.webhookIntegrations();
+
 function SecretField({ label, value, onCopy }: { label: string; value: string; onCopy: (value: string) => void }) {
   return <TextField
     label={label}
@@ -102,7 +104,7 @@ function IntegrationCard({
 
 export default function AdminWebhooks() {
   const { enqueueSnackbar } = useSnackbar();
-  const { data, error, isLoading, mutate } = useSWR("admin-webhook-integrations", api.webhookIntegrations);
+  const { data, error, isLoading, mutate } = useSWR("admin-webhook-integrations", fetchWebhookIntegrations);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [credentials, setCredentials] = useState<WebhookCredentialsRead | null>(null);

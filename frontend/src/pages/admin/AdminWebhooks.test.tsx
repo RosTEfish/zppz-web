@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { SnackbarProvider } from "notistack";
 import { SWRConfig } from "swr";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "../../api/v1";
 import { mockApi } from "../../testServer";
 import AdminWebhooks from "./AdminWebhooks";
 
@@ -18,6 +19,7 @@ describe("AdminWebhooks", () => {
 
   it("creates an integration and exposes its credentials only in the one-time dialog", async () => {
     let created = false;
+    const integrationsSpy = vi.spyOn(api, "webhookIntegrations");
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     vi.stubGlobal("navigator", { ...navigator, clipboard });
     mockApi((url, init) => {
@@ -56,6 +58,7 @@ describe("AdminWebhooks", () => {
     );
 
     expect(await screen.findByText("尚未创建接入方")).toBeInTheDocument();
+    expect(integrationsSpy.mock.calls.every((args) => args.length === 0)).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "创建接入方" }));
     fireEvent.change(screen.getByLabelText("接入方名称"), { target: { value: "主群通知 Bot" } });
     fireEvent.click(screen.getByRole("button", { name: "创建并生成凭据" }));
