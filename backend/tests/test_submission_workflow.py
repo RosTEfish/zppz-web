@@ -9,18 +9,28 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 import pytest
 from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, PreviewBundle, Song, StorageDeletion, Submission, SubmissionProcessingJob, SubmissionUploadIntent, User
+from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, ImportIssue, PreviewBundle, Song, StorageDeletion, Submission, SubmissionProcessingJob, SubmissionUploadIntent, User
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 from app.modules.submissions import service as submission_service
 from app.modules.submissions import processing as submission_processing
 from app.modules.submissions.processing import claim_next_job, process_job
 from app.modules.submissions.router import _complete_intent
+
+
+def png_cover_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (4, 4), "#2374d8").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+PNG_COVER = png_cover_bytes()
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +57,8 @@ def archive_bytes(
     levels: str = "&lv_4=13\n&lv_5=14",
     *,
     video_name: str | None = None,
+    background_name: str = "bg.png",
+    background: bytes = PNG_COVER,
 ) -> bytes:
     playable = "\n".join(
         f"&inote_{slot}=(120){{1}},"
@@ -55,7 +67,7 @@ def archive_bytes(
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr("nested/maidata.txt", f"&title={title}\n&artist=Artist\n{levels}\n{playable}")
-        archive.writestr("nested/bg.png", b"cover")
+        archive.writestr(f"nested/{background_name}", background)
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
         if video_name:
             archive.writestr(f"nested/{video_name}", b"video")
@@ -204,7 +216,11 @@ def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(
     register(client, "player")
     _, own_id, _ = create_candidate_rows()
     set_manual_phase("submission_1")
-    payload = archive_bytes("Direct R2 Flow")
+    payload = archive_bytes(
+        "Direct R2 Flow",
+        background_name="bg.jpg",
+        background=PNG_COVER,
+    )
 
     created = client.post(
         "/api/v1/submissions/upload-intents",
@@ -253,6 +269,13 @@ def test_two_phase_submission_upload_is_idempotent_and_promotes_pending_object(
         assert row.public_storage_path.startswith(f"events/{row.event_id}/submissions/{row.id}/public/")
         assert row.public_file_size and row.public_file_size > 0
         assert upload_intent.status == "completed"
+        chart = db.scalar(select(GuessChart).where(GuessChart.source_submission_id == row.id))
+        preview = db.scalar(select(PreviewBundle).where(PreviewBundle.source_id == row.id))
+        issue = db.scalar(select(ImportIssue).where(ImportIssue.source_id == row.id))
+        assert chart is not None and chart.cover_path.endswith(".png")
+        assert preview is not None and preview.background_mime == "image/png"
+        assert preview.background_key and preview.background_key.endswith("/bg.png")
+        assert issue is not None and issue.issue_type == "cover_format_normalized"
         assert not (get_settings().data_dir / upload_intent.object_key).exists()
         assert (get_settings().data_dir / row.storage_path).read_bytes() == payload
         with ZipFile(get_settings().data_dir / row.public_storage_path) as public:

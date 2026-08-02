@@ -18,6 +18,7 @@ from app.db.session import SessionLocal
 from app.models import AdminGuessArchive, GuessChart, PreviewBundle, Submission
 from app.modules.guess_game.importer import (
     ArchiveParseError,
+    COVER_CONTENT_TYPES,
     ParsedArchive,
     extract_public_files,
     parse_archive,
@@ -29,6 +30,10 @@ from app.modules.submissions.service import enqueue_storage_deletion
 logger = logging.getLogger(__name__)
 ASSET_FIELDS = ("maidata_key", "track_key", "background_key", "video_key")
 MIME_FIELDS = ("maidata_mime", "track_mime", "background_mime", "video_mime")
+PREVIEW_BACKGROUND_CONTENT_TYPES = {
+    f"bg{suffix}": COVER_CONTENT_TYPES[suffix]
+    for suffix in (".png", ".jpg")
+}
 
 
 def _source_prefix(source_type: str, source_id: int) -> str:
@@ -202,7 +207,7 @@ def _build_from_parsed(
     maidata_name, track_name, background_name, video_name = _normalized_files(parsed)
     if track_name != "track.mp3":
         raise ArchiveParseError("track.ogg 当前格式暂不支持在线预览")
-    if background_name not in {"bg.png", "bg.jpg"}:
+    if background_name not in PREVIEW_BACKGROUND_CONTENT_TYPES:
         raise ArchiveParseError("bg.webp 当前格式暂不支持在线预览")
 
     version = uuid4().hex
@@ -213,7 +218,7 @@ def _build_from_parsed(
     content_types = {
         maidata_name: "text/plain; charset=utf-8",
         track_name: "audio/mpeg",
-        background_name: "image/png" if background_name.endswith(".png") else "image/jpeg",
+        background_name: PREVIEW_BACKGROUND_CONTENT_TYPES[background_name],
         video_name or "video.mp4": "video/mp4",
     }
     store = get_object_store()
@@ -279,7 +284,7 @@ def build_preview_core_from_files(
     video_name = next((name for name in ("bg.mp4", "mv.mp4", "pv.mp4") if name in files), None)
     if track_name != "track.mp3":
         raise ArchiveParseError("track.ogg 当前格式暂不支持在线预览")
-    if background_name not in {"bg.png", "bg.jpg"}:
+    if background_name not in PREVIEW_BACKGROUND_CONTENT_TYPES:
         raise ArchiveParseError("bg.webp 当前格式暂不支持在线预览")
 
     version = uuid4().hex
@@ -287,7 +292,7 @@ def build_preview_core_from_files(
     content_types = {
         "maidata.txt": "text/plain; charset=utf-8",
         "track.mp3": "audio/mpeg",
-        background_name: "image/png" if background_name.endswith(".png") else "image/jpeg",
+        background_name: PREVIEW_BACKGROUND_CONTENT_TYPES[background_name],
     }
     keys = {
         "maidata.txt": f"{prefix}/maidata.txt",

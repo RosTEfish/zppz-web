@@ -5,6 +5,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -14,6 +15,16 @@ from app.main import app
 from app.models import Event, GuessChart, PreviewBundle, Submission, User
 from app.modules.guess_game.importer import parse_archive
 from app.modules.preview.service import build_preview_bundle, manifest_payload
+
+
+def cover_bytes(image_format: str) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (4, 4), "#2374d8").save(buffer, format=image_format)
+    return buffer.getvalue()
+
+
+JPEG_COVER = cover_bytes("JPEG")
+PNG_COVER = cover_bytes("PNG")
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +48,12 @@ def reset_db_and_preview_settings():
     settings.preview_enabled, settings.preview_player_url, settings.preview_player_origin = old
 
 
-def _archive_bytes(video_name: str = "bg.mp4") -> bytes:
+def _archive_bytes(
+    video_name: str = "bg.mp4",
+    *,
+    background_name: str = "bg.jpg",
+    background: bytes = JPEG_COVER,
+) -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -45,16 +61,23 @@ def _archive_bytes(video_name: str = "bg.mp4") -> bytes:
             "&title=Preview\n&artist=Artist\n&lv_4=13\n&lv_5=14\n"
             "&inote_4=(120){1},\n&inote_5=(120){1},",
         )
-        archive.writestr("nested/bg.jpg", b"jpeg")
+        archive.writestr(f"nested/{background_name}", background)
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
         archive.writestr(f"nested/{video_name}", b"optional-video")
     return buffer.getvalue()
 
 
-def _create_ready_preview(video_name: str = "bg.mp4") -> tuple[int, int]:
+def _create_ready_preview(
+    video_name: str = "bg.mp4",
+    *,
+    background_name: str = "bg.jpg",
+    background: bytes = JPEG_COVER,
+) -> tuple[int, int]:
     settings = get_settings()
     source_path = settings.uploads_dir / "preview-source.zip"
-    source_path.write_bytes(_archive_bytes(video_name))
+    source_path.write_bytes(
+        _archive_bytes(video_name, background_name=background_name, background=background)
+    )
     parsed = parse_archive(source_path)
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
@@ -127,6 +150,18 @@ def test_preview_builds_versioned_local_assets_and_signed_urls():
     assert response.status_code == 200
     assert b"&title=Preview" in response.content
     assert response.headers["cache-control"].startswith("private")
+
+
+def test_preview_uses_detected_background_format_instead_of_declared_suffix():
+    submission_id, _ = _create_ready_preview(background_name="bg.jpg", background=PNG_COVER)
+    with SessionLocal() as db:
+        bundle = db.scalar(
+            select(PreviewBundle).where(PreviewBundle.source_id == submission_id)
+        )
+
+    assert bundle is not None and bundle.status == "ready"
+    assert bundle.background_key and bundle.background_key.endswith("/bg.png")
+    assert bundle.background_mime == "image/png"
 
 
 def test_guess_manifest_returns_only_the_visible_chart_difficulty():

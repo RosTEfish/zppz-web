@@ -7,6 +7,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 import py7zr
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
@@ -14,7 +15,24 @@ from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
-from app.modules.guess_game.importer import ArchiveParseError, parse_archive, write_public_package
+from app.modules.guess_game.importer import ArchiveParseError, parse_archive, prepare_archive, write_public_package
+
+
+def image_bytes(
+    image_format: str,
+    size: tuple[int, int] = (4, 4),
+    color: str = "#2374d8",
+) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", size, color).save(buffer, format=image_format)
+    return buffer.getvalue()
+
+
+PNG_COVER = image_bytes("PNG")
+JPEG_COVER = image_bytes("JPEG")
+WEBP_COVER = image_bytes("WEBP")
+OLD_PNG_COVER = image_bytes("PNG", color="#2374d8")
+NEW_PNG_COVER = image_bytes("PNG", color="#d84f23")
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +54,12 @@ def client():
         yield test_client
 
 
-def archive_bytes(maidata: str, encoding: str = "utf-8", cover: bytes | None = b"cover") -> bytes:
+def archive_bytes(
+    maidata: str,
+    encoding: str = "utf-8",
+    cover: bytes | None = PNG_COVER,
+    cover_name: str = "bg.png",
+) -> bytes:
     playable = "\n".join(
         f"&inote_{slot}=(120){{1}},"
         for slot in re.findall(r"(?im)^\s*&lv_([1-7])\s*=", maidata)
@@ -49,7 +72,7 @@ def archive_bytes(maidata: str, encoding: str = "utf-8", cover: bytes | None = b
         archive.writestr("nested/maidata.txt", maidata.encode(encoding))
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
         if cover is not None:
-            archive.writestr("nested/bg.png", cover)
+            archive.writestr(f"nested/{cover_name}", cover)
     return buffer.getvalue()
 
 
@@ -97,7 +120,7 @@ def test_parser_supports_nested_files_multiple_levels_and_fallback_encodings(tmp
         parsed = parse_archive(path)
         assert parsed.title == expected_title
         assert parsed.levels[0].level in {"13+", "12"}
-        assert parsed.cover_bytes == b"cover"
+        assert parsed.cover_bytes == PNG_COVER
 
 
 def test_parser_resolves_global_and_per_level_designers(tmp_path: Path):
@@ -137,17 +160,128 @@ def test_parser_rejects_missing_required_fields_and_cover(tmp_path: Path):
         parse_archive(no_cover)
 
 
+@pytest.mark.parametrize(
+    ("declared_name", "cover", "expected_suffix"),
+    [
+        ("bg.png", PNG_COVER, ".png"),
+        ("bg.jpg", JPEG_COVER, ".jpg"),
+        ("bg.webp", WEBP_COVER, ".webp"),
+    ],
+)
+def test_parser_preserves_valid_cover_formats(
+    tmp_path: Path,
+    declared_name: str,
+    cover: bytes,
+    expected_suffix: str,
+):
+    path = tmp_path / f"valid-{expected_suffix.removeprefix('.')}.zip"
+    path.write_bytes(
+        archive_bytes(
+            "&title=Cover\n&artist=Artist\n&lv_4=13",
+            cover=cover,
+            cover_name=declared_name,
+        )
+    )
+
+    parsed = parse_archive(path)
+
+    assert parsed.cover_suffix == expected_suffix
+    assert not parsed.warnings
+    assert next(item.output_name for item in parsed.public_files if item.output_name.startswith("bg.")) == declared_name
+
+
+@pytest.mark.parametrize(
+    ("declared_name", "cover", "expected_name", "expected_suffix"),
+    [
+        ("bg.jpg", PNG_COVER, "bg.png", ".png"),
+        ("bg.png", JPEG_COVER, "bg.jpg", ".jpg"),
+    ],
+)
+def test_parser_normalizes_mismatched_cover_formats(
+    tmp_path: Path,
+    declared_name: str,
+    cover: bytes,
+    expected_name: str,
+    expected_suffix: str,
+):
+    path = tmp_path / f"mismatched-{expected_suffix.removeprefix('.')}.zip"
+    path.write_bytes(
+        archive_bytes(
+            "&title=Cover\n&artist=Artist\n&lv_4=13",
+            cover=cover,
+            cover_name=declared_name,
+        )
+    )
+
+    parsed = parse_archive(path)
+
+    assert parsed.cover_suffix == expected_suffix
+    assert [(warning.issue_type) for warning in parsed.warnings] == ["cover_format_normalized"]
+    assert next(item.output_name for item in parsed.public_files if item.output_name.startswith("bg.")) == expected_name
+    relative = write_public_package(1, 99, parsed)
+    with ZipFile(get_settings().data_dir / relative) as public:
+        assert expected_name in public.namelist()
+        assert public.read(expected_name) == cover
+
+
+def test_prepare_archive_renames_extracted_cover_to_detected_format(tmp_path: Path):
+    path = tmp_path / "prepared-mismatch.zip"
+    path.write_bytes(
+        archive_bytes(
+            "&title=Prepared Cover\n&artist=Artist\n&lv_4=13",
+            cover=JPEG_COVER,
+            cover_name="bg.png",
+        )
+    )
+
+    prepared = prepare_archive(path, tmp_path / "prepared-assets")
+
+    assert "bg.jpg" in prepared.files
+    assert "bg.png" not in prepared.files
+    assert prepared.files["bg.jpg"].read_bytes() == JPEG_COVER
+    assert prepared.parsed.cover_suffix == ".jpg"
+    assert [warning.issue_type for warning in prepared.parsed.warnings] == [
+        "cover_format_normalized"
+    ]
+
+
+def test_parser_rejects_invalid_and_excessively_large_cover_images(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    invalid = tmp_path / "invalid-cover.zip"
+    invalid.write_bytes(
+        archive_bytes(
+            "&title=Invalid Cover\n&artist=Artist\n&lv_4=13",
+            cover=b"not-an-image",
+        )
+    )
+    with pytest.raises(ArchiveParseError, match="封面图片损坏、过大或无法识别"):
+        parse_archive(invalid)
+
+    oversized = tmp_path / "oversized-cover.zip"
+    oversized.write_bytes(
+        archive_bytes(
+            "&title=Oversized Cover\n&artist=Artist\n&lv_4=13",
+            cover=image_bytes("PNG", size=(8, 8)),
+        )
+    )
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1)
+    with pytest.raises(ArchiveParseError, match="封面图片损坏、过大或无法识别"):
+        parse_archive(oversized)
+
+
 def test_parser_reads_only_required_7z_members(tmp_path: Path):
     path = tmp_path / "chart.7z"
     with py7zr.SevenZipFile(path, "w") as archive:
         archive.writestr("&title=Seven\n&artist=Artist\n&lv_4=13+\n&inote_4=(120){1},", "nested/maidata.txt")
-        archive.writestr(b"cover", "nested/bg.jpg")
+        archive.writestr(JPEG_COVER, "nested/bg.jpg")
         archive.writestr((bytes.fromhex("FFFB9064") + bytes(413)) * 2, "nested/track.mp3")
     parsed = parse_archive(path)
     assert parsed.title == "Seven"
     assert [(level.slot, level.level) for level in parsed.levels] == [("4", "13+")]
     assert parsed.cover_suffix == ".jpg"
-    assert parsed.cover_bytes == b"cover"
+    assert parsed.cover_bytes == JPEG_COVER
 
 
 @pytest.mark.parametrize("video_name", ["mv.mp4", "pv.mp4"])
@@ -162,7 +296,7 @@ def test_public_package_uses_member_references_and_preserves_selected_files(
             "&title=Streamed\n&artist=Artist\n&des=Designer\n&lv_4=13\n&inote_4=(120){1},",
         )
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
-        archive.writestr("nested/bg.png", b"cover")
+        archive.writestr("nested/bg.png", PNG_COVER)
         archive.writestr(f"nested/{video_name}", b"video-payload")
 
     parsed = parse_archive(path)
@@ -189,7 +323,7 @@ def test_public_package_reopens_zip_members_with_backslash_names(tmp_path: Path)
             "&title=Backslash\n&artist=Artist\n&lv_4=13\n&inote_4=(120){1},",
         )
         archive.writestr("nested/track.mp3", (bytes.fromhex("FFFB9064") + bytes(413)) * 2)
-        archive.writestr("nested/bg.png", b"cover")
+        archive.writestr("nested/bg.png", PNG_COVER)
     # Python normalizes names written on Windows. Patch both local and central
     # directory records to exercise archives produced by tools that keep '\\'.
     path.write_bytes(buffer.getvalue().replace(b"nested/", b"nested\\"))
@@ -203,7 +337,7 @@ def test_public_package_reopens_zip_members_with_backslash_names(tmp_path: Path)
     relative = write_public_package(1, 2, parsed)
     with ZipFile(get_settings().data_dir / relative) as archive:
         assert archive.namelist() == ["maidata.txt", "track.mp3", "bg.png"]
-        assert archive.read("bg.png") == b"cover"
+        assert archive.read("bg.png") == PNG_COVER
 
 
 def test_upload_creates_charts_and_serves_cover(client: TestClient):
@@ -262,7 +396,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         client,
         archive_bytes(
             "&title=Old\n&artist=Artist\n&des=Old Designer\n&lv_4=13\n&lv_5=14",
-            cover=b"old-cover",
+            cover=OLD_PNG_COVER,
         ),
     )
     assert first.status_code == 200, first.text
@@ -287,7 +421,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         chart for chart in client.get("/api/v1/guess-game/charts").json() if chart["id"] == original_chart_id
     )
     first_cover_url = first_public_chart["cover_path"]
-    assert client.get(first_cover_url).content == b"old-cover"
+    assert client.get(first_cover_url).content == OLD_PNG_COVER
 
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
@@ -296,7 +430,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
 
     replacement = archive_bytes(
         "&title=Updated\n&artist=Artist\n&des=New Designer\n&des4=Slot Designer\n&lv_4=13+\n&lv_6=15",
-        cover=b"new-cover",
+        cover=NEW_PNG_COVER,
     )
     response = client.post(
         f"/api/v1/submissions/{submission_id}/replace",
@@ -324,7 +458,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
     )
     replaced_cover_url = replaced_public_chart["cover_path"]
     assert replaced_cover_url != first_cover_url
-    assert client.get(replaced_cover_url).content == b"new-cover"
+    assert client.get(replaced_cover_url).content == NEW_PNG_COVER
     assert not original_cover_file.exists()
 
 

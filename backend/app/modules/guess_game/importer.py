@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from io import BytesIO
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
 from tempfile import TemporaryDirectory
+import warnings
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from mutagen import File as MutagenFile
+from PIL import Image, UnidentifiedImageError
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -30,6 +33,12 @@ except ImportError:  # pragma: no cover - exercised only in incomplete local ins
 
 SUPPORTED_ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar"}
 COVER_SUFFIXES = {".png", ".jpg", ".webp"}
+COVER_FORMATS = {
+    "PNG": (".png", "image/png"),
+    "JPEG": (".jpg", "image/jpeg"),
+    "WEBP": (".webp", "image/webp"),
+}
+COVER_CONTENT_TYPES = {suffix: content_type for suffix, content_type in COVER_FORMATS.values()}
 AUDIO_SUFFIXES = {".mp3", ".ogg"}
 VIDEO_MEMBER_NAMES = ("bg.mp4", "mv.mp4", "pv.mp4")
 LEVEL_PATTERN = re.compile(r"^&lv_([1-7])=(.+)$", re.IGNORECASE)
@@ -61,6 +70,12 @@ class ParsedLevel:
 class ImportWarning:
     issue_type: str
     message: str
+
+
+@dataclass(frozen=True)
+class CoverFormat:
+    suffix: str
+    content_type: str
 
 
 @dataclass(frozen=True)
@@ -269,6 +284,53 @@ def _audio_duration(path: Path, name: str) -> float:
     return duration
 
 
+def _detect_cover_format(raw: bytes) -> CoverFormat:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(raw)) as image:
+                detected = (image.format or "").upper()
+                image.verify()
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+    ) as exc:
+        raise ArchiveParseError("封面图片损坏、过大或无法识别") from exc
+
+    normalized = COVER_FORMATS.get(detected)
+    if normalized is None:
+        raise ArchiveParseError("封面图片格式不受支持，仅支持 PNG、JPEG 或 WebP")
+    return CoverFormat(*normalized)
+
+
+def _cover_warning(declared_suffix: str, detected: CoverFormat) -> tuple[ImportWarning, ...]:
+    if declared_suffix == detected.suffix:
+        return ()
+    return (
+        ImportWarning(
+            "cover_format_normalized",
+            f"封面实际格式为 {detected.suffix.removeprefix('.').upper()}，"
+            f"已从 bg{declared_suffix} 自动规范为 bg{detected.suffix}",
+        ),
+    )
+
+
+def _normalize_public_cover_member(
+    members: tuple[PublicArchiveMember, ...],
+    detected: CoverFormat,
+) -> tuple[PublicArchiveMember, ...]:
+    cover_names = {f"bg{suffix}" for suffix in COVER_SUFFIXES}
+    return tuple(
+        PublicArchiveMember(f"bg{detected.suffix}", member.member_name)
+        if member.output_name in cover_names
+        else member
+        for member in members
+    )
+
+
 def _public_file_name(kind: str, original: str) -> str:
     return f"{kind}{Path(original).suffix.lower()}" if kind != "maidata" else "maidata.txt"
 
@@ -434,6 +496,15 @@ def _prepared_result(path: Path, files: dict[str, Path]) -> PreparedArchive:
         raise ArchiveParseError("maidata.txt 大小超出限制")
     if len(cover_bytes) > MAX_COVER_BYTES:
         raise ArchiveParseError("封面图片大小超出限制")
+    detected_cover = _detect_cover_format(cover_bytes)
+    cover_warnings = _cover_warning(Path(cover_name).suffix.lower(), detected_cover)
+    normalized_cover_name = f"bg{detected_cover.suffix}"
+    if normalized_cover_name != cover_name:
+        original_cover_path = files.pop(cover_name)
+        normalized_cover_path = original_cover_path.with_name(normalized_cover_name)
+        original_cover_path.replace(normalized_cover_path)
+        files[normalized_cover_name] = normalized_cover_path
+        cover_name = normalized_cover_name
     title, author, levels = parse_maidata(decode_maidata(maidata_raw))
     duration = _audio_duration(files[track_name], track_name)
     public_files = tuple(PublicArchiveMember(name, name) for name in files)
@@ -443,8 +514,8 @@ def _prepared_result(path: Path, files: dict[str, Path]) -> PreparedArchive:
             author,
             levels,
             cover_bytes,
-            Path(cover_name).suffix.lower(),
-            (),
+            detected_cover.suffix,
+            cover_warnings,
             track_duration_seconds=duration,
             archive_path=path,
             public_files=public_files,
@@ -754,10 +825,11 @@ def parse_archive(path: Path) -> ParsedArchive:
     if cover_bytes is not None and len(cover_bytes) > MAX_COVER_BYTES:
         raise ArchiveParseError("封面图片大小超出限制")
 
+    detected_cover = _detect_cover_format(cover_bytes)
+    warnings = _cover_warning(cover_suffix, detected_cover)
+    cover_suffix = detected_cover.suffix
+    public_files = _normalize_public_cover_member(public_files, detected_cover)
     title, author, levels = parse_maidata(decode_maidata(maidata_raw))
-    warnings: tuple[ImportWarning, ...] = ()
-    if cover_bytes is None:
-        warnings = (ImportWarning("bg_missing", "压缩包缺少 bg 封面图，已使用默认封面"),)
     return ParsedArchive(
         title,
         author,
