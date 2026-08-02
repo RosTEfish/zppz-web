@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 import re
 
@@ -22,3 +23,14 @@ def test_deploy_script_accepts_every_webhook_storage_key_written_by_ci():
     for key in WEBHOOK_STORAGE_KEYS:
         assert f"{key}=" in workflow, f"CI does not write {key}"
         assert key in allowed, f"deploy script rejects CI storage key {key}"
+
+
+def test_deploy_health_check_allows_bounded_cold_start():
+    repo_root = Path(__file__).resolve().parents[2]
+    deploy_script = (repo_root / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
+
+    assert "deadline = time.monotonic() + 60" in deploy_script
+    assert "time.sleep(min(2, remaining))" in deploy_script
+    assert "health check passed" in deploy_script
+    health_script = deploy_script.split('if ! "$venv_dir/bin/python" - <<PY\n', 1)[1].split("\nPY\nthen", 1)[0]
+    ast.parse(health_script.replace("$APP_PORT", "8000"))

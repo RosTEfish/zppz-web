@@ -560,16 +560,28 @@ if ! systemctl is-active --quiet "$SERVICE_NAME"; then
 fi
 
 if ! "$venv_dir/bin/python" - <<PY
-import sys
+import time
 import urllib.request
 
 url = "http://127.0.0.1:$APP_PORT/health"
-try:
-    with urllib.request.urlopen(url, timeout=10) as response:
-        if response.status >= 400:
-            raise SystemExit(f"health check returned HTTP {response.status}")
-except Exception as exc:
-    raise SystemExit(f"health check failed for {url}: {exc}")
+deadline = time.monotonic() + 60
+last_error = None
+attempt = 0
+while time.monotonic() < deadline:
+    attempt += 1
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"health check returned HTTP {response.status}")
+        print(f"health check passed for {url} after {attempt} attempt(s)")
+        break
+    except Exception as exc:
+        last_error = exc
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(2, remaining))
+else:
+    raise SystemExit(f"health check failed for {url} after {attempt} attempt(s): {last_error}")
 PY
 then
   systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
