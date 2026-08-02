@@ -560,6 +560,115 @@ class GuessChart(Base, TimestampMixin):
     plays: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class WebhookIntegration(Base, TimestampMixin):
+    __tablename__ = "webhook_integrations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    token_prefix: Mapped[str] = mapped_column(String(24), nullable=False)
+    secret_generation: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class WebhookSystemState(Base, TimestampMixin):
+    __tablename__ = "webhook_system_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    baseline_completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class WebhookEndpoint(Base, TimestampMixin):
+    __tablename__ = "webhook_endpoints"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    integration_id: Mapped[str] = mapped_column(
+        ForeignKey("webhook_integrations.id", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    callback_url: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    subscribed_events_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+
+
+class ChartPublicationState(Base, TimestampMixin):
+    __tablename__ = "chart_publication_states"
+    __table_args__ = (
+        UniqueConstraint("event_id", "source_type", "source_id", name="uq_chart_publication_source"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_version: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    first_published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class WebhookEvent(Base, TimestampMixin):
+    __tablename__ = "webhook_events"
+    __table_args__ = (
+        UniqueConstraint("event_id", "source_type", "source_id", "revision", name="uq_webhook_event_revision"),
+        Index("ix_webhook_events_event_created", "event_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class WebhookEventAsset(Base, TimestampMixin):
+    __tablename__ = "webhook_event_assets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    webhook_event_id: Mapped[str] = mapped_column(
+        ForeignKey("webhook_events.id", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    object_key: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class WebhookDelivery(Base, TimestampMixin):
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        UniqueConstraint("webhook_event_id", "endpoint_id", name="uq_webhook_delivery_event_endpoint"),
+        Index("ix_webhook_deliveries_status_schedule", "status", "next_attempt_at"),
+        Index("ix_webhook_deliveries_endpoint_created", "endpoint_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    webhook_event_id: Mapped[str] = mapped_column(ForeignKey("webhook_events.id", ondelete="CASCADE"), nullable=False)
+    endpoint_id: Mapped[str] = mapped_column(ForeignKey("webhook_endpoints.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class GuessVote(Base, TimestampMixin):
     __tablename__ = "guess_votes"
     __table_args__ = (

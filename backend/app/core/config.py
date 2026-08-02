@@ -22,7 +22,12 @@ class Settings:
     db_pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
     db_pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "1800"))
     slow_request_ms = int(os.getenv("SLOW_REQUEST_MS", "500"))
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").strip().rstrip("/")
+    webhook_scan_interval_seconds = float(os.getenv("WEBHOOK_SCAN_INTERVAL_SECONDS", "2"))
+    webhook_asset_url_ttl_seconds = int(os.getenv("WEBHOOK_ASSET_URL_TTL_SECONDS", "604800"))
+    webhook_asset_retention_days = int(os.getenv("WEBHOOK_ASSET_RETENTION_DAYS", "30"))
     secret_key = os.getenv("SECRET_KEY", "change-me-in-production")
+    webhook_signing_master_key = os.getenv("WEBHOOK_SIGNING_MASTER_KEY", secret_key).strip()
     session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "zppz_session")
     session_expire_hours = int(os.getenv("SESSION_EXPIRE_HOURS", "168"))
     cors_origins = [item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:4173,http://127.0.0.1:4173").split(",") if item.strip()]
@@ -84,6 +89,18 @@ class Settings:
             raise RuntimeError("PREVIEW_PLAYER_URL must be hosted on PREVIEW_PLAYER_ORIGIN")
         if self.preview_url_ttl_seconds < 60:
             raise RuntimeError("PREVIEW_URL_TTL_SECONDS must be at least 60")
+
+    def validate_webhooks(self) -> None:
+        if not self.public_base_url.startswith(("http://", "https://")):
+            raise RuntimeError("PUBLIC_BASE_URL must be an absolute HTTP(S) URL")
+        if len(self.webhook_signing_master_key) < 16:
+            raise RuntimeError("WEBHOOK_SIGNING_MASTER_KEY must be at least 16 characters")
+        if self.webhook_scan_interval_seconds <= 0:
+            raise RuntimeError("WEBHOOK_SCAN_INTERVAL_SECONDS must be positive")
+        if self.webhook_asset_url_ttl_seconds < 60:
+            raise RuntimeError("WEBHOOK_ASSET_URL_TTL_SECONDS must be at least 60")
+        if self.webhook_asset_retention_days < 8:
+            raise RuntimeError("WEBHOOK_ASSET_RETENTION_DAYS must be at least 8")
 
 
 @lru_cache

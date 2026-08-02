@@ -24,6 +24,38 @@ export type UserRead = components["schemas"]["UserRead"];
 export type EventRead = components["schemas"]["EventRead"];
 export type EventSettingsRead = components["schemas"]["EventSettingsRead"];
 
+export interface WebhookEndpointRead {
+  id: string;
+  callback_url: string;
+  events: Array<"chart.published" | "chart.updated">;
+  schema_version: number;
+  status: string;
+  activated_at?: string | null;
+  verified_at?: string | null;
+  consecutive_failures: number;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  last_error: string;
+}
+
+export interface WebhookIntegrationRead {
+  id: string;
+  name: string;
+  token_prefix: string;
+  is_active: boolean;
+  created_at: string;
+  revoked_at?: string | null;
+  endpoint?: WebhookEndpointRead | null;
+  pending_deliveries: number;
+  failed_deliveries: number;
+}
+
+export interface WebhookCredentialsRead {
+  integration_id: string;
+  integration_token: string;
+  webhook_secret: string;
+}
+
 export interface EventUpdatePayload {
   name: string;
   participant_song_limit: number;
@@ -422,6 +454,13 @@ export const api = {
   saveAuthorCandidates: (rows: Array<{ user_id: number; display_id: string }>) => apiRequest<{ message: string; count: number }>("/admin/guess-game/author-candidates", { method: "PUT", body: JSON.stringify({ rows }) }),
   guessStats: (scope: "all" | "j", includeDetails = true, signal?: AbortSignal) => apiRequest<GuessStats>(`/admin/guess-game/stats?scope=${scope}&include_details=${includeDetails}`, { signal }),
   guessStatsDetails: (scope: "all" | "j", limit = 50, offset = 0, signal?: AbortSignal) => apiRequest<GuessStatsDetails>(`/admin/guess-game/stats/details?scope=${scope}&limit=${limit}&offset=${offset}`, { signal }),
+
+  webhookIntegrations: (signal?: AbortSignal) => apiRequest<WebhookIntegrationRead[]>("/admin/webhook-integrations", { signal }),
+  createWebhookIntegration: (name: string) => apiRequest<WebhookCredentialsRead>("/admin/webhook-integrations", { method: "POST", body: JSON.stringify({ name }) }),
+  rotateWebhookCredentials: (id: string) => apiRequest<WebhookCredentialsRead>(`/admin/webhook-integrations/${id}/rotate-credentials`, { method: "POST" }),
+  testWebhookIntegration: (id: string) => apiRequest<{ event_id: string; status: string }>(`/admin/webhook-integrations/${id}/test`, { method: "POST" }),
+  retryWebhookDeliveries: (id: string) => apiRequest<{ message: string; retried: number }>(`/admin/webhook-integrations/${id}/retry-failed`, { method: "POST" }),
+  revokeWebhookIntegration: (id: string) => apiRequest<void>(`/admin/webhook-integrations/${id}`, { method: "DELETE" }),
 
   users: (signal?: AbortSignal) => apiRequest<UserRead[]>("/admin/users", { signal }),
   updateUser: (id: number, payload: { identity: string; roles: string[]; display_name: string; is_active: boolean }) => apiRequest<UserRead>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),

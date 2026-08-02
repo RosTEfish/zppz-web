@@ -6,6 +6,7 @@ set -Eeuo pipefail
 : "${ZPPZ_WEB_CONCURRENCY:?ZPPZ_WEB_CONCURRENCY is required}"
 
 worker_pid=""
+webhook_worker_pid=""
 web_pid=""
 
 stop_children() {
@@ -16,11 +17,17 @@ stop_children() {
   if [ -n "$worker_pid" ]; then
     kill -TERM "$worker_pid" >/dev/null 2>&1 || true
   fi
+  if [ -n "$webhook_worker_pid" ]; then
+    kill -TERM "$webhook_worker_pid" >/dev/null 2>&1 || true
+  fi
   if [ -n "$web_pid" ]; then
     wait "$web_pid" >/dev/null 2>&1 || true
   fi
   if [ -n "$worker_pid" ]; then
     wait "$worker_pid" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$webhook_worker_pid" ]; then
+    wait "$webhook_worker_pid" >/dev/null 2>&1 || true
   fi
 }
 
@@ -33,16 +40,19 @@ else
 fi
 worker_pid=$!
 
+"$ZPPZ_PYTHON_BIN" -m app.webhook_worker &
+webhook_worker_pid=$!
+
 "$ZPPZ_PYTHON_BIN" -m uvicorn app.main:app \
   --host 127.0.0.1 \
   --port "$ZPPZ_APP_PORT" \
   --workers "$ZPPZ_WEB_CONCURRENCY" &
 web_pid=$!
 
-# Either process exiting is unhealthy. Stop the sibling and let systemd restart
+# Any process exiting is unhealthy. Stop its siblings and let systemd restart
 # the complete cgroup so a dead Worker can never go unnoticed.
 set +e
-wait -n "$worker_pid" "$web_pid"
+wait -n "$worker_pid" "$webhook_worker_pid" "$web_pid"
 status=$?
 set -e
 stop_children

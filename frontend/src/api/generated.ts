@@ -843,6 +843,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/webhook-integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Integrations */
+        get: operations["list_integrations_api_v1_admin_webhook_integrations_get"];
+        put?: never;
+        /** Admin Create Integration */
+        post: operations["admin_create_integration_api_v1_admin_webhook_integrations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/webhook-integrations/{integration_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Admin Revoke Integration */
+        delete: operations["admin_revoke_integration_api_v1_admin_webhook_integrations__integration_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/webhook-integrations/{integration_id}/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Retry Failed */
+        post: operations["admin_retry_failed_api_v1_admin_webhook_integrations__integration_id__retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/webhook-integrations/{integration_id}/rotate-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Rotate Credentials */
+        post: operations["admin_rotate_credentials_api_v1_admin_webhook_integrations__integration_id__rotate_credentials_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/webhook-integrations/{integration_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Test Integration */
+        post: operations["admin_test_integration_api_v1_admin_webhook_integrations__integration_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/backgrounds": {
         parameters: {
             query?: never;
@@ -1439,6 +1525,59 @@ export interface paths {
         get: operations["vote_quota_api_v1_guess_game_vote_quota_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/webhook-assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhook Cover Asset */
+        get: operations["webhook_cover_asset_api_v1_integrations_webhook_assets__asset_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/webhook-subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Subscription */
+        get: operations["get_subscription_api_v1_integrations_webhook_subscription_get"];
+        /** Register Subscription */
+        put: operations["register_subscription_api_v1_integrations_webhook_subscription_put"];
+        post?: never;
+        /** Delete Subscription */
+        delete: operations["delete_subscription_api_v1_integrations_webhook_subscription_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/webhook-subscription/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Subscription */
+        post: operations["test_subscription_api_v1_integrations_webhook_subscription_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2948,6 +3087,100 @@ export interface components {
             /** Vote Type */
             vote_type: string;
         };
+        /** WebhookCredentialsRead */
+        WebhookCredentialsRead: {
+            /** Integration Id */
+            integration_id: string;
+            /** Integration Token */
+            integration_token: string;
+            /** Webhook Secret */
+            webhook_secret: string;
+        };
+        /** WebhookEndpointRead */
+        WebhookEndpointRead: {
+            /** Activated At */
+            activated_at?: string | null;
+            /** Callback Url */
+            callback_url: string;
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /** Events */
+            events: ("chart.published" | "chart.updated")[];
+            /** Id */
+            id: string;
+            /**
+             * Last Error
+             * @default
+             */
+            last_error: string;
+            /** Last Failure At */
+            last_failure_at?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Status */
+            status: string;
+            /** Verified At */
+            verified_at?: string | null;
+        };
+        /** WebhookEndpointWrite */
+        WebhookEndpointWrite: {
+            /** Callback Url */
+            callback_url: string;
+            /** Events */
+            events: ("chart.published" | "chart.updated")[];
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+        };
+        /** WebhookIntegrationCreate */
+        WebhookIntegrationCreate: {
+            /** Name */
+            name: string;
+        };
+        /** WebhookIntegrationRead */
+        WebhookIntegrationRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            endpoint?: components["schemas"]["WebhookEndpointRead"] | null;
+            /**
+             * Failed Deliveries
+             * @default 0
+             */
+            failed_deliveries: number;
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Pending Deliveries
+             * @default 0
+             */
+            pending_deliveries: number;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /** Token Prefix */
+            token_prefix: string;
+        };
+        /** WebhookTestRead */
+        WebhookTestRead: {
+            /** Event Id */
+            event_id: string;
+            /** Status */
+            status: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -4430,6 +4663,181 @@ export interface operations {
             };
         };
     };
+    list_integrations_api_v1_admin_webhook_integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookIntegrationRead"][];
+                };
+            };
+        };
+    };
+    admin_create_integration_api_v1_admin_webhook_integrations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookIntegrationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookCredentialsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_revoke_integration_api_v1_admin_webhook_integrations__integration_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_retry_failed_api_v1_admin_webhook_integrations__integration_id__retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_rotate_credentials_api_v1_admin_webhook_integrations__integration_id__rotate_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookCredentialsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_test_integration_api_v1_admin_webhook_integrations__integration_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     backgrounds_api_v1_assets_backgrounds_get: {
         parameters: {
             query?: never;
@@ -5569,6 +5977,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoveVoteQuotaRead"];
+                };
+            };
+        };
+    };
+    webhook_cover_asset_api_v1_integrations_webhook_assets__asset_id__get: {
+        parameters: {
+            query: {
+                endpoint: string;
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_subscription_api_v1_integrations_webhook_subscription_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointRead"];
+                };
+            };
+        };
+    };
+    register_subscription_api_v1_integrations_webhook_subscription_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookEndpointWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_subscription_api_v1_integrations_webhook_subscription_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_subscription_api_v1_integrations_webhook_subscription_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestRead"];
                 };
             };
         };
