@@ -88,7 +88,7 @@ def _visible_chart(db: Session, event, chart_id: int) -> GuessChart:
 
 def _require_quality_vote_phase(db: Session, event) -> None:
     if not get_phase_status(db, event).can("quality_vote"):
-        raise HTTPException(status_code=409, detail="当前阶段不能投票或评论")
+        raise HTTPException(status_code=409, detail="当前阶段不能投票")
 
 
 def _require_quality_voteable_chart(chart: GuessChart) -> None:
@@ -141,7 +141,7 @@ def _public_chart_payloads(
                     )
                 ),
                 "can_vote": phase_status.can("quality_vote") and chart.source_submission_type != "exhibition",
-                "can_comment": phase_status.can("quality_vote"),
+                "can_comment": True,
                 "can_author_guess": (
                     chart.source_submission_type == "normal"
                     and phase_status.can("author_guess")
@@ -339,8 +339,6 @@ def unvote(payload: VoteRequest, user: User = Depends(get_current_user), db: Ses
 @router.get("/charts/{chart_id}/comments", response_model=list[GuessCommentRead])
 def comments(chart_id: int, db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
-    if not get_phase_status(db, event).can("normal_submission_public"):
-        raise HTTPException(status_code=409, detail="当前阶段不能查看评论")
     _visible_chart(db, event, chart_id)
     return [
         {"id": item.id, "content": item.content, "user": user_payload(item.user), "created_at": item.created_at}
@@ -351,10 +349,7 @@ def comments(chart_id: int, db: Session = Depends(get_db)) -> list[dict]:
 @router.post("/charts/{chart_id}/comments", response_model=GuessCommentRead)
 def create_comment(chart_id: int, payload: CommentCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
-    _require_quality_vote_phase(db, event)
     _visible_chart(db, event, chart_id)
-    if not db.scalar(select(GuessChart.id).where(GuessChart.id == chart_id, GuessChart.event_id == event.id)):
-        raise HTTPException(status_code=404, detail="谱面不存在")
     item = GuessComment(chart_id=chart_id, user_id=user.id, content=payload.content)
     db.add(item)
     db.commit()

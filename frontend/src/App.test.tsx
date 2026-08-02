@@ -190,6 +190,41 @@ describe("Material application shell", () => {
     expect(screen.queryByText(/播放/)).not.toBeInTheDocument();
   });
 
+  it("allows comments on a public chart outside the voting phase", async () => {
+    window.history.pushState({}, "", "/guess");
+    const participant = { id: 9, user_code: "commenter", qq_id: "9", identity: "participant", display_name: "评论用户", roles: ["participant"], is_admin: false, is_pool_editor: false, is_active: true };
+    const publicChart = { id: 41, title: "已公开 J 谱", author: "曲师", designer: "谱师", level: "14", lane: "j", guess_group_key: "public-j", source_submission_type: "j", source_submission_id: 41, source_level_slot: "5", cover_path: "", is_self_selected: false, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [], can_vote: false, can_comment: true, can_author_guess: false };
+    const submittedComments: string[] = [];
+    mockApi(async (path, init) => {
+      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/event/phases")) return json({ phase_mode: "manual", manual_phase: "registration", active_phase: "registration", phases: [], capabilities: { song_pool_edit: true, submission: false, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false } });
+      if (path.endsWith("/guess-game/availability")) return json({ available: true });
+      if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
+      if (path.endsWith("/guess-game/vote-quota")) return json({ below_14: { used: 0, limit: 3, remaining: 3 }, at_least_14: { used: 0, limit: 2, remaining: 2 } });
+      if (path.endsWith("/guess-game/charts/41/comments")) {
+        if (init?.method === "POST") {
+          const content = (JSON.parse(String(init.body)) as { content: string }).content;
+          submittedComments.push(content);
+          return json({ id: 2, content, user: participant, created_at: "2026-07-04T01:00:00" });
+        }
+        return json([{ id: 1, content: "已有评论", user: participant, created_at: "2026-07-04T00:30:00" }]);
+      }
+      if (path.endsWith("/guess-game/charts/41")) return json(publicChart);
+      if (path.endsWith("/guess-game/charts")) return json([publicChart]);
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByText("已公开 J 谱"));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("已有评论")).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "评论内容" }), { target: { value: "现在就能评论" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(submittedComments).toEqual(["现在就能评论"]));
+    expect(within(dialog).getByText("现在就能评论")).toBeInTheDocument();
+  });
+
   it("filters guess charts and safely renders public chart metadata", async () => {
     window.history.pushState({}, "", "/guess");
     render(<App />);

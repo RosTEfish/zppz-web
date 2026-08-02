@@ -183,13 +183,13 @@ export default function GuessPage() {
       <ResourceState loading={charts.loading} error={charts.error} empty={!allCharts.length ? "暂无谱面" : undefined} />
       {allCharts.length ? <GuessFilterPanel levels={levels} level={levelFilter} lane={laneFilter} selfSelected={selfFilter} disabled={downloading} onLevelChange={(value) => { setLevelFilter(value); clearSelection(); }} onLaneChange={(value) => { setLaneFilter(value); clearSelection(); }} onSelfChange={(value) => { setSelfFilter(value); clearSelection(); }} onReset={resetFilters} /> : null}
       {filteredCharts.length ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>{filteredCharts.map((chart) => <GuessChartCard key={chart.id} chart={chart} selecting={selecting} selected={selected.has(chart.id)} selectionDisabled={downloading} candidates={candidates} candidateLabels={candidateLabels} canGuess={canGuess} guessedUserId={guessedByChart.get(chart.id)} guessBusy={busyGuessGroup === chartGroupIdentity(chart)} onOpen={open} onGuess={saveDesignerGuess} />)}</Box> : allCharts.length ? <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center" }}><Typography color="text.secondary">没有符合当前筛选条件的谱面</Typography><Button variant="outlined" sx={{ mt: 2 }} disabled={downloading} onClick={resetFilters}>清除筛选</Button></Paper> : null}
-      <GuessDetailDialog chart={active} designerGuesses={designerGuesses.data} candidateLabels={candidateLabels} voteQuota={voteQuota.data} guessedUserId={active ? guessedByChart.get(active.id) : null} guessBusy={Boolean(active && busyGuessGroup === chartGroupIdentity(active))} canVote={phases?.capabilities.quality_vote ?? true} canComment={phases?.capabilities.quality_vote ?? true} canReadHistory={phases?.capabilities.normal_submission_public ?? false} onGuess={saveDesignerGuess} onClose={() => setActive(null)} onChanged={(next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }} onQuotaChanged={voteQuota.setData} />
+      <GuessDetailDialog chart={active} designerGuesses={designerGuesses.data} candidateLabels={candidateLabels} voteQuota={voteQuota.data} guessedUserId={active ? guessedByChart.get(active.id) : null} guessBusy={Boolean(active && busyGuessGroup === chartGroupIdentity(active))} canVote={phases?.capabilities.quality_vote ?? true} onGuess={saveDesignerGuess} onClose={() => setActive(null)} onChanged={(next) => { setActive(next); updateChart((items) => items.map((item) => item.id === next.id ? next : item)); }} onQuotaChanged={voteQuota.setData} />
       <DownloadPreparationDialog open={downloading} count={selected.size} unit="项" />
     </Stack>
   );
 }
 
-function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota, guessedUserId, guessBusy, canVote, canComment, canReadHistory, onGuess, onClose, onChanged, onQuotaChanged }: { chart: GuessChartRead | null; designerGuesses: DesignerGuessOverview | null; candidateLabels: ReadonlyMap<number, string>; voteQuota: LoveVoteQuotaRead | null; guessedUserId?: number | null; guessBusy: boolean; canVote: boolean; canComment: boolean; canReadHistory: boolean; onGuess: (chart: GuessChartRead, userId: number | null) => void; onClose: () => void; onChanged: (chart: GuessChartRead) => void; onQuotaChanged: (quota: LoveVoteQuotaRead | null) => void }) {
+function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota, guessedUserId, guessBusy, canVote, onGuess, onClose, onChanged, onQuotaChanged }: { chart: GuessChartRead | null; designerGuesses: DesignerGuessOverview | null; candidateLabels: ReadonlyMap<number, string>; voteQuota: LoveVoteQuotaRead | null; guessedUserId?: number | null; guessBusy: boolean; canVote: boolean; onGuess: (chart: GuessChartRead, userId: number | null) => void; onClose: () => void; onChanged: (chart: GuessChartRead) => void; onQuotaChanged: (quota: LoveVoteQuotaRead | null) => void }) {
   const [comments, setComments] = useState<GuessCommentRead[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
@@ -204,10 +204,8 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
     setComment("");
     setError("");
     setPreviewActive(false);
-    if (canReadHistory) {
-      void api.comments(chart.id).then(setComments).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
-    }
-  }, [canReadHistory, chart?.id]);
+    void api.comments(chart.id).then(setComments).catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
+  }, [chart?.id]);
 
   if (!chart) return null;
   const isJ = chart.lane === "j";
@@ -395,14 +393,14 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
             <Typography variant="h3">评论</Typography>
             {comments.length ? <Typography variant="caption" color="text.secondary">{comments.length} 条</Typography> : null}
           </Stack>
-          {isLoggedIn && canComment && chart.can_comment !== false ? (
+          {isLoggedIn && chart.can_comment !== false ? (
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 2 }}>
               <TextField size="small" fullWidth label="评论内容" placeholder="写下你的评价" value={comment} onChange={(event) => setComment(event.target.value)} />
               <Button variant="contained" startIcon={<MessageSquare size={17} />} disabled={!comment.trim()} onClick={() => void sendComment().catch((err) => setError(err.message))}>发送</Button>
             </Stack>
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {isLoggedIn ? "当前阶段未开放评论。" : "登录后可在开放阶段发表评论。"}
+              {isLoggedIn ? "该谱面暂不可评论。" : "登录后可对已公开谱面发表评论。"}
             </Typography>
           )}
           <Stack spacing={1}>

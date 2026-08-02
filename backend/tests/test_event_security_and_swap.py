@@ -264,7 +264,7 @@ def test_hidden_normal_chart_cannot_be_enumerated_or_accessed_anonymously(client
     assert [row["id"] for row in listed.json()] == [j_id]
     assert client.get(f"/api/v1/guess-game/charts/{normal_id}").status_code == 404
     assert client.get(f"/api/v1/guess-game/charts/{normal_id}/download-metadata").status_code == 404
-    assert client.get(f"/api/v1/guess-game/charts/{normal_id}/comments").status_code == 409
+    assert client.get(f"/api/v1/guess-game/charts/{normal_id}/comments").status_code == 404
 
     public_j = client.get(f"/api/v1/guess-game/charts/{j_id}")
     assert public_j.status_code == 200
@@ -273,6 +273,32 @@ def test_hidden_normal_chart_cannot_be_enumerated_or_accessed_anonymously(client
         "storage_path",
     }.isdisjoint(public_j.json())
     assert public_j.json()["designer"] == "J designer"
+
+
+def test_logged_in_user_can_comment_on_any_public_chart_before_guess_phase(client: TestClient):
+    register(client, "public-commenter", identity="audience")
+    normal_id, j_id = create_chart_pair()
+    set_manual_phase("registration")
+    login(client, "public-commenter")
+
+    listed = client.get("/api/v1/guess-game/charts")
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == j_id
+    assert listed.json()[0]["can_comment"] is True
+
+    created = client.post(
+        f"/api/v1/guess-game/charts/{j_id}/comments",
+        json={"content": "公开后就可以评论"},
+    )
+    assert created.status_code == 200, created.text
+    comments = client.get(f"/api/v1/guess-game/charts/{j_id}/comments")
+    assert comments.status_code == 200
+    assert [row["content"] for row in comments.json()] == ["公开后就可以评论"]
+
+    assert client.post(
+        f"/api/v1/guess-game/charts/{normal_id}/comments",
+        json={"content": "尚未公开"},
+    ).status_code == 404
 
 
 def test_exhibition_chart_cannot_receive_quality_votes(client: TestClient):
@@ -357,7 +383,7 @@ def test_audience_can_guess_normal_but_not_j_and_anonymous_cannot_write(client: 
     assert rejected.status_code == 403
 
 
-def test_guess_history_remains_read_only_after_guess_deadline(client: TestClient):
+def test_guess_history_stays_visible_and_comments_stay_open_after_guess_deadline(client: TestClient):
     register(client, "candidate-history")
     register(client, "viewer-history", identity="audience")
     normal_id, _ = create_chart_pair()
@@ -403,7 +429,7 @@ def test_guess_history_remains_read_only_after_guess_deadline(client: TestClient
     assert normal["love_votes"] == 1
     assert normal["my_votes"] == ["love"]
     assert normal["can_vote"] is False
-    assert normal["can_comment"] is False
+    assert normal["can_comment"] is True
     assert normal["can_author_guess"] is False
 
     comments = client.get(f"/api/v1/guess-game/charts/{normal_id}/comments")
@@ -419,10 +445,11 @@ def test_guess_history_remains_read_only_after_guess_deadline(client: TestClient
     vote_payload = {"chart_id": normal_id, "vote_type": "love"}
     assert client.post("/api/v1/guess-game/vote", json=vote_payload).status_code == 409
     assert client.request("DELETE", "/api/v1/guess-game/vote", json=vote_payload).status_code == 409
-    assert client.post(
+    created_comment = client.post(
         f"/api/v1/guess-game/charts/{normal_id}/comments",
         json={"content": "new comment"},
-    ).status_code == 409
+    )
+    assert created_comment.status_code == 200, created_comment.text
     guess_payload = {"guessed_user_id": candidate_id}
     assert client.put(
         f"/api/v1/guess-game/charts/{normal_id}/designer-guess",
