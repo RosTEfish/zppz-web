@@ -570,6 +570,32 @@ def test_guess_availability_requires_a_public_chart(client: TestClient):
     assert client.get("/api/v1/guess-game/availability").json() == {"available": True}
 
 
+def test_admin_import_is_visible_on_public_guess_page_before_guess_phase(client: TestClient):
+    login_admin(client)
+    imported = client.post(
+        "/api/v1/admin/guess-game/charts/import",
+        files={
+            "file": (
+                "admin-public.zip",
+                archive_bytes("&title=Admin Public\n&artist=Artist\n&des=Admin Designer\n&lv_4=13"),
+                "application/zip",
+            )
+        },
+    )
+    assert imported.status_code == 200, imported.text
+    imported_chart = imported.json()["charts"][0]
+
+    availability = client.get("/api/v1/guess-game/availability")
+    assert availability.status_code == 200, availability.text
+    assert availability.json() == {"available": True}
+
+    public_charts = client.get("/api/v1/guess-game/charts")
+    assert public_charts.status_code == 200, public_charts.text
+    public_chart = next(row for row in public_charts.json() if row["id"] == imported_chart["id"])
+    assert public_chart["title"] == "Admin Public"
+    assert public_chart["source_submission_type"] == "admin"
+
+
 def test_exhibition_allows_multiple_unlinked_submissions(client: TestClient):
     register(client, "exhibitor")
     with SessionLocal() as db:

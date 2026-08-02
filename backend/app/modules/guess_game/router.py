@@ -36,7 +36,7 @@ from app.modules.downloads import (
     safe_download_name,
 )
 from app.modules.events.service import get_current_event
-from app.modules.events.phase_policy import get_phase_status, is_chart_public
+from app.modules.events.phase_policy import ALWAYS_PUBLIC_CHART_SOURCE_TYPES, get_phase_status, is_chart_public
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     delete_cover_paths,
@@ -158,7 +158,7 @@ def guess_availability(response: Response, db: Session = Depends(get_db)) -> dic
     phase_status = get_phase_status(db, event)
     stmt = select(GuessChart.id).where(GuessChart.event_id == event.id)
     if not phase_status.can("normal_submission_public"):
-        stmt = stmt.where(GuessChart.source_submission_type.in_(("j", "exhibition")))
+        stmt = stmt.where(GuessChart.source_submission_type.in_(ALWAYS_PUBLIC_CHART_SOURCE_TYPES))
     return {"available": db.scalar(stmt.limit(1)) is not None}
 
 
