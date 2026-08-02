@@ -23,6 +23,8 @@ services:
       DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
       DATA_DIR: /data
       SECRET_KEY: change-me-in-production
+      WEBHOOK_SIGNING_MASTER_KEY: change-me-webhook-signing-key
+      PUBLIC_BASE_URL: http://localhost:8080
       ADMIN_SEED_CODE: admin
       ADMIN_SEED_PASSWORD: change-me-please
       CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000
@@ -55,8 +57,35 @@ services:
       DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
       DATA_DIR: /data
       SECRET_KEY: change-me-in-production
+      WEBHOOK_SIGNING_MASTER_KEY: change-me-webhook-signing-key
+      PUBLIC_BASE_URL: http://localhost:8080
       ADMIN_SEED_CODE: admin
       ADMIN_SEED_PASSWORD: change-me-please
+      OBJECT_STORAGE_BACKEND: local
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "1"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
+    volumes:
+      - zppz-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  webhook-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    command: ["python", "-m", "app.webhook_worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
+      DATA_DIR: /data
+      SECRET_KEY: change-me-in-production
+      WEBHOOK_SIGNING_MASTER_KEY: change-me-webhook-signing-key
+      PUBLIC_BASE_URL: http://localhost:8080
       OBJECT_STORAGE_BACKEND: local
       DB_POOL_SIZE: "2"
       DB_MAX_OVERFLOW: "1"

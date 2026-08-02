@@ -9,6 +9,7 @@ export const adminTabLoaders = {
   guess: () => import("./AdminGuess"),
   stats: () => import("./AdminStats"),
   banlist: () => import("./AdminBanlist"),
+  webhooks: () => import("./AdminWebhooks"),
 };
 
 export type AdminTab = keyof typeof adminTabLoaders;

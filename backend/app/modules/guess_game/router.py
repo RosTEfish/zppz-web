@@ -36,7 +36,7 @@ from app.modules.downloads import (
     safe_download_name,
 )
 from app.modules.events.service import get_current_event
-from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.phase_policy import get_phase_status, is_chart_public
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     delete_cover_paths,
@@ -75,7 +75,7 @@ MAX_BATCH_SOURCE_BYTES = 10 * 1024 * 1024 * 1024
 
 
 def _is_public_chart(chart: GuessChart, phase_status) -> bool:
-    return chart.source_submission_type in {"j", "exhibition"} or phase_status.can("normal_submission_public")
+    return is_chart_public(chart.source_submission_type, phase_status)
 
 
 def _visible_chart(db: Session, event, chart_id: int) -> GuessChart:

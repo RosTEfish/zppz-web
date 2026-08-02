@@ -40,6 +40,10 @@ from app.models import (
     User,
     UserRole,
     UserSession,
+    ChartPublicationState,
+    WebhookDelivery,
+    WebhookEvent,
+    WebhookEventAsset,
 )
 from app.modules.submissions.service import drain_storage_deletions, enqueue_storage_deletion
 
@@ -145,6 +149,28 @@ def _reset_database(db: Session, current_event_id: int) -> dict[str, int]:
     )
 
     deleted: dict[str, int] = {}
+    webhook_event_ids = list(
+        db.scalars(select(WebhookEvent.id).where(WebhookEvent.event_id.in_(event_ids))).all()
+    ) if event_ids else []
+    if webhook_event_ids:
+        deleted["webhook_deliveries"] = _delete_rows(
+            db, delete(WebhookDelivery).where(WebhookDelivery.webhook_event_id.in_(webhook_event_ids))
+        )
+        deleted["webhook_event_assets"] = _delete_rows(
+            db, delete(WebhookEventAsset).where(WebhookEventAsset.webhook_event_id.in_(webhook_event_ids))
+        )
+        deleted["webhook_events"] = _delete_rows(
+            db, delete(WebhookEvent).where(WebhookEvent.id.in_(webhook_event_ids))
+        )
+    else:
+        deleted["webhook_deliveries"] = 0
+        deleted["webhook_event_assets"] = 0
+        deleted["webhook_events"] = 0
+    deleted["chart_publication_states"] = (
+        _delete_rows(db, delete(ChartPublicationState).where(ChartPublicationState.event_id.in_(event_ids)))
+        if event_ids
+        else 0
+    )
     if request_ids:
         deleted["swap_request_items"] = _delete_rows(
             db,
@@ -315,6 +341,9 @@ def reset_all_data(db: Session) -> dict:
                 ).all()
             )
             for object_key in pending_objects:
+                enqueue_storage_deletion(db, object_key)
+            webhook_asset_objects = list(db.scalars(select(WebhookEventAsset.object_key)).all())
+            for object_key in webhook_asset_objects:
                 enqueue_storage_deletion(db, object_key)
             deleted = _reset_database(db, current_event_id)
             db.commit()

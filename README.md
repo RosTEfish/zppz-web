@@ -39,12 +39,14 @@ docker compose up --build
 
 ## 部署
 
+外部 Bot 的谱面发布/更新推送采用多接收方 Webhook；接入流程、签名和事件格式见 [Webhook 接入手册](docs/webhook-integration.md)。
+
 推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源、检查 R2 读写权限，然后重启 systemd 服务并执行健康检查。R2 检查或健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
 
 生产部署要求在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
 
-- Variables：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`，以及可选的 `OWNER_USER_CODE`。
-- Secrets：`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`。
+- Variables：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`，以及可选的 `OWNER_USER_CODE`、`PUBLIC_BASE_URL`。
+- Secrets：`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`WEBHOOK_SIGNING_MASTER_KEY`（独立生成的高强度随机值）。
 
 `SERVER_PIP_INDEX_URL` 建议设为 `https://pypi.tuna.tsinghua.edu.cn/simple`。远程服务器升级 pip 和安装依赖时会先使用该镜像；失败后自动完整重试官方 `https://pypi.org/simple`。GitHub Actions 自身的验证仍使用官方 PyPI 和 npm 源。
 

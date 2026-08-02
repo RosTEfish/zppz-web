@@ -373,7 +373,7 @@ fi
 "$venv_dir/bin/python" -m uvicorn --version
 service_workdir="$app_dir/backend"
 service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT --workers $WEB_CONCURRENCY"
-worker_exec="$venv_dir/bin/python -m app.worker"
+worker_exec="$venv_dir/bin/python -m app.worker_supervisor"
 
 # Run write-producing database preparation exactly once per deployment, before
 # the service master and its workers are started.
@@ -403,7 +403,7 @@ sudo -n systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
 worker_unit_candidate="$(mktemp "$deploy_state_dir/.worker-unit.XXXXXX")"
 cat > "$worker_unit_candidate" <<EOF
 [Unit]
-Description=ZPPZ Submission Processing Worker
+Description=ZPPZ Submission and Webhook Workers
 After=network-online.target
 Wants=network-online.target
 
@@ -544,6 +544,14 @@ elif ! pgrep -u "$RUN_USER" -f "$venv_dir/bin/python -m app.worker" >/dev/null; 
   journalctl -u "$SERVICE_NAME" --no-pager -n 160 >&2 || true
   exit 1
 fi
+if ! pgrep -u "$RUN_USER" -f "$venv_dir/bin/python -m app.webhook_worker" >/dev/null; then
+  echo "The Webhook Worker did not stay active." >&2
+  systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
+  if [ "$worker_service_mode" = "separate" ]; then
+    systemctl --no-pager --full status "$WORKER_SERVICE_NAME" >&2 || true
+  fi
+  exit 1
+fi
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
   echo "Service $SERVICE_NAME failed to stay active after restart." >&2
   systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
@@ -638,5 +646,5 @@ sudo -n systemctl --no-pager --full status "$SERVICE_NAME"
 if [ "$worker_service_mode" = "separate" ]; then
   sudo -n systemctl --no-pager --full status "$WORKER_SERVICE_NAME"
 else
-  echo "Submission Worker is active inside the $SERVICE_NAME cgroup."
+  echo "Submission and Webhook Workers are active inside the $SERVICE_NAME cgroup."
 fi

@@ -9,6 +9,7 @@ from app.models import BanImport, User
 from app.db.session import SessionLocal
 from app.modules.banlist.service import BAN_PARSER_VERSION, create_ban_import
 from app.modules.submissions.service import copy_asset_from_repo, drain_storage_deletions
+from app.modules.webhooks.service import seed_publication_baseline
 
 
 def sync_bundled_assets() -> None:
@@ -29,6 +30,7 @@ def prepare() -> None:
         seed_defaults(db)
         seed_bundled_banlist(db)
         backfill_guess_chart_metadata(db)
+        seed_publication_baseline(db)
         drain_storage_deletions(db)
     sync_bundled_assets()
 

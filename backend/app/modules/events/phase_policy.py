@@ -140,3 +140,7 @@ def phase_status_payload(status: PhaseStatus) -> dict[str, Any]:
         "capabilities": status.capabilities.as_dict(),
         "next_transition_at": status.next_transition_at,
     }
+
+
+def is_chart_public(source_type: str, phase_status: PhaseStatus) -> bool:
+    return source_type in {"j", "exhibition"} or phase_status.can("normal_submission_public")

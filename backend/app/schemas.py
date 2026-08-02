@@ -584,3 +584,53 @@ class AdminUserUpdate(BaseModel):
 class ResetPasswordRequest(BaseModel):
     user_id: int
     new_password: str = Field(min_length=6, max_length=128)
+
+
+WebhookEventName = Literal["chart.published", "chart.updated"]
+
+
+class WebhookIntegrationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class WebhookCredentialsRead(BaseModel):
+    integration_id: str
+    integration_token: str
+    webhook_secret: str
+
+
+class WebhookEndpointWrite(BaseModel):
+    callback_url: str = Field(min_length=1, max_length=1000)
+    events: list[WebhookEventName] = Field(min_length=1, max_length=2)
+    schema_version: Literal[1] = 1
+
+
+class WebhookEndpointRead(BaseModel):
+    id: str
+    callback_url: str
+    events: list[WebhookEventName]
+    schema_version: int
+    status: str
+    activated_at: datetime | None = None
+    verified_at: datetime | None = None
+    consecutive_failures: int = 0
+    last_success_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    last_error: str = ""
+
+
+class WebhookIntegrationRead(BaseModel):
+    id: str
+    name: str
+    token_prefix: str
+    is_active: bool
+    created_at: datetime
+    revoked_at: datetime | None = None
+    endpoint: WebhookEndpointRead | None = None
+    pending_deliveries: int = 0
+    failed_deliveries: int = 0
+
+
+class WebhookTestRead(BaseModel):
+    event_id: str
+    status: str

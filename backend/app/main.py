@@ -31,6 +31,8 @@ from app.modules.submissions.router import router as submissions_router
 from app.modules.swap.router import admin_router as admin_swap_router
 from app.modules.swap.router import router as swap_router
 from app.modules.users.router import router as users_router
+from app.modules.webhooks.router import admin_router as admin_webhooks_router
+from app.modules.webhooks.router import router as webhooks_router
 
 
 settings = get_settings()
@@ -44,6 +46,7 @@ LLMS_TXT_FALLBACK = "# przppz.club\n\nZPPZ Arena is an event platform for music 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings.validate_preview()
+    settings.validate_webhooks()
     check_schema_current()
     yield
 
@@ -115,6 +118,7 @@ for router in (
     swap_router,
     guess_game_router,
     preview_router,
+    webhooks_router,
     admin_router,
     admin_events_router,
     users_router,
@@ -124,6 +128,7 @@ for router in (
     admin_swap_router,
     admin_guess_game_router,
     admin_banlist_router,
+    admin_webhooks_router,
 ):
     app.include_router(router, prefix=settings.api_prefix)
 
