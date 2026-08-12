@@ -935,13 +935,10 @@ def submission_processing_jobs(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    from app.modules.submissions.processing import list_visible_jobs, serialize_processing_job
+    from app.modules.submissions.processing import list_visible_jobs, serialize_processing_jobs
 
     event = get_current_event(db)
-    return [
-        serialize_processing_job(db, job)
-        for job in list_visible_jobs(db, event_id=event.id, user_id=user.id)
-    ]
+    return serialize_processing_jobs(db, list_visible_jobs(db, event_id=event.id, user_id=user.id))
 
 
 @router.delete("/upload-intents/{intent_id}", status_code=204)
@@ -1268,13 +1265,10 @@ def admin_submission_processing_jobs(
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    from app.modules.submissions.processing import list_visible_jobs, serialize_processing_job
+    from app.modules.submissions.processing import list_visible_jobs, serialize_processing_jobs
 
     event = get_current_event(db)
-    return [
-        serialize_processing_job(db, job)
-        for job in list_visible_jobs(db, event_id=event.id, include_all_users=True)
-    ]
+    return serialize_processing_jobs(db, list_visible_jobs(db, event_id=event.id, include_all_users=True))
 
 
 @admin_router.delete("/upload-intents/{intent_id}", status_code=204)

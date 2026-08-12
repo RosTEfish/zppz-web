@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -107,19 +107,25 @@ function SubmissionPageContent() {
     [processingJobs.setData],
   );
   const uploadDialog = useSubmissionUploadDialog(handleQueued);
-  const hasActiveJobs =
-    processingJobs.data?.some((job) => job.status === "queued" || job.status === "processing") ?? false;
+  const activeJobIds = useMemo(
+    () =>
+      new Set(
+        (processingJobs.data ?? [])
+          .filter((job) => job.status === "queued" || job.status === "processing")
+          .map((job) => job.id),
+      ),
+    [processingJobs.data],
+  );
+  const hasActiveJobs = activeJobIds.size > 0;
 
+  // Poll only the job list while work is in flight; the targets/submissions/availability
+  // views only change when a job actually finishes, so refreshing them here every 3s was
+  // wasted work (and re-rendered the whole grid).
   useEffect(() => {
     if (!hasActiveJobs) return;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
-      void Promise.all([
-        processingJobs.reload(),
-        targets.reload(),
-        submissions.reload(),
-        refreshGuessAvailability().catch(() => undefined),
-      ]);
+      void processingJobs.reload();
     };
     const timer = window.setInterval(refresh, 3000);
     document.addEventListener("visibilitychange", refresh);
@@ -127,13 +133,20 @@ function SubmissionPageContent() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [
-    hasActiveJobs,
-    processingJobs.reload,
-    refreshGuessAvailability,
-    submissions.reload,
-    targets.reload,
-  ]);
+  }, [hasActiveJobs, processingJobs.reload]);
+
+  // When any job transitions from active to terminal, refresh the data that depends on it.
+  const previousActiveJobIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const finished = [...previousActiveJobIds.current].filter((id) => !activeJobIds.has(id));
+    previousActiveJobIds.current = activeJobIds;
+    if (finished.length === 0) return;
+    void Promise.all([
+      targets.reload(),
+      submissions.reload(),
+      refreshGuessAvailability().catch(() => undefined),
+    ]);
+  }, [activeJobIds, targets.reload, submissions.reload, refreshGuessAvailability]);
 
   if (user?.identity !== "participant") {
     return (

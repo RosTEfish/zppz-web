@@ -17,18 +17,14 @@ import { songSchema, type SongFormValues } from "../forms/schemas";
 
 export default function SongPoolPage() {
   const songs = useApiResource(queryKeys.songs.mine, api.mySongs);
-  const emptySongForm: SongFormValues = { song_name: "", artist: "", remark: "" };
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<SongFormValues>({ resolver: zodResolver(songSchema), defaultValues: emptySongForm });
   const [editing, setEditing] = useState<SongRead | null>(null);
   const confirm = useConfirm();
-  const { enqueueSnackbar } = useSnackbar();
   const [error, setError] = useState("");
   const [incompleteOpen, setIncompleteOpen] = useState(false);
   const shownIncomplete = useRef(false);
   const wasComplete = useRef(false);
   const { event } = useConfig();
   const { user } = useAuth();
-  const banCheck = useBanCheck(watch("song_name"), watch("artist"));
   const isGuest = user?.identity === "guest";
   const limit = isGuest ? 0 : user?.identity === "participant" ? event?.settings.participant_song_limit : event?.settings.audience_song_limit;
   const songCount = songs.data?.length ?? 0;
@@ -47,20 +43,6 @@ export default function SongPoolPage() {
     }
   }, [limit, songCount, songs.data]);
 
-  const createSong = handleSubmit(async (form) => {
-    setError("");
-    if (!canSubmitWithBanCheck(banCheck)) {
-      setError(banCheck.result?.status === "exact" ? "该曲目已命中往届 Ban 曲，不能加入曲池" : "请等待查重完成，并确认疑似结果后再保存");
-      return;
-    }
-    try {
-      await api.createSong({ ...form, acknowledge_ban_warning: banCheck.acknowledged });
-      reset(emptySongForm);
-      enqueueSnackbar("曲目已加入曲池", { variant: "success" });
-      await songs.reload();
-    } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); }
-  });
-
   async function remove(song: SongRead) {
     const result = await confirm({ title: "删除曲目", description: `确认删除《${song.song_name}》？此操作不可撤销。`, confirmationButtonProps: { color: "error" } });
     if (!result.confirmed) return;
@@ -72,17 +54,7 @@ export default function SongPoolPage() {
       <PageHeader icon={Music2} title="我的曲池" meta={isGuest ? "访客身份不参与投曲" : `${songs.data?.length ?? 0} / ${limit ?? "-"} 首`} />
       {isGuest ? <Alert severity="info">访客可以正常浏览赛事和参与开放的互动，但不需要向曲池投曲，也不会参与曲目抽取。</Alert> : null}
       {incomplete ? <Alert severity="warning">曲池尚未投满，还需提交 {Math.max((limit ?? 0) - songCount, 0)} 首曲目后才能进入抽签阶段。</Alert> : null}
-      {!isGuest ? <Paper component="form" onSubmit={createSong} variant="outlined" sx={{ p: 2 }}>
-        <Stack spacing={1.5}>
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1.4fr 2fr auto" }, gap: 1.5, alignItems: "center" }}>
-          <TextField size="small" label="曲名" {...register("song_name")} error={Boolean(errors.song_name)} helperText={errors.song_name?.message} />
-          <TextField size="small" label="曲师" {...register("artist")} error={Boolean(errors.artist)} helperText={errors.artist?.message} />
-          <TextField size="small" label="备注" {...register("remark")} error={Boolean(errors.remark)} helperText={errors.remark?.message} />
-          <Button type="submit" variant="contained" disabled={isSubmitting || !canSubmitWithBanCheck(banCheck)} startIcon={<Plus size={17} />}>添加</Button>
-        </Box>
-        <BanCheckPanel state={banCheck} />
-        </Stack>
-      </Paper> : null}
+      {!isGuest ? <AddSongForm onAdded={() => songs.reload()} /> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
       <BanSearchPanel />
       <ResourceState loading={songs.loading} error={songs.error} empty={!songs.data?.length ? "暂无曲目" : undefined} />
@@ -94,6 +66,44 @@ export default function SongPoolPage() {
         <DialogActions><Button variant="contained" onClick={() => setIncompleteOpen(false)}>继续投曲</Button></DialogActions>
       </Dialog>
     </Stack>
+  );
+}
+
+
+function AddSongForm({ onAdded }: { onAdded: () => Promise<unknown> }) {
+  const { enqueueSnackbar } = useSnackbar();
+  const emptySongForm: SongFormValues = { song_name: "", artist: "", remark: "" };
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<SongFormValues>({ resolver: zodResolver(songSchema), defaultValues: emptySongForm });
+  const [error, setError] = useState("");
+  const banCheck = useBanCheck(watch("song_name"), watch("artist"));
+
+  const createSong = handleSubmit(async (form) => {
+    setError("");
+    if (!canSubmitWithBanCheck(banCheck)) {
+      setError(banCheck.result?.status === "exact" ? "该曲目已命中往届 Ban 曲，不能加入曲池" : "请等待查重完成，并确认疑似结果后再保存");
+      return;
+    }
+    try {
+      await api.createSong({ ...form, acknowledge_ban_warning: banCheck.acknowledged });
+      reset(emptySongForm);
+      enqueueSnackbar("曲目已加入曲池", { variant: "success" });
+      await onAdded();
+    } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); }
+  });
+
+  return (
+    <Paper component="form" onSubmit={createSong} variant="outlined" sx={{ p: 2 }}>
+      <Stack spacing={1.5}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1.4fr 2fr auto" }, gap: 1.5, alignItems: "center" }}>
+          <TextField size="small" label="曲名" {...register("song_name")} error={Boolean(errors.song_name)} helperText={errors.song_name?.message} />
+          <TextField size="small" label="曲师" {...register("artist")} error={Boolean(errors.artist)} helperText={errors.artist?.message} />
+          <TextField size="small" label="备注" {...register("remark")} error={Boolean(errors.remark)} helperText={errors.remark?.message} />
+          <Button type="submit" variant="contained" disabled={isSubmitting || !canSubmitWithBanCheck(banCheck)} startIcon={<Plus size={17} />}>添加</Button>
+        </Box>
+        <BanCheckPanel state={banCheck} />
+        {error ? <Alert severity="error">{error}</Alert> : null}
+      </Stack>
+    </Paper>
   );
 }
 

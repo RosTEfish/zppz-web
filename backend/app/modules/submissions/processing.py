@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import SessionLocal
 from app.models import (
@@ -24,7 +24,7 @@ from app.models import (
     User,
 )
 from app.modules.banlist.service import enforce_song_allowed
-from app.modules.common import serialize_submissions
+from app.modules.common import serialize_submission
 from app.modules.downloads import content_disposition
 from app.modules.guess_game.importer import (
     ArchiveParseError,
@@ -110,35 +110,83 @@ def _record_stage(
     db.commit()
 
 
-def _job_submission(db: Session, job: SubmissionProcessingJob) -> dict | None:
-    if not job.result_submission_id:
-        return None
-    row = db.get(Submission, job.result_submission_id)
-    if not row:
-        return None
-    return serialize_submissions(db, [row])[0]
+def serialize_processing_jobs(db: Session, jobs: list[SubmissionProcessingJob]) -> list[dict]:
+    """Serialize a batch of jobs with a constant number of queries.
+
+    The per-job payload touches the upload intent, the result submission (plus its
+    source_song/user/roles) and the submission's PreviewBundle. Preloading all of those
+    in three IN-batched queries keeps the active-job poll (which runs every 3s) from
+    degrading to O(jobs) round trips.
+    """
+    jobs = list(jobs)
+    if not jobs:
+        return []
+    intent_ids = {job.upload_intent_id for job in jobs if job.upload_intent_id}
+    submission_ids = {job.result_submission_id for job in jobs if job.result_submission_id}
+    intents = (
+        {item.id: item for item in db.scalars(
+            select(SubmissionUploadIntent).where(SubmissionUploadIntent.id.in_(intent_ids))
+        ).all()}
+        if intent_ids
+        else {}
+    )
+    submissions = (
+        list(
+            db.scalars(
+                select(Submission)
+                .options(
+                    selectinload(Submission.user).selectinload(User.roles),
+                    selectinload(Submission.source_song).selectinload(Song.submitter).selectinload(User.roles),
+                )
+                .where(Submission.id.in_(submission_ids))
+            ).all()
+        )
+        if submission_ids
+        else []
+    )
+    submissions_by_id = {item.id: item for item in submissions}
+    previews = (
+        {
+            item.source_id: item
+            for item in db.scalars(
+                select(PreviewBundle).where(
+                    PreviewBundle.source_type == "submission",
+                    PreviewBundle.source_id.in_(submission_ids),
+                )
+            ).all()
+        }
+        if submission_ids
+        else {}
+    )
+
+    payloads: list[dict] = []
+    for job in jobs:
+        intent = intents.get(job.upload_intent_id) if job.upload_intent_id else None
+        submission = submissions_by_id.get(job.result_submission_id) if job.result_submission_id else None
+        preview_bundle = previews.get(job.result_submission_id) if job.result_submission_id else None
+        submission_payload = serialize_submission(submission, preview_bundle) if submission else None
+        file_name = intent.file_name if intent else (submission_payload or {}).get("file_name", "投稿资源")
+        file_size = intent.file_size if intent else int((submission_payload or {}).get("file_size", 0))
+        message = job.error_message if job.status == "failed" else STAGE_MESSAGES.get(job.stage, "后台处理中")
+        payloads.append({
+            "id": job.id,
+            "intent_id": job.upload_intent_id,
+            "status": job.status,
+            "stage": job.stage,
+            "message": message,
+            "file_name": file_name,
+            "file_size": file_size,
+            "source_song_id": job.source_song_id,
+            "replace_submission_id": job.replace_submission_id,
+            "submission": submission_payload,
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+        })
+    return payloads
 
 
 def serialize_processing_job(db: Session, job: SubmissionProcessingJob) -> dict:
-    intent = db.get(SubmissionUploadIntent, job.upload_intent_id) if job.upload_intent_id else None
-    submission = _job_submission(db, job)
-    file_name = intent.file_name if intent else (submission or {}).get("file_name", "投稿资源")
-    file_size = intent.file_size if intent else int((submission or {}).get("file_size", 0))
-    message = job.error_message if job.status == "failed" else STAGE_MESSAGES.get(job.stage, "后台处理中")
-    return {
-        "id": job.id,
-        "intent_id": job.upload_intent_id,
-        "status": job.status,
-        "stage": job.stage,
-        "message": message,
-        "file_name": file_name,
-        "file_size": file_size,
-        "source_song_id": job.source_song_id,
-        "replace_submission_id": job.replace_submission_id,
-        "submission": submission,
-        "created_at": job.created_at,
-        "updated_at": job.updated_at,
-    }
+    return serialize_processing_jobs(db, [job])[0]
 
 
 def enqueue_upload_job(db: Session, intent: SubmissionUploadIntent) -> SubmissionProcessingJob:

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
-from app.core.cache import set_public_api_cache
+from app.core.cache import ANONYMOUS_BOOTSTRAP_CACHE_CONTROL, set_public_api_cache
 from app.core.security import get_current_user, get_optional_user, require_role, user_payload
 from app.db.session import get_db
 from app.models import (
@@ -269,14 +269,22 @@ def chart_cover(chart_id: int, db: Session = Depends(get_db)):
     file = get_settings().assets_dir / "guess-covers" / file_name
     if not file_name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
         raise HTTPException(status_code=404, detail="谱面封面不存在")
+    # Cover URLs are uuid-content-addressed and versioned with ?v=<uuid-stem>, so a
+    # replacement chart cover gets a brand-new URL and this response can be cached
+    # indefinitely by the browser and any shared edge cache (e.g. Cloudflare).
     return FileResponse(
         file,
-        headers={"Cache-Control": "public, max-age=300", "Content-Encoding": "identity"},
+        headers={"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"},
     )
 
 
 @router.get("/charts", response_model=list[PublicGuessChartRead])
-def charts(user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> list[dict]:
+def charts(response: Response, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> list[dict]:
+    # Anonymous viewers all see the same phase-consistent payload (my_votes stays empty),
+    # so a shared edge cache (Cloudflare) can serve it briefly. Logged-in payloads embed
+    # the caller's own votes, so they must never be shared.
+    response.headers["Vary"] = "Cookie"
+    response.headers["Cache-Control"] = "private, no-store" if user else ANONYMOUS_BOOTSTRAP_CACHE_CONTROL
     event = get_current_event(db)
     phase_status = get_phase_status(db, event)
     rows = [
@@ -288,7 +296,9 @@ def charts(user: User | None = Depends(get_optional_user), db: Session = Depends
 
 
 @router.get("/charts/{chart_id}", response_model=PublicGuessChartRead)
-def chart_detail(chart_id: int, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> dict:
+def chart_detail(chart_id: int, response: Response, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)) -> dict:
+    # This GET mutates the play counter, so it must never be cached or replayed.
+    response.headers["Cache-Control"] = "private, no-store"
     event = get_current_event(db)
     chart = _visible_chart(db, event, chart_id)
     if not chart:

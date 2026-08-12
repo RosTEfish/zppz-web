@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, IconButton, InputLabel, MenuItem, Paper, Select, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import { Alert, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography } from "@mui/material";
 import { Pencil, Save, Trash2 } from "lucide-react";
-import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
-import { dataGridZhCN } from "./dataGridLocale";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { SongPayload, SongRead } from "../api/v1";
@@ -16,21 +14,84 @@ const EMPTY_SONG_FORM: SongFormValues = { song_name: "", artist: "", remark: "" 
 
 export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, selectedIds, onToggleSelection, onToggleAll }: { songs: SongRead[]; onEdit?: (song: SongRead) => void; onDelete?: (song: SongRead) => void; showSubmitter?: boolean; selectedIds?: ReadonlySet<number>; onToggleSelection?: (songId: number) => void; onToggleAll?: (checked: boolean) => void }) {
   const selectionEnabled = Boolean(onToggleSelection && onToggleAll);
-  const columns: GridColDef<SongRead>[] = [
-    { field: "song_name", headerName: "曲目", minWidth: 180, flex: 1, renderCell: ({ row }) => <Stack sx={{ justifyContent: "center", height: "100%" }}><Typography variant="body2" sx={{ fontWeight: 650 }}>{row.song_name}</Typography><Typography variant="caption" color="text.secondary">#{row.id}</Typography></Stack> },
-    { field: "artist", headerName: "曲师", minWidth: 140, flex: 0.7 },
-    { field: "song_type", headerName: "分类", width: 90, renderCell: ({ value }) => <Chip size="small" label={value} /> },
-    ...(showSubmitter ? [{ field: "submitter", headerName: "投稿人", minWidth: 130, flex: 0.6, valueGetter: (_value, row) => row.submitter?.display_name || row.submitter?.user_code || "-" } satisfies GridColDef<SongRead>] : []),
-    { field: "remark", headerName: "备注", minWidth: 180, flex: 1, valueGetter: (value) => value || "-" },
-    ...((onEdit || onDelete) ? [{ field: "actions", headerName: "操作", width: 112, sortable: false, filterable: false, renderCell: ({ row }) => <>{onEdit ? <Tooltip title="编辑"><IconButton size="small" aria-label={`编辑 ${row.song_name}`} onClick={() => onEdit(row)}><Pencil size={16} /></IconButton></Tooltip> : null}{onDelete ? <Tooltip title="删除"><IconButton size="small" aria-label={`删除 ${row.song_name}`} color="error" onClick={() => onDelete(row)}><Trash2 size={16} /></IconButton></Tooltip> : null}</> } satisfies GridColDef<SongRead>] : []),
-  ];
-  const rowSelectionModel: GridRowSelectionModel = { type: "include", ids: new Set(selectedIds ?? []) };
-  function updateSelection(model: GridRowSelectionModel) {
-    const next = model.type === "include" ? new Set(model.ids) : new Set(songs.map((song) => song.id).filter((id) => !model.ids.has(id)));
-    if (next.size === 0 || next.size === songs.length) { onToggleAll?.(next.size === songs.length); return; }
-    for (const song of songs) if (next.has(song.id) !== Boolean(selectedIds?.has(song.id))) onToggleSelection?.(song.id);
-  }
-  return <Paper variant="outlined" sx={{ height: Math.min(650, 112 + songs.length * 52), minHeight: 260 }}><DataGrid rows={songs} columns={columns} getRowId={(row) => row.id} checkboxSelection={selectionEnabled} disableRowSelectionOnClick rowSelectionModel={selectionEnabled ? rowSelectionModel : undefined} onRowSelectionModelChange={selectionEnabled ? updateSelection : undefined} initialState={{ pagination: { paginationModel: { pageSize: 25, page: 0 } } }} pageSizeOptions={[25, 50, 100]} localeText={dataGridZhCN} sx={{ border: 0 }} /></Paper>;
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const pageCount = Math.max(1, Math.ceil(songs.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const rows = songs.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const allSelected = songs.length > 0 && selectedIds?.size === songs.length;
+  const someSelected = Boolean(selectedIds?.size) && !allSelected;
+
+  return (
+    <Paper variant="outlined">
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              {selectionEnabled ? (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={someSelected}
+                    checked={allSelected}
+                    onChange={() => onToggleAll?.(!allSelected)}
+                    slotProps={{ input: { "aria-label": "全选曲目" } }}
+                  />
+                </TableCell>
+              ) : null}
+              <TableCell>曲目</TableCell>
+              <TableCell>曲师</TableCell>
+              <TableCell>分类</TableCell>
+              {showSubmitter ? <TableCell>投稿人</TableCell> : null}
+              <TableCell>备注</TableCell>
+              {(onEdit || onDelete) ? <TableCell align="right">操作</TableCell> : null}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((song) => (
+              <TableRow key={song.id} hover>
+                {selectionEnabled ? (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={Boolean(selectedIds?.has(song.id))}
+                      onChange={() => onToggleSelection?.(song.id)}
+                      slotProps={{ input: { "aria-label": `选择 ${song.song_name}` } }}
+                    />
+                  </TableCell>
+                ) : null}
+                <TableCell>
+                  <Typography variant="body2" sx={{ fontWeight: 650 }}>{song.song_name}</Typography>
+                  <Typography variant="caption" color="text.secondary">#{song.id}</Typography>
+                </TableCell>
+                <TableCell>{song.artist}</TableCell>
+                <TableCell><Chip size="small" label={song.song_type} /></TableCell>
+                {showSubmitter ? <TableCell>{song.submitter?.display_name || song.submitter?.user_code || "-"}</TableCell> : null}
+                <TableCell>{song.remark || "-"}</TableCell>
+                {(onEdit || onDelete) ? (
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                    {onEdit ? <Tooltip title="编辑"><IconButton size="small" aria-label={`编辑 ${song.song_name}`} onClick={() => onEdit(song)}><Pencil size={16} /></IconButton></Tooltip> : null}
+                    {onDelete ? <Tooltip title="删除"><IconButton size="small" aria-label={`删除 ${song.song_name}`} color="error" onClick={() => onDelete(song)}><Trash2 size={16} /></IconButton></Tooltip> : null}
+                  </TableCell>
+                ) : null}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      {songs.length > pageSize ? (
+        <TablePagination
+          component="div"
+          count={songs.length}
+          page={safePage}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          rowsPerPage={pageSize}
+          onRowsPerPageChange={(event) => { setPageSize(parseInt(event.target.value, 10)); setPage(0); }}
+          rowsPerPageOptions={[25, 50, 100]}
+          labelRowsPerPage="每页行数"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} / 共 ${count}`}
+        />
+      ) : null}
+    </Paper>
+  );
 }
 
 

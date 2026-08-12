@@ -39,13 +39,13 @@ for (const file of javascriptFiles) {
   }
 }
 
-const routeChunks = await Promise.all(
+const chunkReport = await Promise.all(
   Object.entries(manifest)
-    .filter(([source, item]) => source.includes("src/pages/") && item.file?.endsWith(".js"))
+    .filter(([, item]) => item.file?.endsWith(".js") && !item.isEntry)
     .map(async ([source, item]) => ({ source, ...(await sizeOf(item.file)) })),
 );
-routeChunks.sort((left, right) => right.bytes - left.bytes);
-console.log("Route chunk report (raw / gzip):");
-for (const chunk of routeChunks) {
+chunkReport.sort((left, right) => right.bytes - left.bytes);
+console.log("JavaScript chunk report (raw / gzip):");
+for (const chunk of chunkReport) {
   console.log(`  ${chunk.source}: ${format(chunk.bytes)} / ${format(chunk.gzipBytes)}`);
 }
