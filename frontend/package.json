@@ -2,6 +2,13 @@
   "name": "zppz-web-frontend",
   "private": true,
   "version": "0.0.0",
+  "description": "ZPPZ Arena 前端 —— 音乐谱面赛事投稿、抽曲、猜谱与互动平台（React + Vite + TypeScript）。",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RosTEfish/zppz-web.git"
+  },
+  "author": "RosTEfish",
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader runner --port=3000 --host=0.0.0.0",

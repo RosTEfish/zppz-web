@@ -1,9 +1,27 @@
+import logging
 from functools import lru_cache
 from pathlib import Path
 import os
 
+# Load the local `.env` file (if any) before reading settings so that a
+# contributor can `cp .env.example .env` and run without exporting variables.
+# Environment variables already set (e.g. by systemd EnvironmentFile or CI)
+# take precedence and are never overridden.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:  # pragma: no cover - graceful when python-dotenv is missing
+    pass
+
 
 ARCHIVE_UPLOAD_EXTENSIONS = {"zip", "7z", "rar"}
+
+# Clearly non-production secret fallbacks. If a deployment is still using one of
+# these values, the operator needs to set a strong random secret explicitly.
+DEV_SECRET_DEFAULTS = {"dev-only-secret-key-do-not-use-in-production"}
+
+logger = logging.getLogger(__name__)
 
 
 def parse_allowed_extensions(value: str | None) -> set[str]:
@@ -26,8 +44,8 @@ class Settings:
     webhook_scan_interval_seconds = float(os.getenv("WEBHOOK_SCAN_INTERVAL_SECONDS", "2"))
     webhook_asset_url_ttl_seconds = int(os.getenv("WEBHOOK_ASSET_URL_TTL_SECONDS", "604800"))
     webhook_asset_retention_days = int(os.getenv("WEBHOOK_ASSET_RETENTION_DAYS", "30"))
-    secret_key = os.getenv("SECRET_KEY", "change-me-in-production")
-    webhook_signing_master_key = os.getenv("WEBHOOK_SIGNING_MASTER_KEY", secret_key).strip()
+    secret_key = os.getenv("SECRET_KEY", "").strip() or "dev-only-secret-key-do-not-use-in-production"
+    webhook_signing_master_key = os.getenv("WEBHOOK_SIGNING_MASTER_KEY", "").strip() or secret_key
     session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "zppz_session")
     session_expire_hours = int(os.getenv("SESSION_EXPIRE_HOURS", "168"))
     cors_origins = [item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:4173,http://127.0.0.1:4173").split(",") if item.strip()]
@@ -51,7 +69,9 @@ class Settings:
     configured_extensions = parse_allowed_extensions(os.getenv("ALLOWED_EXTENSIONS"))
     allowed_extensions = (configured_extensions & ARCHIVE_UPLOAD_EXTENSIONS) or ARCHIVE_UPLOAD_EXTENSIONS
     admin_seed_code = os.getenv("ADMIN_SEED_CODE", "admin")
-    admin_seed_password = os.getenv("ADMIN_SEED_PASSWORD", "change-me")
+    # Empty by default: `python -m app.prepare` only seeds a default admin
+    # account when an explicit password is provided. Never ship a known default.
+    admin_seed_password = os.getenv("ADMIN_SEED_PASSWORD", "").strip()
     secure_cookies = os.getenv("SECURE_COOKIES", "false").lower() in {"1", "true", "yes", "on"}
     ban_external_provider = os.getenv("BAN_EXTERNAL_PROVIDER", "disabled")
     ban_external_api_url = os.getenv("BAN_EXTERNAL_API_URL", "")
@@ -101,6 +121,20 @@ class Settings:
             raise RuntimeError("WEBHOOK_ASSET_URL_TTL_SECONDS must be at least 60")
         if self.webhook_asset_retention_days < 8:
             raise RuntimeError("WEBHOOK_ASSET_RETENTION_DAYS must be at least 8")
+        self.warn_if_insecure_secrets()
+
+    def warn_if_insecure_secrets(self) -> None:
+        """Warn (not fail) when signing keys fall back to known dev defaults."""
+        if self.secret_key in DEV_SECRET_DEFAULTS:
+            logger.warning(
+                "SECRET_KEY is unset or still the development default. Preview asset tokens will be "
+                "signed with a publicly-known key. Set a strong random SECRET_KEY for any non-local deployment."
+            )
+        if not self.webhook_signing_master_key or self.webhook_signing_master_key == self.secret_key:
+            logger.warning(
+                "WEBHOOK_SIGNING_MASTER_KEY is unset (falling back to SECRET_KEY). Generate an independent "
+                "high-entropy value for production webhook signature verification."
+            )
 
 
 @lru_cache

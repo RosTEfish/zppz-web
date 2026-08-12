@@ -37,11 +37,21 @@ dist/
 .npm-cache/
 .pnpm-store/
 .yarn/
+*.tgz
+
+# Local tooling / generated analysis state
+.mcp.json
+.codegraph/
+coverage/
+*.tsbuildinfo
+.vite/
+.vite-cache/
 
 # Local editor/tooling state
 .claude/
 .vscode/
 .idea/
+.vs/
 *.swp
 *.swo
 *~

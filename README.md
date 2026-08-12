@@ -20,13 +20,31 @@ npm run dev
 
 ## 本地后端
 
+后端会在启动时自动加载当前目录下的 `.env` 文件（python-dotenv）。先复制示例并填写本机所需的值：
+
 ```bash
 cd backend
 python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-python -m app.prepare
+cp ../.env.example .env        # 修改其中的 SECRET_KEY、ADMIN_SEED_PASSWORD 等
+python -m app.prepare          # 仅当设置了 ADMIN_SEED_PASSWORD 时才会创建默认管理员
 uvicorn app.main:app --reload --port 8000
+```
+
+> `python -m app.prepare` 用于建库/迁移并导入初始数据。默认管理员（`ADMIN_SEED_CODE`，默认 `admin`）只在设置 `ADMIN_SEED_PASSWORD` 后才会被创建；本地开发没有管理员账号时，设置该变量后重新执行一次即可。
+
+## 测试
+
+```bash
+# 后端
+cd backend && pip install -r requirements-dev.txt && python -m pytest
+
+# 前端（单测 + 预览播放器桥接测试）
+cd frontend && npm install && npm test
+
+# 前端静态检查与构建
+cd frontend && npm run lint && npm run build
 ```
 
 ## Docker Compose
@@ -45,8 +63,14 @@ docker compose up --build
 
 生产部署要求在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
 
-- Variables：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`，以及可选的 `OWNER_USER_CODE`、`PUBLIC_BASE_URL`。
-- Secrets：`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`WEBHOOK_SIGNING_MASTER_KEY`（独立生成的高强度随机值）。
+- **必填 Variables**：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`。
+- **必填 Secrets**：`DEPLOY_HOST`（服务器地址或 IP，不带协议和 `user@`）、`DEPLOY_USER`（SSH 登录用户名）、`DEPLOY_SSH_KEY`（SSH 私钥）、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`WEBHOOK_SIGNING_MASTER_KEY`（独立生成的高强度随机值）。
+- **可选**：Variables `OWNER_USER_CODE`、`PUBLIC_BASE_URL`、`PREVIEW_ENABLED`、`PREVIEW_PUBLIC_BUCKET_NAME`、`PREVIEW_PLAYER_ORIGIN`、`DEPLOY_PATH`、`DEPLOY_PORT`、`KEEP_RELEASES`；Secrets `PREVIEW_PUBLIC_ACCESS_KEY_ID`、`PREVIEW_PUBLIC_SECRET_ACCESS_KEY`（`PREVIEW_ENABLED=true` 时必填）、`SECRET_KEY`、`ADMIN_SEED_PASSWORD`。
+
+说明：
+
+- `SECRET_KEY`、`ADMIN_SEED_PASSWORD` 为可选项。首次部署时服务器会为 `SECRET_KEY` 自动生成随机值；设置了 `ADMIN_SEED_PASSWORD` 时，`python -m app.prepare` 会创建默认管理员账号。**强烈建议**配置 `SECRET_KEY` 为固定随机值，避免每次重建服务器时密钥漂移。
+- `PREVIEW_ENABLED=true` 时，流水线会要求 `PREVIEW_PUBLIC_BUCKET_NAME`、`PREVIEW_PLAYER_ORIGIN`、`PREVIEW_PUBLIC_ACCESS_KEY_ID`、`PREVIEW_PUBLIC_SECRET_ACCESS_KEY`，并把公开预览播放器发布到 R2。
 
 `SERVER_PIP_INDEX_URL` 建议设为 `https://pypi.tuna.tsinghua.edu.cn/simple`。远程服务器升级 pip 和安装依赖时会先使用该镜像；失败后自动完整重试官方 `https://pypi.org/simple`。GitHub Actions 自身的验证仍使用官方 PyPI 和 npm 源。
 
@@ -77,3 +101,17 @@ set +a
 ### 反向代理下载配置
 
 批量投稿下载使用流式 ZIP，并通过 `X-Accel-Buffering: no` 禁止 Nginx 等待完整响应。生产环境的外部反向代理需要保留该响应头，且不能为下载接口强制开启响应缓冲。仓库内的 Docker Nginx 仅对下载路径关闭代理缓冲；普通 JSON API 保持缓冲，带哈希的前端资源使用长期缓存。
+
+## 开源许可证与赛事资源
+
+本项目代码以 **MIT 许可证** 开源，详见 [LICENSE](LICENSE)。
+
+**例外**：`bg/`（背景图）、`ruleDetail/`（规则 PDF）、`banlist/`（Ban 曲列表）以及 `frontend/src/assets/beian.png`（备案图标）为赛事运营资源，**不在 MIT 许可范围内**，版权归各自权利人所有，仅用于本项目运行与赛事运营，请勿另行复制、再分发或商用。这些资源属于「这谱谱这」赛事运营素材，随仓库发布以便部署时同步到站点数据目录。
+
+`preview-player/` 目录捆绑了 [MajdataView](https://github.com/TeamMajdata/MajdataView) / [MajdataNet](https://github.com/TeamMajdata/MajdataNet) 的 **GPL-3.0** WebGL 构建（见 [THIRD_PARTY_NOTICES.txt](preview-player/THIRD_PARTY_NOTICES.txt)）。该预览播放器分发物须保持 GPL-3.0 兼容；其余代码仍适用 MIT 许可证。主要依赖均为 MIT/BSD/Apache 等宽松许可证。
+
+## 社区与安全
+
+- [CONTRIBUTING.md](CONTRIBUTING.md)：贡献指南。
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)：社区行为准则。
+- [SECURITY.md](SECURITY.md)：安全漏洞上报方式。

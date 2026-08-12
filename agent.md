@@ -45,7 +45,7 @@
 - `DESIGN.md` is the current visual direction.
 - Use one interaction accent: Action Blue `#0066cc`.
 - Keep admin pages dense and operational; keep participant pages clearer and more event-facing.
-- Avoid bringing back long homepage marketing copy the user previously asked to remove.
+- Keep homepage copy concise and avoid long marketing text.
 
 ## Performance Notes
 
@@ -56,6 +56,4 @@
 
 ## Git Notes
 
-- Current cleaned baseline before the latest UI push: `7921563 Initial ZPPZ V2 release`.
-- Latest pushed UI commit observed locally: `3dd8e51 更新样式和组件，优化导航链接，调整响应式设计`.
-- Prefer `git revert` for public rollback unless the user explicitly wants remote history rewritten with `--force-with-lease`.
+- `main` is the single shared branch; prefer `git revert` for public rollback rather than rewriting published history.

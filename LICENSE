@@ -1,0 +1,53 @@
+MIT License
+
+Copyright (c) 2026 ZPPZ Web contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+赛事资源例外条款 / Event Asset Exception
+
+上述 MIT 许可证仅适用于本仓库中的程序代码（backend/、frontend/、preview-player/、
+infra/、scripts/ 中的源代码、配置与文档）。以下赛事静态资源 **不在** MIT 许可范围内，
+其版权归各自权利人所有，仅供本项目部署与赛事运营使用，未经权利人许可不得另行复制、
+再分发或用于商业用途：
+
+- bg/           背景宣传图等赛事视觉素材
+- ruleDetail/   赛事规则说明文档（PDF）
+- banlist/      正赛曲目（Ban 曲）列表工作簿（xlsx）
+- frontend/src/assets/beian.png  ICP/公安备案图标（监管备案标识，仅用于站点页脚展示）
+
+若需以 MIT 许可证之外的条款使用上述资源，请联系资源权利人获取授权。
+
+The MIT license above applies only to the program code in this repository
+(source, configuration and documentation under backend/, frontend/,
+preview-player/, infra/ and scripts/). The following event assets are NOT
+covered by the MIT license. They are the property of their respective rights
+holders and are included solely for operating this project and its events;
+they may not be copied, redistributed or used commercially without permission:
+
+- bg/           Event background artwork
+- ruleDetail/   Event rulebook documents (PDF)
+- banlist/      Main-stage banned-chart workbook (xlsx)
+- frontend/src/assets/beian.png   ICP / Public Security filing badge (regulatory
+  identifier shown in the site footer only)
+
+For any use of these assets outside the MIT license terms, contact the rights
+holders for authorization.

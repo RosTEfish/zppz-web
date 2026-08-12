@@ -200,6 +200,8 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           WEBHOOK_SIGNING_MASTER_KEY: ${{ secrets.WEBHOOK_SIGNING_MASTER_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_SEED_PASSWORD: ${{ secrets.ADMIN_SEED_PASSWORD }}
         run: |
           set -euo pipefail
           umask 077
@@ -223,6 +225,8 @@ jobs:
             printf '%s\n' 'WEBHOOK_SCAN_INTERVAL_SECONDS=2'
             printf '%s\n' 'WEBHOOK_ASSET_URL_TTL_SECONDS=604800'
             printf '%s\n' 'WEBHOOK_ASSET_RETENTION_DAYS=30'
+            printf 'SECRET_KEY=%s\n' "$SECRET_KEY"
+            printf 'ADMIN_SEED_PASSWORD=%s\n' "$ADMIN_SEED_PASSWORD"
           } > "$storage_config_path"
           echo "STORAGE_CONFIG_PATH=$storage_config_path" >> "$GITHUB_ENV"
 

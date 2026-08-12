@@ -22,11 +22,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
       DATA_DIR: /data
-      SECRET_KEY: change-me-in-production
-      WEBHOOK_SIGNING_MASTER_KEY: change-me-webhook-signing-key
+      SECRET_KEY: ${SECRET_KEY:-zppz-local-dev-key-change-me}
+      WEBHOOK_SIGNING_MASTER_KEY: ${WEBHOOK_SIGNING_MASTER_KEY:-zppz-local-dev-webhook-key-change-me}
       PUBLIC_BASE_URL: http://localhost:8080
       ADMIN_SEED_CODE: admin
-      ADMIN_SEED_PASSWORD: change-me-please
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-zppz-local-admin}
       CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000
       SECURE_COOKIES: "false"
       WEB_CONCURRENCY: "2"
@@ -56,11 +56,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
       DATA_DIR: /data
-      SECRET_KEY: change-me-in-production
-      WEBHOOK_SIGNING_MASTER_KEY: change-me-webhook-signing-key
+      SECRET_KEY: ${SECRET_KEY:-zppz-local-dev-key-change-me}
+      WEBHOOK_SIGNING_MASTER_KEY: ${WEBHOOK_SIGNING_MASTER_KEY:-zppz-local-dev-webhook-key-change-me}
       PUBLIC_BASE_URL: http://localhost:8080
       ADMIN_SEED_CODE: admin
-      ADMIN_SEED_PASSWORD: change-me-please
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-zppz-local-admin}
       OBJECT_STORAGE_BACKEND: local
       DB_POOL_SIZE: "2"
       DB_MAX_OVERFLOW: "1"
@@ -83,8 +83,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
       DATA_DIR: /data
-      SECRET_KEY: change-me-in-production
-      WEBHOOK_SIGNING_MASTER_KEY: change-me-webhook-signing-key
+      SECRET_KEY: ${SECRET_KEY:-zppz-local-dev-key-change-me}
+      WEBHOOK_SIGNING_MASTER_KEY: ${WEBHOOK_SIGNING_MASTER_KEY:-zppz-local-dev-webhook-key-change-me}
       PUBLIC_BASE_URL: http://localhost:8080
       OBJECT_STORAGE_BACKEND: local
       DB_POOL_SIZE: "2"

@@ -152,14 +152,21 @@ fi
 
 if [ ! -f "$env_file" ]; then
   umask 077
+  # First provision: generate a strong random signing key instead of shipping a
+  # known default. Deployers may pass their own via SECRET_KEY.
+  if [ -z "${SECRET_KEY:-}" ]; then
+    SECRET_KEY="$(openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' </dev/urandom | head -c 64)"
+  fi
   cat > "$env_file" <<EOF
 # Loaded by systemd. Fill production values on the server.
-SECRET_KEY=
+SECRET_KEY=$SECRET_KEY
 PORT=$APP_PORT
 DATABASE_URL=sqlite:///$app_dir/data/zppz_v2.db
 DATA_DIR=$app_dir/data
 ADMIN_SEED_CODE=admin
-ADMIN_SEED_PASSWORD=change-me-please
+# Leave empty unless an admin account should be seeded on first prepare.
+# Provide ADMIN_SEED_PASSWORD (e.g. from a GitHub secret) to seed one.
+ADMIN_SEED_PASSWORD=${ADMIN_SEED_PASSWORD:-}
 MAX_UPLOAD_MB=100
 ALLOWED_EXTENSIONS=zip,7z,rar
 WEB_CONCURRENCY=$WEB_CONCURRENCY
@@ -192,8 +199,9 @@ cp "$env_file" "$merge_env_file"
 storage_config_error=""
 while IFS='=' read -r name value; do
   [ -n "$name" ] || continue
+  [ -n "$value" ] || continue
   case "$name" in
-    OBJECT_STORAGE_BACKEND|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY|R2_UPLOAD_URL_TTL_SECONDS|R2_DOWNLOAD_URL_TTL_SECONDS|UPLOAD_INTENT_TTL_SECONDS|PREVIEW_ENABLED|PREVIEW_PLAYER_URL|PREVIEW_PLAYER_ORIGIN|PREVIEW_URL_TTL_SECONDS|PREVIEW_BACKFILL_POLL_SECONDS|WEBHOOK_SIGNING_MASTER_KEY|PUBLIC_BASE_URL|WEBHOOK_SCAN_INTERVAL_SECONDS|WEBHOOK_ASSET_URL_TTL_SECONDS|WEBHOOK_ASSET_RETENTION_DAYS)
+    OBJECT_STORAGE_BACKEND|R2_ACCOUNT_ID|R2_BUCKET_NAME|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY|R2_UPLOAD_URL_TTL_SECONDS|R2_DOWNLOAD_URL_TTL_SECONDS|UPLOAD_INTENT_TTL_SECONDS|PREVIEW_ENABLED|PREVIEW_PLAYER_URL|PREVIEW_PLAYER_ORIGIN|PREVIEW_URL_TTL_SECONDS|PREVIEW_BACKFILL_POLL_SECONDS|WEBHOOK_SIGNING_MASTER_KEY|PUBLIC_BASE_URL|WEBHOOK_SCAN_INTERVAL_SECONDS|WEBHOOK_ASSET_URL_TTL_SECONDS|WEBHOOK_ASSET_RETENTION_DAYS|SECRET_KEY|ADMIN_SEED_PASSWORD)
       next_env="$(mktemp "$deploy_state_dir/.env.next.XXXXXX")"
       grep -v "^${name}=" "$merge_env_file" > "$next_env" || true
       printf '%s=%s\n' "$name" "$value" >> "$next_env"

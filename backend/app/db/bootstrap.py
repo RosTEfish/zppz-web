@@ -121,16 +121,22 @@ def seed_defaults(db: Session) -> None:
 
     admin = db.scalar(select(User).where(User.user_code == settings.admin_seed_code))
     if not admin:
-        admin = User(
-            user_code=settings.admin_seed_code,
-            qq_id="0",
-            password_hash=hash_password(settings.admin_seed_password),
-            identity="participant",
-            display_name="赛事管理员",
-            roles=[roles["admin"], roles["pool_editor"], roles["participant"]],
-        )
-        db.add(admin)
-        db.commit()
+        if not settings.admin_seed_password:
+            logger.warning(
+                "ADMIN_SEED_PASSWORD is not set; skipping default admin seeding. "
+                "Set ADMIN_SEED_PASSWORD and re-run `python -m app.prepare` to create the default admin."
+            )
+        else:
+            admin = User(
+                user_code=settings.admin_seed_code,
+                qq_id="0",
+                password_hash=hash_password(settings.admin_seed_password),
+                identity="participant",
+                display_name="赛事管理员",
+                roles=[roles["admin"], roles["pool_editor"], roles["participant"]],
+            )
+            db.add(admin)
+            db.commit()
 
     sync_permissions_file(db, roles)
 

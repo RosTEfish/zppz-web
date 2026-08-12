@@ -14,12 +14,12 @@ docker compose up --build
 - API 健康检查：`http://localhost:8080/health`
 - OpenAPI：`http://localhost:8080/api/v1/openapi.json`
 
-默认管理员：
+默认管理员由环境变量控制（见 `.env.example`）：
 
-- ID：`admin`
-- 密码：`change-me-please`
+- 账号 ID：`ADMIN_SEED_CODE`，默认 `admin`
+- 密码：`ADMIN_SEED_PASSWORD`（本地/部署时显式设置；未设置时 `python -m app.prepare` 不会创建默认管理员）
 
-上线前必须修改 `SECRET_KEY` 和 `ADMIN_SEED_PASSWORD`。
+上线前必须为 `SECRET_KEY`、`WEBHOOK_SIGNING_MASTER_KEY`、`ADMIN_SEED_PASSWORD` 设置独立的高强度随机值。
 
 ## 架构
 
@@ -77,9 +77,9 @@ sudo systemctl restart zppz-web
 
 ```bash
 cd frontend
-npm.cmd run lint
-npm.cmd test
-npm.cmd run build
+npm run lint
+npm test
+npm run build
 ```
 
 后端在有 Python 的环境中执行：
