@@ -282,6 +282,7 @@ function SubmissionPageContent() {
           (processingJobs.loading && processingJobs.data === null)
         }
         error={targets.error || processingJobs.error}
+        loadingVariant="cards"
       />
       {targets.data?.targets.length ? (
         <Box

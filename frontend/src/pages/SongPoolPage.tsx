@@ -57,7 +57,7 @@ export default function SongPoolPage() {
       {!isGuest ? <AddSongForm onAdded={() => songs.reload()} /> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
       <BanSearchPanel />
-      <ResourceState loading={songs.loading} error={songs.error} empty={!songs.data?.length ? "暂无曲目" : undefined} />
+      <ResourceState loading={songs.loading} error={songs.error} empty={!songs.data?.length ? "暂无曲目" : undefined} loadingVariant="table" />
       {songs.data?.length ? <SongTable songs={songs.data} onEdit={isGuest ? undefined : setEditing} onDelete={remove} /> : null}
       <SongDialog song={editing} onClose={() => setEditing(null)} onSave={async (payload) => { if (!editing) return; await api.updateMySong(editing.id, payload); setEditing(null); await songs.reload(); }} />
       <Dialog open={incompleteOpen && incomplete} onClose={() => setIncompleteOpen(false)} fullWidth maxWidth="xs">

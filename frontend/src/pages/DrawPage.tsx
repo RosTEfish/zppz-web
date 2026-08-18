@@ -21,7 +21,7 @@ export default function DrawPage() {
         meta={user?.identity === "participant" ? `初始分配 ${event?.settings.draw_songs_per_participant ?? "-"} 首；Stage2 可继续换曲` : "当前账号不参与曲目分配"}
       />
       <Alert severity="info">曲目分配由赛事在报名结束后统一完成。此页面只展示当前有效曲目；Stage2 结束前，参赛者可以把不满意的曲目投回曲池并即时重新抽取。</Alert>
-      <ResourceState loading={draws.loading} error={draws.error} empty={!draws.data?.length ? "暂无曲目分配结果" : undefined} />
+      <ResourceState loading={draws.loading} error={draws.error} empty={!draws.data?.length ? "暂无曲目分配结果" : undefined} loadingVariant="table" />
       {draws.data?.length ? <DrawList rows={draws.data} showAssignee={false} /> : null}
       {user?.identity === "participant" ? <Stage2SwapPanel onUpdated={(next: SwapMeRead) => draws.setData(next.assignments)} /> : null}
     </Stack>
