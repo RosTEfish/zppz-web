@@ -18,9 +18,12 @@ ENV/
 .env.*
 !.env.example
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 uploads/
+backend/data/
 logs/
 *.log
 
@@ -52,6 +55,7 @@ coverage/
 .vscode/
 .idea/
 .vs/
+.omo/
 *.swp
 *.swo
 *~
