@@ -121,16 +121,16 @@ function AppShell() {
       <Divider />
       <List sx={{ px: 1, py: 1.5 }}>
         {links.map(({ label, to, icon: Icon, preload }) => (
-          <ListItemButton key={to} component={Link} to={to} selected={location.pathname === to} onPointerEnter={() => void preload()} onFocus={() => void preload()} sx={{ mb: 0.5, borderRadius: 1 }}>
+          <ListItemButton key={to} component={Link} to={to} selected={location.pathname === to} onPointerEnter={() => void preload()} onFocus={() => void preload()} sx={{ mb: 0.5, borderRadius: 1, borderLeft: "3px solid transparent", "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: "rgba(23, 107, 82, 0.08)" } }}>
             <ListItemIcon sx={{ minWidth: 38 }}><Icon size={19} /></ListItemIcon><ListItemText primary={label} />
           </ListItemButton>
         ))}
-        {(isAdmin || isPoolEditor) ? <ListItemButton component={Link} to={managerPath} selected={location.pathname.startsWith("/admin")} onPointerEnter={() => void preloadAdminPage(managerPath)} onFocus={() => void preloadAdminPage(managerPath)} sx={{ mt: 1, borderRadius: 1 }}><ListItemIcon sx={{ minWidth: 38 }}><Gauge size={19} /></ListItemIcon><ListItemText primary="管理工作台" /></ListItemButton> : null}
+        {(isAdmin || isPoolEditor) ? <ListItemButton component={Link} to={managerPath} selected={location.pathname.startsWith("/admin")} onPointerEnter={() => void preloadAdminPage(managerPath)} onFocus={() => void preloadAdminPage(managerPath)} sx={{ mt: 1, borderRadius: 1, borderLeft: "3px solid transparent", "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: "rgba(23, 107, 82, 0.08)" } }}><ListItemIcon sx={{ minWidth: 38 }}><Gauge size={19} /></ListItemIcon><ListItemText primary="管理工作台" /></ListItemButton> : null}
       </List>
       <Box sx={{ flex: 1 }} />
       <Divider />
       <Box sx={{ p: 1.5 }}>
-        {isLoggedIn ? <Stack spacing={1}><ListItemButton component={Link} to="/account" selected={location.pathname === "/account"} onPointerEnter={() => void loadAccountPage()} onFocus={() => void loadAccountPage()} sx={{ borderRadius: 1, px: 1 }}><ListItemIcon sx={{ minWidth: 34 }}><CircleUserRound size={20} /></ListItemIcon><ListItemText primary={<Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography>} secondary={<Typography variant="caption" color="text.secondary" noWrap>{identityLabel(user?.identity)} · 账号设置</Typography>} /><Settings size={16} /></ListItemButton><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
+        {isLoggedIn ? <Stack spacing={1}><ListItemButton component={Link} to="/account" selected={location.pathname === "/account"} onPointerEnter={() => void loadAccountPage()} onFocus={() => void loadAccountPage()} sx={{ borderRadius: 1, px: 1, borderLeft: "3px solid transparent", "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: "rgba(23, 107, 82, 0.08)" } }}><ListItemIcon sx={{ minWidth: 34 }}><CircleUserRound size={20} /></ListItemIcon><ListItemText primary={<Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography>} secondary={<Typography variant="caption" color="text.secondary" noWrap>{identityLabel(user?.identity)} · 账号设置</Typography>} /><Settings size={16} /></ListItemButton><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
       </Box>
     </Box>
   );
