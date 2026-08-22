@@ -15,6 +15,19 @@ export default defineConfig(() => ({
       manifest: true,
       outDir: 'dist',
       emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          // 稳定 vendor 分组：业务代码迭代时框架缓存继续命中。
+          // 注意：@mui/x-* 必须保持独立懒加载，不得并入 vendor-mui。
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'vendor-react';
+            if (/node_modules\/(@mui\/material|@mui\/system|@mui\/private-theming|@mui\/styled-engine|@mui\/utils|@emotion)\//.test(id)) return 'vendor-mui';
+            if (/node_modules\/(react-router|swr|openapi-fetch)\//.test(id)) return 'vendor-app';
+            return undefined;
+          },
+        },
+      },
     },
     test: {
       environment: 'jsdom',
