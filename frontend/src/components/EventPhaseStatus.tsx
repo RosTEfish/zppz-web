@@ -30,6 +30,14 @@ export function isGuessEnded(phases: EventPhasesRead, now?: number): boolean {
   return Boolean(guessWindow && new Date(guessWindow.ends_at).getTime() <= referenceTime);
 }
 
+export function isRegistrationClosed(phases: EventPhasesRead, now?: number): boolean {
+  if (phases.phase_mode === "manual" && phases.manual_phase === "registration") return false;
+  const registrationWindow = phases.phases.find((item) => item.phase === "registration");
+  if (!registrationWindow) return false;
+  const referenceTime = now ?? (phases.server_time ? new Date(phases.server_time).getTime() : Date.now());
+  return new Date(registrationWindow.ends_at).getTime() <= referenceTime;
+}
+
 export function phaseStatusLabel(phases: EventPhasesRead, now?: number): string {
   if (phases.active_phase) return PHASE_LABELS[phases.active_phase];
   return isGuessEnded(phases, now) ? "猜谱已截止" : "暂无进行中的阶段";
