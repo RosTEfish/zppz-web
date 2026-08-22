@@ -1,5 +1,6 @@
 import os
 from collections import Counter
+from datetime import datetime, timedelta
 import json
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
@@ -14,7 +15,7 @@ from app.db.bootstrap import seed_defaults, sync_permissions_file  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
 from app.manage import set_owner  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import DrawAssignment, Event, Role, Song, User  # noqa: E402
+from app.models import DrawAssignment, Event, EventPhase, Role, Song, User  # noqa: E402
 from app.modules.events.service import get_current_event  # noqa: E402
 
 
@@ -87,6 +88,60 @@ def test_register_login_and_me(client: TestClient):
     assert bootstrap.status_code == 200
     assert bootstrap.json()["event"]["is_current"] is True
     assert bootstrap.json()["user"]["user_code"] == "player1"
+
+
+def test_register_after_registration_deadline_is_assigned_guest(client: TestClient):
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event is not None
+        db.add(
+            EventPhase(
+                event_id=event.id,
+                phase="registration",
+                starts_at=now - timedelta(days=2),
+                ends_at=now - timedelta(days=1),
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"user_code": "late-player", "qq_id": "late-player", "password": "secret123", "identity": "participant"},
+    )
+
+    assert response.status_code == 201
+    user = response.json()["user"]
+    assert user["identity"] == "guest"
+    assert user["roles"] == ["guest"]
+
+
+def test_manual_registration_reopens_identity_choice_after_scheduled_deadline(client: TestClient):
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event is not None and event.settings is not None
+        db.add(
+            EventPhase(
+                event_id=event.id,
+                phase="registration",
+                starts_at=now - timedelta(days=2),
+                ends_at=now - timedelta(days=1),
+            )
+        )
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "registration"
+        db.commit()
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"user_code": "reopened-viewer", "qq_id": "reopened-viewer", "password": "secret123", "identity": "audience"},
+    )
+
+    assert response.status_code == 201
+    user = response.json()["user"]
+    assert user["identity"] == "audience"
+    assert user["roles"] == ["audience"]
 
 
 def test_guest_can_login_and_interact_without_joining_song_pool_or_draw(client: TestClient):

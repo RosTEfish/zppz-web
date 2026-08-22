@@ -16,7 +16,7 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.models import User, UserSession
-from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.phase_policy import get_phase_status, registration_window_closed
 from app.schemas import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest, UpdateProfileRequest
 
 
@@ -30,13 +30,14 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
     if db.scalar(select(User).where(User.user_code == payload.user_code)):
         raise HTTPException(status_code=409, detail="这个参赛 ID 已被注册")
     roles = ensure_roles(db)
+    identity = "guest" if registration_window_closed(db) else payload.identity
     user = User(
         user_code=payload.user_code.strip(),
         qq_id=payload.qq_id.strip(),
         password_hash=hash_password(payload.password),
-        identity=payload.identity,
+        identity=identity,
         display_name=payload.user_code.strip(),
-        roles=[roles[payload.identity]],
+        roles=[roles[identity]],
     )
     db.add(user)
     db.commit()

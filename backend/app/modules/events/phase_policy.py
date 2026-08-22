@@ -73,6 +73,23 @@ def _load_current_event(db: Session) -> Event | None:
     )
 
 
+def registration_window_closed(
+    db: Session,
+    event: Event | None = None,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    event = event or _load_current_event(db)
+    if event is None or event.settings is None:
+        return False
+    if event.settings.phase_mode == "manual" and event.settings.manual_phase == "registration":
+        return False
+    registration = next((row for row in event.phases if row.phase == "registration"), None)
+    if registration is None:
+        return False
+    return _utc_naive(registration.ends_at) <= _utc_naive(now or datetime.now(timezone.utc))
+
+
 def get_phase_status(
     db: Session,
     event: Event | None = None,
