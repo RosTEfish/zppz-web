@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Chip, LinearProgress, Paper, Stack, Typography } from "@mui/material";
+import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
 import { Clock3 } from "lucide-react";
 import type { EventPhaseName, EventPhasesRead } from "../api/v1";
 
@@ -85,16 +85,38 @@ export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
   const currentIndex = ordered.findIndex((item) => item.phase === phases.active_phase);
   const referenceTime = phases.server_time ? new Date(phases.server_time).getTime() : Date.now();
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, overflow: "hidden" }}>
+    <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, overflowX: "auto" }}>
       <Typography variant="overline" color="text.secondary">赛事时间轴 · 北京时间</Typography>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: `repeat(${Math.max(ordered.length, 1)}, minmax(90px, 1fr))` }, gap: 1, mt: 1 }}>
-        {ordered.map((item, index) => {
-          const active = item.phase === phases.active_phase;
-          const completed = new Date(item.ends_at).getTime() <= referenceTime;
-          const startsAt = formatPhaseDateTime(item.starts_at);
-          const endsAt = formatPhaseDateTime(item.ends_at);
-          return <Box key={item.phase} sx={{ minWidth: 0, opacity: completed && !active ? 0.56 : 1 }}><LinearProgress variant="determinate" value={active || completed || index < currentIndex ? 100 : 0} color={active ? "primary" : "inherit"} sx={{ height: active ? 5 : 3, mb: 0.75 }} /><Typography variant="caption" sx={{ display: "block", fontWeight: active ? 800 : 650 }}>{PHASE_LABELS[item.phase]}</Typography><Typography component="span" variant="caption" color="text.secondary" aria-label={`开始时间 ${startsAt}，截止时间 ${endsAt}`} sx={{ display: "block", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{startsAt} → {endsAt}</Typography></Box>;
-        })}
+      <Box sx={{ position: "relative", mt: 1.5 }}>
+        {ordered.length > 0 && <Box aria-hidden="true" sx={{ position: "absolute", top: 7, left: 7, right: 7, height: 2, bgcolor: "rgba(23, 33, 28, 0.08)", borderRadius: 1 }} />}
+        <Box sx={{ position: "relative", display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: `repeat(${Math.max(ordered.length, 1)}, minmax(96px, 1fr))` }, gap: { xs: 1.5, sm: 1 } }}>
+          {ordered.map((item, index) => {
+            const active = item.phase === phases.active_phase;
+            const completed = new Date(item.ends_at).getTime() <= referenceTime;
+            const startsAt = formatPhaseDateTime(item.starts_at);
+            const endsAt = formatPhaseDateTime(item.ends_at);
+            return (
+              <Box key={item.phase} sx={{ minWidth: 0, opacity: completed && !active ? 0.56 : 1 }}>
+                <Box
+                  aria-hidden="true"
+                  sx={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    mb: 1,
+                    ...(active
+                      ? { bgcolor: "#C9973B", boxShadow: "0 0 0 4px rgba(201, 151, 59, 0.22)" }
+                      : completed || (currentIndex > -1 && index < currentIndex)
+                        ? { bgcolor: "primary.main" }
+                        : { bgcolor: "background.paper", border: "2px solid rgba(23, 33, 28, 0.16)" }),
+                  }}
+                />
+                <Typography variant="caption" component="p" sx={{ fontWeight: active ? 800 : 650, color: active ? "primary.dark" : "text.primary" }}>{PHASE_LABELS[item.phase]}</Typography>
+                <Typography component="span" variant="caption" color="text.secondary" aria-label={`开始时间 ${startsAt}，截止时间 ${endsAt}`} sx={{ display: "block", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{startsAt} → {endsAt}</Typography>
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
     </Paper>
   );

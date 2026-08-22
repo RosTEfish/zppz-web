@@ -30,9 +30,10 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
   const nextAction = !isLoggedIn ? "登录或注册后选择参赛者、观众或访客身份" : guessEnded ? "猜谱已截止，可查看谱面与已有互动记录" : user?.identity === "participant" ? (phases?.capabilities.swap ? "在 Stage2 检查曲目、连续换曲并提交投稿" : phases?.capabilities.submission ? "上传或检查你的投稿包" : phases?.capabilities.author_guess ? "浏览普通稿并提交作者竞猜" : "关注下一阶段开放时间") : phases?.capabilities.author_guess ? "当前身份可以参与普通稿作者竞猜" : "关注赛程，猜谱阶段即可参与互动";
   return (
     <Stack spacing={3}>
-      <Paper sx={{ p: { xs: 2.5, md: 4 }, minHeight: { xs: 292, md: 246 }, borderLeft: 5, borderColor: "primary.main", position: "relative", overflow: "hidden", backgroundImage: "radial-gradient(760px 300px at 92% -25%, rgba(23,107,82,0.09), transparent 62%)" }}>
-        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
-        <Typography variant="h1" sx={{ mt: 0.5 }}>{event.name}</Typography>
+      <Paper sx={{ p: { xs: 2.5, md: 4 }, minHeight: { xs: 292, md: 246 }, borderLeft: 5, borderColor: "primary.main", position: "relative", overflow: "hidden", borderRadius: "16px", backgroundImage: "radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.13), transparent 62%), radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.11), transparent 58%)" }}>
+        <Typography variant="overline" color="primary.dark" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
+        <Box aria-hidden="true" sx={{ width: 26, height: 2.5, borderRadius: 1, bgcolor: "#C9973B", mt: 0.5, mb: 0.75 }} />
+        <Typography variant="h1" component="p" sx={{ m: 0 }}>{event.name}</Typography>
         {phases ? <Box sx={{ mt: 2 }}><PhaseHeadline phases={phases} /></Box> : null}
         {event.settings.announcement_text ? (
           <Paper variant="outlined" sx={{ mt: 1.5, p: 1.25, maxWidth: 760, color: "text.secondary", display: "flex", gap: 1, alignItems: "center", justifyContent: "space-between" }}>
@@ -46,8 +47,8 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
           {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />}>进入赛事</Button> : null}
           <Button component="a" href="/api/v1/assets/rule/view" target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<BookOpenText size={18} />}>查看规则</Button>
         </Stack>
-        <Box aria-hidden="true" sx={{ position: "absolute", right: { xs: -28, md: 24 }, bottom: { xs: -30, md: -26 }, color: "primary.main", opacity: 0.06, pointerEvents: "none", display: { xs: "none", md: "block" } }}>
-          <Music2 size={168} />
+        <Box aria-hidden="true" sx={{ position: "absolute", right: { xs: -28, md: 16 }, bottom: { xs: -30, md: -34 }, color: "#0A3B2D", opacity: 0.09, pointerEvents: "none", display: { xs: "none", md: "block" } }}>
+          <Music2 size={224} strokeWidth={1} />
         </Box>
       </Paper>
       {phases ? <PhaseTimeline phases={phases} /> : null}

@@ -38,8 +38,11 @@ export default function AuthPage() {
 
   return (
     <Box sx={{ minHeight: "calc(100vh - 130px)", display: "grid", placeItems: "center" }}>
-      <Paper component="form" onSubmit={submit} noValidate sx={{ width: "100%", maxWidth: 430, p: { xs: 2.5, sm: 4 } }}>
-        <Stack direction="row" spacing={1.5} sx={{ mb: 3, alignItems: "center" }}><KeyRound size={24} /><Typography variant="h2">赛事账号</Typography></Stack>
+      <Paper component="form" onSubmit={submit} noValidate sx={{ width: "100%", maxWidth: 430, p: { xs: 2.5, sm: 4 }, borderRadius: "16px", backgroundImage: "linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0))" }}>
+        <Stack direction="row" spacing={1.5} sx={{ mb: 3, alignItems: "center" }}>
+          <Box aria-hidden="true" sx={{ width: 42, height: 42, borderRadius: "12px", bgcolor: "primary.light", color: "primary.dark", display: "grid", placeItems: "center", flexShrink: 0 }}><KeyRound size={22} /></Box>
+          <Typography variant="h2">赛事账号</Typography>
+        </Stack>
         <Tabs value={mode} onChange={(_, value: AuthFormValues["mode"]) => { setValue("mode", value); clearErrors(); setError(""); }} variant="fullWidth" sx={{ mb: 3 }}><Tab value="login" label="登录" /><Tab value="register" label="注册" /></Tabs>
         <Stack spacing={2}>
           <TextField label="账号" {...register("user_code")} error={Boolean(errors.user_code)} helperText={errors.user_code?.message} autoComplete="username" />

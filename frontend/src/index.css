@@ -5,7 +5,7 @@
 
 html {
   min-width: 320px;
-  background: #f7f9f7;
+  background: #f7f7f4;
   scrollbar-gutter: stable;
 }
 
@@ -14,11 +14,12 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden;
-  background-color: #f7f9f7;
+  background-color: #f7f7f4;
   background-image:
-    radial-gradient(1200px 520px at 85% -10%, rgba(23, 107, 82, 0.055), transparent 60%),
-    radial-gradient(900px 420px at -5% 25%, rgba(49, 93, 168, 0.04), transparent 55%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    radial-gradient(1100px 480px at 88% -8%, rgba(23, 107, 82, 0.07), transparent 60%),
+    radial-gradient(900px 420px at -6% 30%, rgba(31, 110, 128, 0.05), transparent 55%),
+    radial-gradient(700px 380px at 70% 110%, rgba(201, 151, 59, 0.04), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   background-attachment: scroll;
 }
 
@@ -42,6 +43,10 @@ a {
 svg {
   flex-shrink: 0;
   vertical-align: middle;
+}
+
+::selection {
+  background: rgba(23, 107, 82, 0.18);
 }
 
 @media (max-width: 599px) {
