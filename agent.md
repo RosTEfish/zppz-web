@@ -11,6 +11,8 @@
 
 - Main app file: `frontend/src/App.tsx`.
 - Main stylesheet: `frontend/src/index.css`.
+- Design system contract: `frontend/DESIGN.md`; read it before any UI change and trace every token/component back to it.
+- Font declarations live in `frontend/src/fonts.css` and are injected asynchronously from `main.tsx`; never import `@fontsource/*` stylesheets directly elsewhere.
 - API client: `frontend/src/api/v1.ts`.
 - Local commands:
   - `cd frontend && npm run lint`
@@ -42,8 +44,8 @@
 
 ## UI Notes
 
-- `DESIGN.md` is the current visual direction.
-- Use one interaction accent: Action Blue `#0066cc`.
+- `frontend/DESIGN.md` is the visual contract: premium light theme, evergreen accent.
+- Use one interaction accent family: evergreen `#176B52` / `#0E523E`; gold `#C9973B` is decorative only and must never color interactive elements.
 - Keep admin pages dense and operational; keep participant pages clearer and more event-facing.
 - Keep homepage copy concise and avoid long marketing text.
 
@@ -53,6 +55,9 @@
 - User role-heavy admin pages should eager-load roles with `selectinload(User.roles)` to avoid N+1 queries.
 - Frontend hashed build assets under `/assets` should be served with long immutable cache headers; `index.html` stays no-cache.
 - Frontend comment creation can prepend the returned comment locally instead of refetching the whole comment list.
+- Vite `manualChunks` groups react, @mui/material+@emotion, and router/SWR into stable vendor chunks; keep `@mui/x-*` out of `vendor-mui` so DataGrid and date-pickers stay lazy-loaded.
+- The render-blocking stylesheet stays minimal; font declarations ship as a separate non-blocking stylesheet (`fonts.css?url` injected in `main.tsx`).
+- Entry/chunk budgets are enforced by `npm run check:bundle` (500 KiB raw / 160 KiB gzip per chunk); run a build after adding eager dependencies.
 
 ## Git Notes
 

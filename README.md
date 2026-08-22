@@ -18,6 +18,8 @@ npm install
 npm run dev
 ```
 
+前端 UI 改动遵循 `frontend/DESIGN.md` 设计契约（配色、字体、组件与构建约定）；字体声明表 `frontend/src/fonts.css` 由入口异步加载，勿在别处直接 import @fontsource 样式。
+
 ## 本地后端
 
 后端会在启动时自动加载当前目录下的 `.env` 文件（python-dotenv）。先复制示例并填写本机所需的值：
