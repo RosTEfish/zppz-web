@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 — ZPPZ Arena Redesign</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Outfit', 'Noto Sans SC', sans-serif; }
+    .scan-grid { background-image: linear-gradient(rgba(255,45,122,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px); background-size: 48px 48px; }
+    .form-glow { box-shadow: 0 0 48px rgba(255,45,122,0.12), 0 0 80px rgba(0,229,255,0.06); }
+  </style>
+</head>
+<body class="bg-[#0A0E14] text-[#E8EDF5] scan-grid">
+  <div class="min-h-screen flex flex-col">
+  <header class="h-16 flex items-center px-6 border-b border-white/8 bg-[#111822]/72 backdrop-blur-xl">
+    <a id="back-home" href="home.html" class="flex items-center gap-2 text-sm text-[#8B9BB5] hover:text-[#E8EDF5] transition"><iconify-icon icon="lucide:arrow-left" width="18"></iconify-icon>返回首页</a>
+  </header>
+
+  <div class="flex-1 flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-[430px] rounded-2xl border border-white/10 bg-[#151D2B]/90 backdrop-blur-xl p-8 form-glow">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-11 h-11 rounded-xl bg-[#FF2D7A]/15 flex items-center justify-center text-[#FF2D7A]"><iconify-icon icon="lucide:key-round" width="24"></iconify-icon></div>
+        <h1 class="text-2xl font-bold">赛事账号</h1>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex border-b border-white/10 mb-6">
+        <button id="tab-login" class="flex-1 py-3 text-sm font-bold text-[#FF2D7A] border-b-2 border-[#FF2D7A]">登录</button>
+        <button id="tab-register" class="flex-1 py-3 text-sm font-semibold text-[#8B9BB5] hover:text-[#E8EDF5]">注册</button>
+      </div>
+
+      <form class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-[#8B9BB5] mb-1.5" for="input-user">账号</label>
+          <input id="input-user" type="text" placeholder="请输入账号" class="w-full bg-[#0A0E14] border border-white/15 rounded-[10px] px-4 py-2.5 text-sm focus:outline-none focus:border-[#FF2D7A] focus:ring-2 focus:ring-[#FF2D7A]/20 transition" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-[#8B9BB5] mb-1.5" for="input-password">密码</label>
+          <input id="input-password" type="password" placeholder="请输入密码" class="w-full bg-[#0A0E14] border border-white/15 rounded-[10px] px-4 py-2.5 text-sm focus:outline-none focus:border-[#FF2D7A] focus:ring-2 focus:ring-[#FF2D7A]/20 transition" />
+        </div>
+        <button id="btn-submit" type="submit" class="w-full flex items-center justify-center gap-2 py-3 rounded-[10px] bg-gradient-to-r from-[#FF2D7A] to-[#D91A63] text-white font-semibold text-sm hover:opacity-90 transition shadow-[0_0_24px_rgba(255,45,122,0.25)]">
+          <iconify-icon icon="lucide:log-in" width="18"></iconify-icon>登录
+        </button>
+      </form>
+
+      <p class="text-center text-xs text-[#5C6B82] mt-8">
+        <a id="link-preview" href="index.html">查看全部示例页</a>
+      </p>
+    </div>
+  </div>
+
+  <footer class="border-t border-white/8 py-4 text-center text-xs text-[#5C6B82]">
+    <a id="footer-icp" href="#">京ICP备2026012070号-1</a> · <a id="footer-beian" href="#">京公网安备11010802047846号</a>
+  </footer>
+  </div>
+</body>
+</html>

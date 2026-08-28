@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>首页 — ZPPZ Arena Redesign</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Outfit', 'Noto Sans SC', sans-serif; }
+    .scan-grid { background-image: linear-gradient(rgba(255,45,122,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px); background-size: 48px 48px; }
+    .hero-glow { background: radial-gradient(600px 300px at 80% 0%, rgba(255,45,122,0.15), transparent 60%), radial-gradient(500px 280px at 100% 100%, rgba(0,229,255,0.08), transparent 55%); }
+    .nav-active { background: rgba(255,45,122,0.12); border-left: 3px solid #FF2D7A; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .fade-up { animation: fadeUp 0.45s ease-out both; }
+    @media (prefers-reduced-motion: reduce) { .fade-up { animation: none; } }
+  </style>
+</head>
+<body class="bg-[#0A0E14] text-[#E8EDF5] scan-grid">
+  <div class="min-h-screen flex">
+    <!-- Sidebar -->
+    <aside class="hidden md:flex w-[72px] lg:w-[240px] flex-col border-r border-white/8 bg-[#111822]/90 backdrop-blur-xl shrink-0">
+      <div class="h-16 flex items-center gap-3 px-4 border-b border-white/8">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-[#FF2D7A] to-[#D91A63] flex items-center justify-center font-extrabold text-white shrink-0">Z</div>
+        <div class="hidden lg:block min-w-0">
+          <p class="font-extrabold text-sm truncate">ZPPZ Arena</p>
+          <p class="text-xs text-[#8B9BB5] truncate">这谱谱这杯无名战#5</p>
+        </div>
+      </div>
+      <nav class="flex-1 py-3 px-2 space-y-1">
+        <a id="nav-home" href="home.html" class="nav-active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-[#FF2D7A]"><iconify-icon icon="lucide:home" width="20"></iconify-icon><span class="hidden lg:inline">首页</span></a>
+        <a id="nav-songs" href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#8B9BB5] hover:bg-white/5 hover:text-[#E8EDF5] transition"><iconify-icon icon="lucide:music-2" width="20"></iconify-icon><span class="hidden lg:inline">曲池</span></a>
+        <a id="nav-draw" href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#8B9BB5] hover:bg-white/5 hover:text-[#E8EDF5] transition"><iconify-icon icon="lucide:sparkles" width="20"></iconify-icon><span class="hidden lg:inline">曲目分配</span></a>
+        <a id="nav-submissions" href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#8B9BB5] hover:bg-white/5 hover:text-[#E8EDF5] transition"><iconify-icon icon="lucide:upload" width="20"></iconify-icon><span class="hidden lg:inline">投稿</span></a>
+        <a id="nav-guess" href="guess.html" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#8B9BB5] hover:bg-white/5 hover:text-[#E8EDF5] transition"><iconify-icon icon="lucide:vote" width="20"></iconify-icon><span class="hidden lg:inline">猜谱</span></a>
+      </nav>
+      <div class="p-3 border-t border-white/8">
+        <a id="nav-login" href="login.html" class="flex items-center justify-center lg:justify-start gap-2 w-full py-2.5 px-3 rounded-lg bg-gradient-to-r from-[#FF2D7A] to-[#D91A63] text-white text-sm font-semibold hover:opacity-90 transition"><iconify-icon icon="lucide:log-in" width="18"></iconify-icon><span class="hidden lg:inline">登录</span></a>
+      </div>
+    </aside>
+
+    <div class="flex-1 flex flex-col min-w-0">
+      <!-- AppBar -->
+      <header class="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/8 bg-[#111822]/72 backdrop-blur-xl sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+          <button class="md:hidden p-2 rounded-lg hover:bg-white/5" aria-label="打开导航"><iconify-icon icon="lucide:menu" width="22"></iconify-icon></button>
+          <h1 class="font-bold text-base md:text-lg truncate">这谱谱这杯无名战#5</h1>
+        </div>
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#2EE59D]/15 text-[#2EE59D] border border-[#2EE59D]/25">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#2EE59D] animate-pulse"></span>投稿开放
+        </span>
+      </header>
+
+      <!-- Main -->
+      <main class="flex-1 px-4 md:px-8 py-6 max-w-6xl w-full mx-auto">
+        <!-- Hero -->
+        <section class="fade-up relative overflow-hidden rounded-2xl border border-white/10 bg-[#151D2B] hero-glow p-6 md:p-10 mb-6" style="border-left: 4px solid #FF2D7A">
+          <p class="text-[0.6875rem] font-bold tracking-[0.14em] uppercase text-[#FF2D7A] mb-1">Current Event</p>
+          <div class="w-6 h-0.5 rounded bg-[#FF2D7A] mb-3"></div>
+          <h2 class="text-3xl md:text-4xl font-extrabold leading-tight mb-4">这谱谱这杯无名战#5</h2>
+          <div class="flex flex-wrap items-center gap-3 mb-4">
+            <span class="px-3 py-1 rounded-full text-sm font-bold bg-[#FF2D7A]/15 text-[#FF2D7A] border border-[#FF2D7A]/30">当前：猜谱</span>
+            <span class="flex items-center gap-1.5 text-sm text-[#8B9BB5]"><iconify-icon icon="lucide:clock-3" width="16"></iconify-icon><span class="font-bold tabular-nums text-[#E8EDF5]">12:34:56</span> · 2026/8/30 23:59</span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-6">
+            <a id="cta-login" href="login.html" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-gradient-to-r from-[#FF2D7A] to-[#D91A63] text-white font-semibold text-sm hover:opacity-90 transition shadow-[0_0_24px_rgba(255,45,122,0.25)]"><iconify-icon icon="lucide:log-in" width="18"></iconify-icon>进入赛事</a>
+            <a id="cta-rules" href="#" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] border border-white/15 text-sm font-semibold hover:bg-white/5 transition"><iconify-icon icon="lucide:book-open-text" width="18"></iconify-icon>查看规则</a>
+          </div>
+          <iconify-icon icon="lucide:music-2" width="200" class="hidden md:block absolute right-4 bottom-0 text-white opacity-[0.04] pointer-events-none"></iconify-icon>
+        </section>
+
+        <!-- Timeline -->
+        <section class="fade-up rounded-2xl border border-white/10 bg-[#151D2B]/80 p-5 mb-6" style="animation-delay:0.1s">
+          <p class="text-xs font-bold text-[#8B9BB5] tracking-wide mb-4">赛事时间轴 · 北京时间</p>
+          <div class="relative flex justify-between gap-2">
+            <div class="absolute top-[7px] left-2 right-2 h-0.5 bg-white/10 rounded"></div>
+            <div class="relative flex-1 text-center"><div class="w-3.5 h-3.5 mx-auto rounded-full bg-[#00E5FF] mb-2"></div><p class="text-xs font-semibold text-[#8B9BB5]">报名</p><p class="text-[10px] text-[#5C6B82] tabular-nums mt-0.5">8/1 → 8/15</p></div>
+            <div class="relative flex-1 text-center"><div class="w-3.5 h-3.5 mx-auto rounded-full bg-[#00E5FF] mb-2"></div><p class="text-xs font-semibold text-[#8B9BB5]">征稿一阶段</p><p class="text-[10px] text-[#5C6B82] tabular-nums mt-0.5">8/16 → 8/25</p></div>
+            <div class="relative flex-1 text-center"><div class="w-3.5 h-3.5 mx-auto rounded-full bg-[#00E5FF] mb-2"></div><p class="text-xs font-semibold text-[#8B9BB5]">征稿二阶段</p><p class="text-[10px] text-[#5C6B82] tabular-nums mt-0.5">8/26 → 9/5</p></div>
+            <div class="relative flex-1 text-center"><div class="w-3.5 h-3.5 mx-auto rounded-full bg-[#FF2D7A] mb-2 shadow-[0_0_0_4px_rgba(255,45,122,0.25)]"></div><p class="text-xs font-extrabold text-[#FF2D7A]">猜谱</p><p class="text-[10px] text-[#5C6B82] tabular-nums mt-0.5">9/6 → 9/20</p></div>
+          </div>
+        </section>
+
+        <!-- Next step -->
+        <div class="fade-up rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/5 px-4 py-3 mb-6 text-sm" style="animation-delay:0.15s">
+          <p class="font-extrabold text-xs text-[#00E5FF] mb-1">下一步</p>
+          <p class="text-[#8B9BB5]">登录或注册后选择参赛者、观众或访客身份</p>
+        </div>
+
+        <!-- Stage cards -->
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 fade-up" style="animation-delay:0.2s">
+          <a id="card-songs" href="#" class="group rounded-2xl border border-white/10 bg-[#151D2B] p-5 hover:border-[#FF2D7A]/35 hover:-translate-y-1 transition-all duration-200 min-h-[132px] flex flex-col">
+            <div class="flex justify-between"><iconify-icon icon="lucide:music-2" width="24" class="text-[#FF2D7A]"></iconify-icon><iconify-icon icon="lucide:chevron-right" width="18" class="text-[#5C6B82] group-hover:text-[#FF2D7A]"></iconify-icon></div>
+            <p class="font-bold text-lg mt-4">曲池</p><p class="text-sm text-[#8B9BB5] mt-1">3 首上限</p>
+          </a>
+          <a id="card-draw" href="#" class="group rounded-2xl border border-white/10 bg-[#151D2B] p-5 hover:border-[#FF2D7A]/35 hover:-translate-y-1 transition-all duration-200 min-h-[132px] flex flex-col">
+            <div class="flex justify-between"><iconify-icon icon="lucide:sparkles" width="24" class="text-[#FF2D7A]"></iconify-icon><iconify-icon icon="lucide:chevron-right" width="18" class="text-[#5C6B82]"></iconify-icon></div>
+            <p class="font-bold text-lg mt-4">曲目分配</p><p class="text-sm text-[#8B9BB5] mt-1">每人 2 首</p>
+          </a>
+          <a id="card-submissions" href="#" class="group rounded-2xl border border-white/10 bg-[#151D2B] p-5 hover:border-[#FF2D7A]/35 hover:-translate-y-1 transition-all duration-200 min-h-[132px] flex flex-col">
+            <div class="flex justify-between"><iconify-icon icon="lucide:upload" width="24" class="text-[#FF2D7A]"></iconify-icon><iconify-icon icon="lucide:chevron-right" width="18" class="text-[#5C6B82]"></iconify-icon></div>
+            <p class="font-bold text-lg mt-4">投稿</p><p class="text-sm text-[#8B9BB5] mt-1">开放中</p>
+          </a>
+          <a id="card-guess" href="guess.html" class="group rounded-2xl border border-white/10 bg-[#151D2B] p-5 hover:border-[#00E5FF]/35 hover:-translate-y-1 transition-all duration-200 min-h-[132px] flex flex-col">
+            <div class="flex justify-between"><iconify-icon icon="lucide:vote" width="24" class="text-[#00E5FF]"></iconify-icon><iconify-icon icon="lucide:chevron-right" width="18" class="text-[#5C6B82]"></iconify-icon></div>
+            <p class="font-bold text-lg mt-4">猜谱</p><p class="text-sm text-[#8B9BB5] mt-1">猜谱</p>
+          </a>
+        </div>
+      </main>
+
+      <footer class="border-t border-white/8 py-4 text-center text-xs text-[#5C6B82]">
+        <a id="footer-icp" href="#" class="hover:text-[#8B9BB5]">京ICP备2026012070号-1</a>
+        <span class="mx-2">·</span>
+        <a id="footer-beian" href="#" class="hover:text-[#8B9BB5]">京公网安备11010802047846号</a>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
