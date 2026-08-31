@@ -38,7 +38,7 @@ from app.models import (
     WebhookIntegration,
     WebhookSystemState,
 )
-from app.modules.events.phase_policy import get_phase_status, is_chart_public
+from app.modules.events.phase_policy import apply_chart_visibility_filter, chart_visibility_key, get_phase_status
 from app.modules.events.service import get_current_event
 from app.modules.object_storage import get_object_store
 
@@ -319,15 +319,66 @@ def _cover_file(cover_path: str) -> Path | None:
     return path if path.is_file() else None
 
 
-def _source_groups(db: Session, event: Event) -> list[dict]:
-    phase = get_phase_status(db, event)
-    charts = [
-        chart
-        for chart in db.scalars(
-            select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.id.asc())
+def _chart_source_key(chart: GuessChart) -> tuple[str, int]:
+    return chart.source_submission_type, int(chart.source_submission_id or chart.id)
+
+
+def _changed_source_keys(db: Session, event: Event, since: datetime) -> set[tuple[str, int]]:
+    keys: set[tuple[str, int]] = set()
+    for chart in db.scalars(
+        select(GuessChart).where(GuessChart.event_id == event.id, GuessChart.updated_at >= since)
+    ).all():
+        keys.add(_chart_source_key(chart))
+
+    changed_submission_ids = set(
+        db.scalars(
+            select(Submission.id).where(Submission.event_id == event.id, Submission.updated_at >= since)
         ).all()
-        if is_chart_public(chart.source_submission_type, phase)
-    ]
+    )
+    if changed_submission_ids:
+        for chart in db.scalars(
+            select(GuessChart).where(
+                GuessChart.event_id == event.id,
+                GuessChart.source_submission_type.in_(("normal", "j", "exhibition")),
+                GuessChart.source_submission_id.in_(changed_submission_ids),
+            )
+        ).all():
+            keys.add(_chart_source_key(chart))
+
+    changed_archive_ids = set(
+        db.scalars(
+            select(AdminGuessArchive.id).where(
+                AdminGuessArchive.event_id == event.id,
+                AdminGuessArchive.updated_at >= since,
+            )
+        ).all()
+    )
+    if changed_archive_ids:
+        for chart in db.scalars(
+            select(GuessChart).where(
+                GuessChart.event_id == event.id,
+                GuessChart.source_submission_type == "admin",
+                GuessChart.source_submission_id.in_(changed_archive_ids),
+            )
+        ).all():
+            keys.add(_chart_source_key(chart))
+    return keys
+
+
+def _source_groups(
+    db: Session,
+    event: Event,
+    *,
+    source_keys: set[tuple[str, int]] | None = None,
+) -> list[dict]:
+    phase = get_phase_status(db, event)
+    stmt = apply_chart_visibility_filter(
+        select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.id.asc()),
+        phase,
+    )
+    charts = list(db.scalars(stmt).all())
+    if source_keys is not None:
+        charts = [chart for chart in charts if _chart_source_key(chart) in source_keys]
     grouped: dict[tuple[str, int], list[GuessChart]] = defaultdict(list)
     for chart in charts:
         grouped[(chart.source_submission_type, int(chart.source_submission_id or chart.id))].append(chart)
@@ -543,22 +594,61 @@ def _create_event_for_source(db: Session, event: Event, source: dict, state: Cha
 def materialize_publication_events() -> int:
     created = 0
     with SessionLocal() as db:
+        system_state = db.get(WebhookSystemState, 1)
         event = get_current_event(db)
-        for source in _source_groups(db, event):
-            state = db.scalar(
+        phase_status = get_phase_status(db, event)
+        visibility_key = chart_visibility_key(phase_status)
+        now = datetime.utcnow()
+        if system_state is None:
+            sources = _source_groups(db, event)
+        else:
+            full_scan = (
+                system_state.last_visibility_key != visibility_key
+                or system_state.last_publication_scan_at is None
+            )
+            if full_scan:
+                sources = _source_groups(db, event)
+            else:
+                changed_keys = _changed_source_keys(db, event, system_state.last_publication_scan_at)
+                if not changed_keys:
+                    system_state.last_publication_scan_at = now
+                    system_state.last_visibility_key = visibility_key
+                    db.commit()
+                    return 0
+                sources = _source_groups(db, event, source_keys=changed_keys)
+
+        state_by_key: dict[tuple[str, int], ChartPublicationState] = {}
+        if sources:
+            conditions = [
+                (ChartPublicationState.source_type == source["source_type"])
+                & (ChartPublicationState.source_id == source["source_id"])
+                for source in sources
+            ]
+            existing_states = db.scalars(
                 select(ChartPublicationState).where(
                     ChartPublicationState.event_id == event.id,
-                    ChartPublicationState.source_type == source["source_type"],
-                    ChartPublicationState.source_id == source["source_id"],
+                    or_(*conditions),
                 )
-            )
+            ).all()
+            state_by_key = {(state.source_type, state.source_id): state for state in existing_states}
+
+        for source in sources:
+            state = state_by_key.get((source["source_type"], source["source_id"]))
             try:
                 created += _create_event_for_source(db, event, source, state)
             except IntegrityError:
                 db.rollback()
             except Exception:
                 db.rollback()
-                logger.exception("Could not materialize webhook event for %s:%s", source["source_type"], source["source_id"])
+                logger.exception(
+                    "Could not materialize webhook event for %s:%s",
+                    source["source_type"],
+                    source["source_id"],
+                )
+        if system_state is not None:
+            system_state.last_publication_scan_at = now
+            system_state.last_visibility_key = visibility_key
+            db.commit()
     return created
 
 
@@ -592,7 +682,12 @@ def seed_publication_baseline(db: Session) -> int:
             )
         )
         created += 1
-    db.add(WebhookSystemState(id=1, baseline_completed_at=now))
+    db.add(WebhookSystemState(
+        id=1,
+        baseline_completed_at=now,
+        last_publication_scan_at=now,
+        last_visibility_key=chart_visibility_key(get_phase_status(db, event)),
+    ))
     db.commit()
     return created
 

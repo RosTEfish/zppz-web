@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Event
+from app.models import Event, GuessChart
 
 
 PHASES = (
@@ -162,3 +162,13 @@ def phase_status_payload(status: PhaseStatus) -> dict[str, Any]:
 
 def is_chart_public(source_type: str, phase_status: PhaseStatus) -> bool:
     return source_type in ALWAYS_PUBLIC_CHART_SOURCE_TYPES or phase_status.can("normal_submission_public")
+
+
+def apply_chart_visibility_filter(stmt, phase_status: PhaseStatus):
+    if not phase_status.can("normal_submission_public"):
+        stmt = stmt.where(GuessChart.source_submission_type.in_(ALWAYS_PUBLIC_CHART_SOURCE_TYPES))
+    return stmt
+
+
+def chart_visibility_key(phase_status: PhaseStatus) -> str:
+    return f"{phase_status.active_phase}:{int(phase_status.can('normal_submission_public'))}"
