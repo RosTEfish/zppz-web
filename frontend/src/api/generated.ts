@@ -3032,6 +3032,12 @@ export interface components {
         SwapSelectionUpdate: {
             /** Assignment Ids */
             assignment_ids: number[];
+            /**
+             * Mode
+             * @default return_and_draw
+             * @enum {string}
+             */
+            mode: "return_and_draw" | "return_only";
         };
         /** UpdateProfileRequest */
         UpdateProfileRequest: {
