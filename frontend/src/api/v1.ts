@@ -119,6 +119,8 @@ export interface AdminDrawStatsRead {
   can_redraw: boolean;
 }
 
+export type SwapMode = "return_and_draw" | "return_only";
+
 export interface SwapRollItemRead {
   id: number;
   position: number;
@@ -395,7 +397,8 @@ export const api = {
   adminDrawResults: (signal?: AbortSignal) => apiRequest<DrawAssignmentRead[]>("/admin/draw/results", { signal }),
   adminDrawStats: (signal?: AbortSignal) => apiRequest<AdminDrawStatsRead>("/admin/draw/stats", { signal }),
   mySwap: (signal?: AbortSignal) => apiRequest<SwapMeRead>("/swap/me", { signal }),
-  rollMySwap: (assignment_ids: number[]) => apiRequest<SwapMeRead>("/swap/me/roll", { method: "POST", body: JSON.stringify({ assignment_ids }) }),
+  rollMySwap: (assignment_ids: number[], mode: SwapMode = "return_and_draw") =>
+    apiRequest<SwapMeRead>("/swap/me/roll", { method: "POST", body: JSON.stringify({ assignment_ids, mode }) }),
   swapAudit: (signal?: AbortSignal) => apiRequest<SwapAuditRead>("/admin/swap/audit", { signal }),
 
   submissionTargets: (signal?: AbortSignal) => apiRequest<SubmissionTargetsResponse>("/submissions/targets", { signal }),
