@@ -64,9 +64,14 @@ describe("Account settings page", () => {
     const profileBodies: unknown[] = [];
     const passwordBodies: unknown[] = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
-      if (path.endsWith("/event/phases")) return json(phases("registration"));
-      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/bootstrap")) {
+        return json({
+          event: eventPayload,
+          user: participant,
+          phases: { event_id: 1, timezone: "Asia/Shanghai", server_time: "2026-07-03T00:00:00", next_transition_at: null, phase_snapshots: [], ...phases("registration") },
+          guess_availability: { available: false },
+        });
+      }
       if (path.endsWith("/auth/me") && init.method === "PUT") {
         const body = JSON.parse(String(init.body));
         profileBodies.push(body);
@@ -112,9 +117,14 @@ describe("Account settings page", () => {
     window.history.pushState({}, "", "/account");
     const profileBodies: unknown[] = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
-      if (path.endsWith("/event/phases")) return json(phases("submission_1"));
-      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/bootstrap")) {
+        return json({
+          event: eventPayload,
+          user: participant,
+          phases: { event_id: 1, timezone: "Asia/Shanghai", server_time: "2026-07-03T00:00:00", next_transition_at: null, phase_snapshots: [], ...phases("submission_1") },
+          guess_availability: { available: false },
+        });
+      }
       if (path.endsWith("/auth/me") && init.method === "PUT") {
         const body = JSON.parse(String(init.body));
         profileBodies.push(body);

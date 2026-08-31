@@ -64,6 +64,17 @@ def test_frontend_routes_and_public_cache_headers():
         assert availability.headers["cache-control"] == expected
 
 
+def test_bootstrap_includes_phases_and_availability():
+    with TestClient(app) as client:
+        response = client.get("/api/v1/bootstrap")
+        assert response.status_code == 200
+        payload = response.json()
+        assert "phases" in payload
+        assert "guess_availability" in payload
+        assert "capabilities" in payload["phases"]
+        assert "available" in payload["guess_availability"]
+
+
 def test_bootstrap_cache_policy_varies_with_session():
     with TestClient(app) as client:
         anonymous = client.get("/api/v1/bootstrap")

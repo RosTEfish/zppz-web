@@ -53,8 +53,58 @@ class ParsedBanEntry:
     row_number: int
 
 
+@dataclass(frozen=True)
+class _BanCacheEntry:
+    entry: BanEntry
+    variants: tuple[tuple[str, str, str], ...]
+
+
+@dataclass(frozen=True)
+class _BanCacheSnapshot:
+    import_id: int
+    entries: tuple[_BanCacheEntry, ...]
+
+
 _rate_lock = Lock()
 _recent_queries: dict[int, deque[float]] = {}
+_ban_cache: _BanCacheSnapshot | None = None
+_ban_cache_lock = Lock()
+
+
+def invalidate_ban_cache() -> None:
+    global _ban_cache
+    with _ban_cache_lock:
+        _ban_cache = None
+
+
+def _load_ban_cache(db: Session) -> _BanCacheSnapshot | None:
+    active = get_active_import(db)
+    if not active:
+        return None
+    entries = get_import_entries(db, active.id)
+    return _BanCacheSnapshot(
+        import_id=active.id,
+        entries=tuple(
+            _BanCacheEntry(entry=entry, variants=tuple(_entry_variants(entry)))
+            for entry in entries
+        ),
+    )
+
+
+def _get_ban_cache(db: Session) -> _BanCacheSnapshot | None:
+    global _ban_cache
+    active = get_active_import(db)
+    if not active:
+        with _ban_cache_lock:
+            _ban_cache = None
+        return None
+    with _ban_cache_lock:
+        if _ban_cache is not None and _ban_cache.import_id == active.id:
+            return _ban_cache
+    snapshot = _load_ban_cache(db)
+    with _ban_cache_lock:
+        _ban_cache = snapshot
+    return snapshot
 
 
 def enforce_query_rate_limit(user_id: int, now: float) -> None:
@@ -181,6 +231,7 @@ def create_ban_import(db: Session, file_name: str, raw: bytes, uploaded_by_id: i
     )
     db.add(record)
     db.flush()
+    pending_aliases: list[tuple[BanEntry, tuple[str, str, str], list[BanAlias]]] = []
     for item in entries:
         normalized_song_name = normalize_text(item.song_name)
         normalized_artist = normalize_text(item.artist)
@@ -194,8 +245,10 @@ def create_ban_import(db: Session, file_name: str, raw: bytes, uploaded_by_id: i
             normalized_artist=normalized_artist,
         )
         db.add(entry)
-        db.flush()
         key = (item.round_label, normalized_song_name, normalized_artist)
+        pending_aliases.append((entry, key, list(previous_aliases.get(key, []))))
+    db.flush()
+    for entry, key, aliases in pending_aliases:
         db.add_all(
             [
                 BanAlias(
@@ -208,7 +261,7 @@ def create_ban_import(db: Session, file_name: str, raw: bytes, uploaded_by_id: i
                     confirmed_by_id=alias.confirmed_by_id,
                     confirmed_at=alias.confirmed_at,
                 )
-                for alias in previous_aliases.get(key, [])
+                for alias in aliases
             ]
         )
     db.commit()
@@ -229,6 +282,7 @@ def publish_ban_import(db: Session, import_id: int) -> BanImport:
     record.published_at = datetime.utcnow()
     db.commit()
     db.refresh(record)
+    invalidate_ban_cache()
     return record
 
 
@@ -285,16 +339,16 @@ def _entry_variants(entry: BanEntry) -> list[tuple[str, str, str]]:
 
 
 def check_song(db: Session, title: str, artist: str) -> dict:
-    active = get_active_import(db)
-    if not active:
+    cache = _get_ban_cache(db)
+    if not cache:
         return {"status": "unavailable", "matches": [], "import_id": None}
     title_key = normalize_text(title)
     artist_key = normalize_text(artist)
-    entries = get_import_entries(db, active.id)
     exact: list[dict] = []
     fuzzy: dict[int, dict] = {}
-    for entry in entries:
-        for entry_title, entry_artist, variant_type in _entry_variants(entry):
+    for cached in cache.entries:
+        entry = cached.entry
+        for entry_title, entry_artist, variant_type in cached.variants:
             if entry_title == title_key and entry_artist == artist_key:
                 exact.append(_match(entry, "alias" if variant_type == "alias" else "exact", 100.0, "曲名和作者均完全匹配" if variant_type == "fuzzy" else "命中管理员确认的曲目别名"))
                 break
@@ -313,9 +367,9 @@ def check_song(db: Session, title: str, artist: str) -> dict:
                     fuzzy[entry.id] = _match(entry, "fuzzy", score, reason)
 
     if exact:
-        return {"status": "exact", "matches": exact, "import_id": active.id}
+        return {"status": "exact", "matches": exact, "import_id": cache.import_id}
     matches = sorted(fuzzy.values(), key=lambda item: float(item["score"] or 0), reverse=True)[:5]
-    return {"status": "review" if matches else "clear", "matches": matches, "import_id": active.id}
+    return {"status": "review" if matches else "clear", "matches": matches, "import_id": cache.import_id}
 
 
 def enforce_song_allowed(db: Session, title: str, artist: str, acknowledge_ban_warning: bool = False) -> dict:
@@ -343,14 +397,14 @@ def _search_score(query: str, value: str) -> tuple[float, bool]:
 
 
 def search_ban_entries(db: Session, title: str = "", artist: str = "", limit: int = SEARCH_LIMIT) -> dict:
-    active = get_active_import(db)
-    if not active:
+    cache = _get_ban_cache(db)
+    if not cache:
         return {"items": [], "import_id": None}
     title_key = normalize_text(title)
     artist_key = normalize_text(artist)
-    entries = get_import_entries(db, active.id)
     scored: list[tuple[float, dict]] = []
-    for entry in entries:
+    for cached in cache.entries:
+        entry = cached.entry
         title_score, title_hit = _search_score(title_key, entry.normalized_song_name)
         artist_score, artist_hit = _search_score(artist_key, entry.normalized_artist)
         if title_key and artist_key:
@@ -373,7 +427,7 @@ def search_ban_entries(db: Session, title: str = "", artist: str = "", limit: in
         match_type = "exact" if score >= 100 else "fuzzy"
         scored.append((score, _match(entry, match_type, score, reason)))
     scored.sort(key=lambda item: item[0], reverse=True)
-    return {"items": [item for _, item in scored[: max(1, min(limit, SEARCH_LIMIT))]], "import_id": active.id}
+    return {"items": [item for _, item in scored[: max(1, min(limit, SEARCH_LIMIT))]], "import_id": cache.import_id}
 
 
 def serialize_import(record: BanImport) -> dict:
