@@ -58,6 +58,12 @@ def ensure_global_draw(db: Session) -> None:
     if _has_complete_allocation(db, event):
         return
 
+    phase = get_phase_status(db, event)
+    if phase.active_phase == "submission_2" and _has_active_allocation(db, event):
+        # Stage2 participants may intentionally return songs without drawing
+        # replacements, so an incomplete active allocation is expected.
+        return
+
     run_draw(db, allow_redraw=False)
 
 
@@ -224,6 +230,17 @@ def _has_complete_allocation(db: Session, event) -> bool:
         song_ids.add(song_id)
         counts[assigned_to_id] = counts.get(assigned_to_id, 0) + 1
     return all(counts.get(user_id, 0) == per_user for user_id in participants)
+
+
+def _has_active_allocation(db: Session, event) -> bool:
+    return bool(
+        db.scalar(
+            select(DrawAssignment.id).where(
+                DrawAssignment.event_id == event.id,
+                DrawAssignment.status == "active",
+            ).limit(1)
+        )
+    )
 
 
 def _has_submission(db: Session, event_id: int) -> bool:

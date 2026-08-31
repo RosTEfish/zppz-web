@@ -366,8 +366,12 @@ class SubmissionTrackUpdate(BaseModel):
     track: str = Field(pattern="^(normal|j|exhibition)$")
 
 
+SwapMode = Literal["return_and_draw", "return_only"]
+
+
 class SwapSelectionUpdate(BaseModel):
     assignment_ids: list[int] = Field(min_length=1)
+    mode: SwapMode = "return_and_draw"
 
     @field_validator("assignment_ids")
     @classmethod

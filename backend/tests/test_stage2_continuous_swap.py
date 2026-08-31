@@ -193,6 +193,64 @@ def test_legacy_personal_draw_endpoint_is_read_only_compatibility(client: TestCl
     assert response.status_code == 410
 
 
+def test_stage2_supports_return_only_without_drawing_replacement(client: TestClient) -> None:
+    register(client, "player")
+    register(client, "other")
+    allocation = create_complete_allocation(per_user=4, free_songs=0)
+    set_phase("submission_2")
+    login(client, "player")
+
+    before = client.get("/api/v1/swap/me")
+    assert before.status_code == 200, before.text
+    assert len(before.json()["assignments"]) == 4
+
+    response = client.post(
+        "/api/v1/swap/me/roll",
+        json={"assignment_ids": allocation["player"][:2], "mode": "return_only"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["assignments"]) == 2
+    assert len(payload["last_roll"]["items"]) == 2
+    assert all(item["replacement"] is None for item in payload["last_roll"]["items"])
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        player = db.scalar(select(User).where(User.user_code == "player"))
+        assert event and player
+        active_count = len(
+            list(
+                db.scalars(
+                    select(DrawAssignment).where(
+                        DrawAssignment.event_id == event.id,
+                        DrawAssignment.assigned_to_id == player.id,
+                        DrawAssignment.status == "active",
+                    )
+                ).all()
+            )
+        )
+        assert active_count == 2
+        excluded_count = len(
+            list(db.scalars(select(SwapExcludedSong).where(SwapExcludedSong.user_id == player.id)).all())
+        )
+        assert excluded_count == 2
+
+
+def test_stage2_return_only_does_not_require_pool_candidates(client: TestClient) -> None:
+    register(client, "player")
+    register(client, "other")
+    allocation = create_complete_allocation(per_user=1, free_songs=0)
+    set_phase("submission_2")
+    login(client, "player")
+
+    response = client.post(
+        "/api/v1/swap/me/roll",
+        json={"assignment_ids": allocation["player"], "mode": "return_only"},
+    )
+    assert response.status_code == 200, response.text
+    assert len(response.json()["assignments"]) == 0
+
+
 def test_stage2_supports_arbitrary_and_repeated_rolls(client: TestClient) -> None:
     register(client, "player")
     register(client, "other")

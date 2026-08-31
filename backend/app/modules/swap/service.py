@@ -132,15 +132,27 @@ def active_assignments_for_user(db: Session, event_id: int, user_id: int) -> lis
     )
 
 
-def roll_for_user(db: Session, user: User, assignment_ids: list[int]) -> tuple[SwapRound, SwapRequest]:
+def roll_for_user(
+    db: Session,
+    user: User,
+    assignment_ids: list[int],
+    *,
+    mode: str = "return_and_draw",
+) -> tuple[SwapRound, SwapRequest]:
     try:
-        return _roll_for_user_once(db, user, assignment_ids)
+        return _roll_for_user_once(db, user, assignment_ids, mode=mode)
     except HTTPException:
         db.rollback()
         raise
 
 
-def _roll_for_user_once(db: Session, user: User, assignment_ids: list[int]) -> tuple[SwapRound, SwapRequest]:
+def _roll_for_user_once(
+    db: Session,
+    user: User,
+    assignment_ids: list[int],
+    *,
+    mode: str = "return_and_draw",
+) -> tuple[SwapRound, SwapRequest]:
     if user.identity != "participant":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有参赛者可以换曲")
     if not assignment_ids or len(set(assignment_ids)) != len(assignment_ids):
@@ -194,37 +206,41 @@ def _roll_for_user_once(db: Session, user: User, assignment_ids: list[int]) -> t
     if submitted_song_ids:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已投稿曲目不能换曲，请先删除对应投稿")
 
-    selected_ids = set(assignment_ids)
-    active_assignments = list(
-        db.scalars(
-            select(DrawAssignment).where(
-                DrawAssignment.event_id == event.id,
-                DrawAssignment.status == "active",
-            )
-        ).all()
-    )
-    occupied_song_ids = {row.song_id for row in active_assignments if row.id not in selected_ids}
-    songs = list(db.scalars(select(Song).where(Song.event_id == event.id)).all())
-    pool = [song for song in songs if song.id not in occupied_song_ids]
+    draw_replacement = mode != "return_only"
+    chosen_songs: list[Song] = []
+    if draw_replacement:
+        selected_ids = set(assignment_ids)
+        active_assignments = list(
+            db.scalars(
+                select(DrawAssignment).where(
+                    DrawAssignment.event_id == event.id,
+                    DrawAssignment.status == "active",
+                )
+            ).all()
+        )
+        occupied_song_ids = {row.song_id for row in active_assignments if row.id not in selected_ids}
+        songs = list(db.scalars(select(Song).where(Song.event_id == event.id)).all())
+        pool = [song for song in songs if song.id not in occupied_song_ids]
 
-    excluded_song_ids = set(
-        db.scalars(
-            select(SwapExcludedSong.song_id).where(
-                SwapExcludedSong.event_id == event.id,
-                SwapExcludedSong.user_id == user.id,
-            )
-        ).all()
-    )
-    excluded_song_ids.update(row.song_id for row in assignments)
-    candidates = [
-        song
-        for song in pool
-        if song.id not in excluded_song_ids and song.submitted_by_id != user.id
-    ]
-    if len(candidates) < len(assignments):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="换曲池中没有足够的新曲目")
+        excluded_song_ids = set(
+            db.scalars(
+                select(SwapExcludedSong.song_id).where(
+                    SwapExcludedSong.event_id == event.id,
+                    SwapExcludedSong.user_id == user.id,
+                )
+            ).all()
+        )
+        excluded_song_ids.update(row.song_id for row in assignments)
+        candidates = [
+            song
+            for song in pool
+            if song.id not in excluded_song_ids and song.submitted_by_id != user.id
+        ]
+        if len(candidates) < len(assignments):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="换曲池中没有足够的新曲目")
 
-    chosen_songs = random.SystemRandom().sample(candidates, len(assignments))
+        chosen_songs = random.SystemRandom().sample(candidates, len(assignments))
+
     for original in assignments:
         original.status = "returned"
 
@@ -247,21 +263,24 @@ def _roll_for_user_once(db: Session, user: User, assignment_ids: list[int]) -> t
                     song_id=original.song_id,
                 )
             )
-        replacement = DrawAssignment(
-            event_id=event.id,
-            assigned_to_id=user.id,
-            song_id=chosen_songs[position].id,
-            status="active",
-            draw_kind="swap",
-            replaces_assignment_id=original.id,
-        )
-        db.add(replacement)
-        db.flush()
+        replacement_id: int | None = None
+        if draw_replacement:
+            replacement = DrawAssignment(
+                event_id=event.id,
+                assigned_to_id=user.id,
+                song_id=chosen_songs[position].id,
+                status="active",
+                draw_kind="swap",
+                replaces_assignment_id=original.id,
+            )
+            db.add(replacement)
+            db.flush()
+            replacement_id = replacement.id
         db.add(
             SwapRequestItem(
                 request_id=request.id,
                 original_assignment_id=original.id,
-                replacement_assignment_id=replacement.id,
+                replacement_assignment_id=replacement_id,
                 position=position,
             )
         )

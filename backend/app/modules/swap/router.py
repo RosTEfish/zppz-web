@@ -176,7 +176,7 @@ def roll_my_swap(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    round_row, request = roll_for_user(db, user, payload.assignment_ids)
+    round_row, request = roll_for_user(db, user, payload.assignment_ids, mode=payload.mode)
     return _my_payload(db, user, round_row, request)
 
 
