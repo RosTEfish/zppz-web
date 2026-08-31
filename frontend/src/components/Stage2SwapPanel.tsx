@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Checkbox, Chip, Divider, FormControlLabel, Paper, Stack, Typography } from "@mui/material";
-import { ArrowLeftRight, RefreshCw } from "lucide-react";
-import { api, type SwapMeRead, type SwapRollRead } from "../api/v1";
+import { ArrowLeftRight, PackageMinus, RefreshCw } from "lucide-react";
+import { api, type SwapMeRead, type SwapMode, type SwapRollRead } from "../api/v1";
 import { ResourceState, type ApiResource, useApiResource } from "./PagePrimitives";
 import { queryKeys } from "../api/queryKeys";
 import { useAuth } from "../contexts/AuthContext";
@@ -33,12 +33,12 @@ function Stage2SwapPanelContent({ resource, onUpdated }: { resource: ApiResource
     return next;
   });
 
-  async function roll() {
+  async function submit(mode: SwapMode) {
     if (!selected.size) return;
     setBusy(true);
     setError("");
     try {
-      const next = await api.rollMySwap([...selected]);
+      const next = await api.rollMySwap([...selected], mode);
       resource.setData(next);
       onUpdated?.(next);
       setSelected(new Set());
@@ -51,6 +51,8 @@ function Stage2SwapPanelContent({ resource, onUpdated }: { resource: ApiResource
 
   const lastRoll = resource.data?.last_roll;
   const endAt = resource.data?.round?.ends_at;
+  const selectedCount = selected.size;
+  const canSubmit = Boolean(resource.data?.is_open && selectedCount && !busy);
 
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
@@ -68,7 +70,7 @@ function Stage2SwapPanelContent({ resource, onUpdated }: { resource: ApiResource
       {resource.data ? (
         <>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            每次可选择任意数量的当前有效曲目并立即 roll 等量替换。投回的曲目会永久排除给你，但仍可能被其他参赛者抽到；已投稿曲目需先删除投稿。
+            每次可选择任意数量的当前有效曲目：放回并抽取等量新曲，或仅放回不抽取。投回的曲目会永久排除给你，但仍可能被其他参赛者抽到；已投稿曲目需先删除投稿。
           </Typography>
           <Stack>
             {resource.data.assignments.map((row) => (
@@ -86,15 +88,24 @@ function Stage2SwapPanelContent({ resource, onUpdated }: { resource: ApiResource
               />
             ))}
           </Stack>
-          <Button
-            variant="contained"
-            startIcon={<RefreshCw size={16} />}
-            disabled={!resource.data.is_open || !selected.size || busy}
-            onClick={() => void roll()}
-            sx={{ mt: 1.5 }}
-          >
-            {busy ? "换曲中…" : `立即换曲（${selected.size} 首）`}
-          </Button>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1.5 }}>
+            <Button
+              variant="contained"
+              startIcon={<RefreshCw size={16} />}
+              disabled={!canSubmit}
+              onClick={() => void submit("return_and_draw")}
+            >
+              {busy ? "处理中…" : `放回并抽取（${selectedCount} 首）`}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<PackageMinus size={16} />}
+              disabled={!canSubmit}
+              onClick={() => void submit("return_only")}
+            >
+              {busy ? "处理中…" : `放回并不抽取（${selectedCount} 首）`}
+            </Button>
+          </Stack>
           {lastRoll ? <RollResult roll={lastRoll} /> : null}
         </>
       ) : null}
@@ -107,8 +118,10 @@ function RollResult({ roll }: { roll: SwapRollRead }) {
     <Stack spacing={1} sx={{ mt: 2 }}>
       <Typography variant="subtitle2">最近一次换曲结果</Typography>
       {roll.items.map((item) => (
-        <Alert severity="success" key={item.id}>
-          {item.original.song.song_name} → {item.replacement?.song.song_name || "暂无替换曲目"}
+        <Alert severity={item.replacement ? "success" : "info"} key={item.id}>
+          {item.replacement
+            ? `${item.original.song.song_name} → ${item.replacement.song.song_name}`
+            : `${item.original.song.song_name} 已放回，未抽取新曲`}
         </Alert>
       ))}
     </Stack>

@@ -696,13 +696,13 @@ describe("Material application shell", () => {
     const phases = { ...phasesPayload, phase_mode: "manual", manual_phase: "submission_2", active_phase: "submission_2", capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
     const round = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", roll_count: 0, finalized_at: null };
     let currentSwap = { is_open: true, active_phase: "submission_2" as const, round, assignments: assignments.map((assignment) => ({ ...assignment, selected: false, can_swap: true, has_submission: false })), last_roll: null };
-    const rollBodies: number[][] = [];
+    const rollBodies: { assignment_ids: number[]; mode?: string }[] = [];
     mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant, { phases }));
       if (path.endsWith("/draw/results")) return json(assignments);
       if (path.endsWith("/swap/me/roll") && init?.method === "POST") {
-        const body = JSON.parse(String(init.body)) as { assignment_ids: number[] };
-        rollBodies.push(body.assignment_ids);
+        const body = JSON.parse(String(init.body)) as { assignment_ids: number[]; mode?: string };
+        rollBodies.push(body);
         currentSwap = { ...currentSwap, round: { ...round, roll_count: 1 }, last_roll: { id: 41, status: "completed", created_at: "2026-07-04T00:01:00", items: assignments.map((assignment, index) => ({ id: index + 1, position: index, original: assignment, replacement: { ...assignment, id: 51 + index, song: { ...assignment.song, id: 101 + index, song_name: `新曲${index + 1}` }, draw_kind: "swap", replaces_assignment_id: assignment.id } })) } };
         return json(currentSwap);
       }
@@ -714,9 +714,63 @@ describe("Material application shell", () => {
     expect(await screen.findByRole("heading", { name: "Stage2 投稿与换曲" })).toBeInTheDocument();
     const checkboxes = await screen.findAllByRole("checkbox");
     checkboxes.forEach((checkbox) => fireEvent.click(checkbox));
-    fireEvent.click(await screen.findByRole("button", { name: "立即换曲（4 首）" }));
-    await waitFor(() => expect(rollBodies).toEqual([[31, 32, 33, 34]]));
+    fireEvent.click(await screen.findByRole("button", { name: "放回并抽取（4 首）" }));
+    await waitFor(() => expect(rollBodies).toEqual([{ assignment_ids: [31, 32, 33, 34], mode: "return_and_draw" }]));
     expect(await screen.findByText("最近一次换曲结果")).toBeInTheDocument();
+  });
+
+  it("lets participants return songs without drawing replacements", async () => {
+    window.history.pushState({}, "", "/draw");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const songs = [1, 2].map((id) => ({ id, song_name: `待放回曲${id}`, artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" }));
+    const assignments = songs.map((song, index) => ({ id: 31 + index, assigned_to: participant, song, created_at: "2026-07-04T00:00:00", status: "active", draw_kind: "initial", replaces_assignment_id: null }));
+    const phases = { ...phasesPayload, phase_mode: "manual", manual_phase: "submission_2", active_phase: "submission_2", capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
+    const round = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", roll_count: 0, finalized_at: null };
+    let currentSwap = { is_open: true, active_phase: "submission_2" as const, round, assignments: assignments.map((assignment) => ({ ...assignment, selected: false, can_swap: true, has_submission: false })), last_roll: null };
+    const rollBodies: { assignment_ids: number[]; mode?: string }[] = [];
+    mockApi(async (path, init) => {
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant, { phases }));
+      if (path.endsWith("/draw/results")) return json(assignments);
+      if (path.endsWith("/swap/me/roll") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { assignment_ids: number[]; mode?: string };
+        rollBodies.push(body);
+        currentSwap = {
+          ...currentSwap,
+          assignments: currentSwap.assignments.filter((row) => !body.assignment_ids.includes(row.id)),
+          last_roll: {
+            id: 42,
+            status: "completed",
+            created_at: "2026-07-04T00:01:00",
+            items: body.assignment_ids.map((assignmentId, index) => ({
+              id: index + 1,
+              position: index,
+              original: assignments.find((row) => row.id === assignmentId)!,
+              replacement: null,
+            })),
+          },
+        };
+        return json(currentSwap);
+      }
+      if (path.endsWith("/swap/me")) return json(currentSwap);
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Stage2 投稿与换曲" })).toBeInTheDocument();
+    fireEvent.click((await screen.findAllByRole("checkbox"))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "放回并不抽取（1 首）" }));
+    await waitFor(() => expect(rollBodies).toEqual([{ assignment_ids: [31], mode: "return_only" }]));
+    expect(await screen.findByText("待放回曲1 已放回，未抽取新曲")).toBeInTheDocument();
   });
 
   it("keeps swap audit history read-only for administrators", async () => {

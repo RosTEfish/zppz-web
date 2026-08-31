@@ -139,5 +139,6 @@ function SwapAuditRequestCard({ request }: { request: SwapAuditRequestRead }) {
 }
 
 function SwapAuditSong({ label, assignment }: { label: string; assignment?: SwapAuditAssignmentRead | null }) {
-  return <Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="caption" color="text.secondary">{label}</Typography>{assignment ? <><Typography sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{assignment.song.song_name}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{assignment.song.artist}</Typography></> : <Typography variant="body2" color="text.secondary">暂无替换曲目</Typography>}</Box>;
+  const emptyLabel = label === "换后" ? "仅放回，未抽取" : "暂无曲目";
+  return <Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="caption" color="text.secondary">{label}</Typography>{assignment ? <><Typography sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{assignment.song.song_name}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{assignment.song.artist}</Typography></> : <Typography variant="body2" color="text.secondary">{emptyLabel}</Typography>}</Box>;
 }
