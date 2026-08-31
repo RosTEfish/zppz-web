@@ -19,6 +19,28 @@ const eventPayload = {
   },
 };
 
+const phasesPayload = {
+  event_id: 1,
+  phase_mode: "auto",
+  manual_phase: null,
+  active_phase: "registration",
+  timezone: "Asia/Shanghai",
+  server_time: "2026-07-03T00:00:00",
+  next_transition_at: null,
+  phases: [],
+  phase_snapshots: [],
+  capabilities: { song_pool_edit: true, submission: false, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false },
+};
+
+function bootstrapPayload(event = eventPayload, user: unknown = null, options: { available?: boolean; phases?: typeof phasesPayload } = {}) {
+  return {
+    event,
+    user,
+    phases: options.phases ?? phasesPayload,
+    guess_availability: { available: options.available ?? true },
+  };
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
@@ -28,7 +50,7 @@ describe("Material application shell", () => {
     window.history.pushState({}, "", "/");
     window.localStorage.clear();
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload());
       if (path.endsWith("/auth/me")) return json({ detail: "未登录" }, 401);
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/guess-game/availability")) return json({ available: true });
@@ -107,15 +129,14 @@ describe("Material application shell", () => {
       is_active: true,
     };
     const phases = {
+      ...phasesPayload,
       phase_mode: "manual",
       manual_phase: "submission_1",
       active_phase: "submission_1",
-      phases: [],
       capabilities: { song_pool_edit: false, submission: true, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false },
     };
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
-      if (path.endsWith("/event/phases")) return json(phases);
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant, { phases }));
       if (path.endsWith("/draw/results")) return json([]);
       if (path.endsWith("/swap/me")) return json({ is_open: false, active_phase: "submission_1", round: null, assignments: [], last_roll: null });
       return json({ detail: "not found" }, 404);
@@ -129,8 +150,7 @@ describe("Material application shell", () => {
 
   it("hides the guess entry from regular users when no public charts exist", async () => {
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
-      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, null, { available: false }));
       return json({ detail: "not found" }, 404);
     });
 
@@ -148,7 +168,7 @@ describe("Material application shell", () => {
       },
     };
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: null });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(currentEvent));
       return json({ detail: "not found" }, 404);
     });
 
@@ -196,7 +216,7 @@ describe("Material application shell", () => {
     const publicChart = { id: 41, title: "已公开 J 谱", author: "曲师", designer: "谱师", level: "14", lane: "j", guess_group_key: "public-j", source_submission_type: "j", source_submission_id: 41, source_level_slot: "5", cover_path: "", is_self_selected: false, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [], can_vote: false, can_comment: true, can_author_guess: false };
     const submittedComments: string[] = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/event/phases")) return json({ phase_mode: "manual", manual_phase: "registration", active_phase: "registration", phases: [], capabilities: { song_pool_edit: true, submission: false, swap: false, normal_submission_public: false, author_guess: false, quality_vote: false } });
       if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
@@ -341,7 +361,7 @@ describe("Material application shell", () => {
     };
     const songs = [1, 2].map((id) => ({ id, song_name: `曲目 ${id}`, artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" }));
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/song-pool/me")) return json(songs);
       return json({ detail: "not found" }, 404);
     });
@@ -368,7 +388,7 @@ describe("Material application shell", () => {
       is_active: true,
     };
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: guest });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, guest));
       if (path.endsWith("/song-pool/me")) return json([]);
       return json({ detail: "not found" }, 404);
     });
@@ -404,7 +424,7 @@ describe("Material application shell", () => {
     }));
     const savedBodies: Array<Record<string, unknown>> = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/banlist/check")) return json({ status: "clear", matches: [] });
       if (path.endsWith("/song-pool/me")) {
         if (init?.method === "POST") {
@@ -448,7 +468,7 @@ describe("Material application shell", () => {
     const savedBodies: Array<{ guessed_user_id: number }> = [];
     let overviewCalls = 0;
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/guess-game/charts")) return json([chart(21, "13", "4"), chart(22, "14", "5")]);
       if (path.endsWith("/guess-game/designer-guesses")) {
         overviewCalls += 1;
@@ -476,7 +496,7 @@ describe("Material application shell", () => {
     window.history.pushState({}, "", "/guess");
     let quotaCalls = 0;
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload());
       if (path.endsWith("/guess-game/charts")) return json([]);
       if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
       if (path.endsWith("/guess-game/vote-quota")) { quotaCalls += 1; return json({ below_14: { used: 0, limit: 3, remaining: 3 }, at_least_14: { used: 0, limit: 2, remaining: 2 } }); }
@@ -497,7 +517,17 @@ describe("Material application shell", () => {
     let quotaCalls = 0;
     let voteCalls = 0;
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) {
+        return json(bootstrapPayload(eventPayload, participant, {
+          phases: {
+            ...phasesPayload,
+            phase_mode: "manual",
+            manual_phase: "guess",
+            active_phase: "guess",
+            capabilities: { song_pool_edit: false, submission: false, swap: false, normal_submission_public: true, author_guess: true, quality_vote: true },
+          },
+        }));
+      }
       if (path.endsWith("/guess-game/charts")) return json([low, high]);
       if (path.endsWith("/guess-game/designer-guesses")) return json({ can_guess: false, candidates: [], states: [] });
       if (path.endsWith("/guess-game/vote-quota")) { quotaCalls += 1; return json({ below_14: { used: 3, limit: 3, remaining: 0 }, at_least_14: { used: 1, limit: 1, remaining: 0 } }); }
@@ -549,7 +579,7 @@ describe("Material application shell", () => {
       created_at: "2026-07-04T00:00:00",
     });
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/submissions/targets")) return json({
         is_open: true,
         targets: [
@@ -622,7 +652,7 @@ describe("Material application shell", () => {
       created_at: "2026-07-04T00:00:00",
     });
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/submissions/targets")) return json({
         is_open: true,
         targets: [
@@ -663,13 +693,12 @@ describe("Material application shell", () => {
     };
     const songs = [1, 2, 3, 4].map((id) => ({ id, song_name: `换曲原曲${id}`, artist: "曲师", song_type: "A", remark: "", submitter: participant, created_at: "2026-07-04T00:00:00" }));
     const assignments = songs.map((song, index) => ({ id: 31 + index, assigned_to: participant, song, created_at: "2026-07-04T00:00:00", status: "active", draw_kind: "initial", replaces_assignment_id: null }));
-    const phases = { phase_mode: "manual", manual_phase: "submission_2", active_phase: "submission_2", phases: [], capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
+    const phases = { ...phasesPayload, phase_mode: "manual", manual_phase: "submission_2", active_phase: "submission_2", capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
     const round = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", roll_count: 0, finalized_at: null };
     let currentSwap = { is_open: true, active_phase: "submission_2" as const, round, assignments: assignments.map((assignment) => ({ ...assignment, selected: false, can_swap: true, has_submission: false })), last_roll: null };
     const rollBodies: number[][] = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: participant });
-      if (path.endsWith("/event/phases")) return json(phases);
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant, { phases }));
       if (path.endsWith("/draw/results")) return json(assignments);
       if (path.endsWith("/swap/me/roll") && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { assignment_ids: number[] };
@@ -705,23 +734,25 @@ describe("Material application shell", () => {
     };
     const applicant = { ...admin, id: 9, user_code: "player", qq_id: "9", display_name: "参赛者", roles: ["participant"], is_admin: false, is_pool_editor: false };
     const song = { id: 1, song_name: "待更换曲目", artist: "曲师", song_type: "A", remark: "", submitter: applicant, created_at: "2026-07-04T00:00:00" };
-    let phases = { phase_mode: "manual", manual_phase: "submission_2" as string | null, active_phase: "submission_2" as string | null, phases: [], capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
+    let phases = { ...phasesPayload, phase_mode: "manual", manual_phase: "submission_2" as string | null, active_phase: "submission_2" as string | null, capabilities: { song_pool_edit: false, submission: true, swap: true, normal_submission_public: false, author_guess: false, quality_vote: false } };
     const cachedPhases = phases;
     const request = { id: 41, round_id: 1, user: applicant, status: "completed", created_at: "2026-07-04T00:01:00", items: [{ position: 0, original: { id: 31, song, status: "returned", draw_kind: "initial", created_at: "2026-07-04T00:00:00" }, replacement: { id: 51, song: { ...song, id: 2, song_name: "新曲" }, status: "active", draw_kind: "swap", created_at: "2026-07-04T00:01:00" } }] };
     const auditRound = { id: 1, status: "open", round_kind: "continuous", starts_at: "2026-07-04T00:00:00", ends_at: "2026-07-05T00:00:00", random_seed: "seed", finalized_at: null, roll_count: 1 };
     const audit = { round: auditRound, rounds: [auditRound], requests: [request], message: "连续换曲记录" };
     const phaseUpdates: Array<Record<string, unknown>> = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
+      if (path.endsWith("/bootstrap")) {
+        if (init?.cache === "no-store") {
+          return json(bootstrapPayload(eventPayload, admin, { phases }));
+        }
+        return json(bootstrapPayload(eventPayload, admin, { phases: cachedPhases }));
+      }
       if (path.endsWith("/admin/event/phases") && init?.method === "PUT") {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         phaseUpdates.push(body);
         phases = { ...phases, phase_mode: "auto", manual_phase: null, active_phase: null };
         return json(phases);
       }
-      if (path.endsWith("/event/phases")) return json(init?.cache === "no-store" ? phases : cachedPhases);
-      if (path.endsWith("/events/current")) return json(eventPayload);
-      if (path.endsWith("/guess-game/availability")) return json({ available: true });
       if (path.endsWith("/admin/swap/audit")) return json(audit);
       return json({ detail: "not found" }, 404);
     });
@@ -757,7 +788,7 @@ describe("Material application shell", () => {
     };
     const song = { id: 1, song_name: "曲池曲目", artist: "曲师", song_type: "A", remark: "", submitter: editor, created_at: "2026-07-04T00:00:00" };
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: editor });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, editor));
       if (path.endsWith("/admin/song-pool")) return json([song]);
       return json({ detail: "not found" }, 404);
     });
@@ -786,8 +817,7 @@ describe("Material application shell", () => {
     let currentEvent = eventPayload;
     const updates: Array<Record<string, unknown>> = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: currentEvent, user: admin });
-      if (path.endsWith("/guess-game/availability")) return json({ available: true });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(currentEvent, admin));
       if (path.endsWith("/admin/events/current") && init?.method === "PUT") {
         const body = JSON.parse(String(init.body)) as Record<string, unknown> & { name: string };
         updates.push(body);
@@ -831,8 +861,7 @@ describe("Material application shell", () => {
     let resetCalls = 0;
     let logoutCalls = 0;
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
-      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, admin, { available: false }));
       if (path.endsWith("/admin/reset") && init?.method === "POST") {
         resetCalls += 1;
         expect(JSON.parse(String(init.body))).toEqual({ confirmation: "清除全部数据" });
@@ -889,7 +918,7 @@ describe("Material application shell", () => {
     };
     const updateBodies: Array<{ roles: string[] }> = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, admin));
       if (path.endsWith("/auth/me")) return json({ user: admin });
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/admin/users") && (init?.method || "GET") === "GET") return json([member]);
@@ -943,7 +972,7 @@ describe("Material application shell", () => {
       is_active: true,
     };
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: admin });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, admin));
       if (path.endsWith("/auth/me")) return json({ user: admin });
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/admin/users")) return json([member]);
@@ -969,7 +998,7 @@ describe("Material application shell", () => {
       is_active: true,
     };
     mockApi(async (path) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: owner });
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, owner));
       if (path.endsWith("/auth/me")) return json({ user: owner });
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/admin/users")) return json([owner]);

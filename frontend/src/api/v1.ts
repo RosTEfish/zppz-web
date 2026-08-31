@@ -68,6 +68,7 @@ export interface EventUpdatePayload {
 }
 
 export type BootstrapRead = components["schemas"]["BootstrapRead"];
+export type PaginatedStoredFilesRead = components["schemas"]["PaginatedStoredFilesRead"];
 export type GuessAvailabilityRead = components["schemas"]["GuessAvailabilityRead"];
 export type DownloadPreparation = components["schemas"]["DownloadPreparation"];
 
@@ -345,7 +346,7 @@ export interface LoveVoteQuotaRead {
 }
 
 export const api = {
-  bootstrap: () => apiRequest<BootstrapRead>("/bootstrap"),
+  bootstrap: (options?: RequestInit) => apiRequest<BootstrapRead>("/bootstrap", options),
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
   register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
   logout: () => apiRequest<{ message: string }>("/auth/logout", { method: "POST" }),
@@ -407,7 +408,13 @@ export const api = {
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   submissionPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/submissions/${id}/preview-manifest`, { signal }),
   downloadSubmission: (id: number) => downloadPrepared(`/submissions/${id}/download-metadata`),
-  adminSubmissions: (track?: Track | "all", signal?: AbortSignal) => apiRequest<StoredFileRead[]>(`/admin/submissions${track && track !== "all" ? `?track=${track}` : ""}`, { signal }),
+  adminSubmissions: (track?: Track | "all", limit = 50, offset = 0, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (track && track !== "all") params.set("track", track);
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    return apiRequest<PaginatedStoredFilesRead>(`/admin/submissions?${params.toString()}`, { signal });
+  },
   replaceAdminSubmission: (id: number, file: File, track?: Track, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ track }, file, id, options),
   adminSubmissionProcessingJobs: (signal?: AbortSignal) => apiRequest<SubmissionProcessingJob[]>("/admin/submissions/processing-jobs", { cache: "no-store", signal }),
   rebuildSubmissionResources: (id: number) => apiRequest<SubmissionProcessingJob>(`/admin/submissions/${id}/resources/rebuild`, { method: "POST" }),

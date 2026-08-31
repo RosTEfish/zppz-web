@@ -2325,6 +2325,8 @@ export interface components {
         /** BootstrapRead */
         BootstrapRead: {
             event: components["schemas"]["EventRead"];
+            guess_availability: components["schemas"]["GuessAvailabilityRead"];
+            phases: components["schemas"]["EventPhasesRead"];
             user?: components["schemas"]["UserRead"] | null;
         };
         /** ChangePasswordRequest */
@@ -2608,6 +2610,17 @@ export interface components {
         LoveVoteQuotaRead: {
             at_least_14: components["schemas"]["LoveVoteQuotaBucketRead"];
             below_14: components["schemas"]["LoveVoteQuotaBucketRead"];
+        };
+        /** PaginatedStoredFilesRead */
+        PaginatedStoredFilesRead: {
+            /** Items */
+            items: components["schemas"]["StoredFileRead"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
         };
         /** PhaseCapabilitiesRead */
         PhaseCapabilitiesRead: {
@@ -4023,6 +4036,8 @@ export interface operations {
         parameters: {
             query?: {
                 track?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -4036,7 +4051,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StoredFileRead"][];
+                    "application/json": components["schemas"]["PaginatedStoredFilesRead"];
                 };
             };
             /** @description Validation Error */

@@ -36,7 +36,7 @@ from app.modules.downloads import (
     safe_download_name,
 )
 from app.modules.events.service import get_current_event
-from app.modules.events.phase_policy import ALWAYS_PUBLIC_CHART_SOURCE_TYPES, get_phase_status, is_chart_public
+from app.modules.events.phase_policy import ALWAYS_PUBLIC_CHART_SOURCE_TYPES, apply_chart_visibility_filter, get_phase_status, is_chart_public
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     delete_cover_paths,
@@ -208,12 +208,12 @@ def _select_chart_downloads(
     )
     assert chart_ids is not None
     phase_status = get_phase_status(db)
-    rows = list(
-        db.scalars(
-            select(GuessChart).where(GuessChart.event_id == event_id, GuessChart.id.in_(chart_ids))
-        ).all()
+    stmt = apply_chart_visibility_filter(
+        select(GuessChart).where(GuessChart.event_id == event_id, GuessChart.id.in_(chart_ids)),
+        phase_status,
     )
-    by_id = {row.id: row for row in rows if _is_public_chart(row, phase_status)}
+    rows = list(db.scalars(stmt).all())
+    by_id = {row.id: row for row in rows}
     ordered = [by_id[chart_id] for chart_id in chart_ids if chart_id in by_id]
     missing_ids = [chart_id for chart_id in chart_ids if chart_id not in by_id]
     return ordered, missing_ids, chart_ids
@@ -287,11 +287,11 @@ def charts(response: Response, user: User | None = Depends(get_optional_user), d
     response.headers["Cache-Control"] = "private, no-store" if user else ANONYMOUS_BOOTSTRAP_CACHE_CONTROL
     event = get_current_event(db)
     phase_status = get_phase_status(db, event)
-    rows = [
-        row for row in db.scalars(
-            select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc())
-        ).all() if _is_public_chart(row, phase_status)
-    ]
+    stmt = apply_chart_visibility_filter(
+        select(GuessChart).where(GuessChart.event_id == event.id).order_by(GuessChart.created_at.desc()),
+        phase_status,
+    )
+    rows = list(db.scalars(stmt).all())
     return _public_chart_payloads(db, rows, user.id if user else None, phase_status)
 
 
@@ -772,7 +772,7 @@ def admin_update_author_candidates(
 @admin_router.get("/stats")
 def admin_stats(
     scope: str = Query("all"),
-    include_details: bool = Query(True),
+    include_details: bool = Query(False),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:

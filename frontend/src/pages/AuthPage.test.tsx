@@ -58,9 +58,14 @@ describe("Auth registration page", () => {
     window.history.pushState({}, "", "/login");
     const registerBodies: unknown[] = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
-      if (path.endsWith("/event/phases")) return json(phases("guess", true));
-      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/bootstrap")) {
+        return json({
+          event: eventPayload,
+          user: null,
+          phases: { event_id: 1, timezone: "Asia/Shanghai", next_transition_at: null, phase_snapshots: [], ...phases("guess", true) },
+          guess_availability: { available: false },
+        });
+      }
       if (path.endsWith("/auth/register")) {
         const body = JSON.parse(String(init.body));
         registerBodies.push(body);
@@ -102,9 +107,14 @@ describe("Auth registration page", () => {
     window.history.pushState({}, "", "/login");
     const registerBodies: unknown[] = [];
     mockApi(async (path, init) => {
-      if (path.endsWith("/bootstrap")) return json({ event: eventPayload, user: null });
-      if (path.endsWith("/event/phases")) return json(phases("registration", false));
-      if (path.endsWith("/guess-game/availability")) return json({ available: false });
+      if (path.endsWith("/bootstrap")) {
+        return json({
+          event: eventPayload,
+          user: null,
+          phases: { event_id: 1, timezone: "Asia/Shanghai", next_transition_at: null, phase_snapshots: [], ...phases("registration", false) },
+          guess_availability: { available: false },
+        });
+      }
       if (path.endsWith("/auth/register")) {
         const body = JSON.parse(String(init.body));
         registerBodies.push(body);

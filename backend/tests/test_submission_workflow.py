@@ -1044,7 +1044,7 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert client.put(f"/api/v1/guess-game/charts/{chart_ids[0]}/author-guess", json={"guessed_user_id": owner_id}).status_code == 200
 
     login_admin(client)
-    stats = client.get("/api/v1/admin/guess-game/stats?scope=all")
+    stats = client.get("/api/v1/admin/guess-game/stats?scope=all&include_details=true")
     assert stats.status_code == 200, stats.text
     assert stats.json()["overview"]["counted_guesses"] == 1
     assert stats.json()["overview"]["correct_guesses"] == 1

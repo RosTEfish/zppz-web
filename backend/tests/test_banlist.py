@@ -433,3 +433,28 @@ def test_ban_check_requires_login_and_song_pool_rechecks(client):
 
     with SessionLocal() as db:
         assert db.scalar(select(BanImport).where(BanImport.status == "published")) is not None
+
+
+def test_ban_cache_reuses_published_entries(client):
+    from unittest.mock import patch
+
+    from app.modules.banlist.service import check_song, get_import_entries, invalidate_ban_cache
+
+    invalidate_ban_cache()
+    login = client.post("/api/v1/auth/login", json={"user_code": "admin", "password": "change-me-please"})
+    assert login.status_code == 200, login.text
+    imported = client.post(
+        "/api/v1/admin/banlist/import",
+        files={"file": ("banlist.xlsx", workbook_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert imported.status_code == 200, imported.text
+    published = client.post(f"/api/v1/admin/banlist/{imported.json()['id']}/publish")
+    assert published.status_code == 200, published.text
+
+    with patch("app.modules.banlist.service.get_import_entries", wraps=get_import_entries) as spy:
+        with SessionLocal() as db:
+            first = check_song(db, "Ban Song", "Artist")
+            second = check_song(db, "Ban Song", "Artist")
+        assert first["status"] == "exact"
+        assert second["status"] == "exact"
+        assert spy.call_count == 1

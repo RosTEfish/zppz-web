@@ -579,6 +579,8 @@ class WebhookSystemState(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
     baseline_completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_publication_scan_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_visibility_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class WebhookEndpoint(Base, TimestampMixin):

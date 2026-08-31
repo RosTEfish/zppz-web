@@ -91,11 +91,6 @@ class EventRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class BootstrapRead(BaseModel):
-    event: EventRead
-    user: UserRead | None = None
-
-
 class EventUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     participant_song_limit: int = Field(ge=0, le=50)
@@ -176,6 +171,13 @@ class EventPhasesRead(BaseModel):
     phases: list[EventPhaseRead]
     phase_snapshots: list[EventPhaseSnapshotRead] = Field(default_factory=list)
     capabilities: PhaseCapabilitiesRead
+
+
+class BootstrapRead(BaseModel):
+    event: EventRead
+    user: UserRead | None = None
+    phases: EventPhasesRead
+    guess_availability: GuessAvailabilityRead
 
 
 class SongCreate(BaseModel):
@@ -291,6 +293,13 @@ class StoredFileRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PaginatedStoredFilesRead(BaseModel):
+    items: list[StoredFileRead]
+    total: int
+    limit: int
+    offset: int
 
 
 class SubmissionUploadIntentCreate(BaseModel):
