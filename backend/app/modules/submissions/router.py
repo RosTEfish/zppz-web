@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -70,6 +70,7 @@ from app.schemas import (
     BatchDeleteRequest,
     BatchDeleteResponse,
     DownloadPreparation,
+    PaginatedStoredFilesRead,
     StoredFileRead,
     SubmissionTargetsResponse,
     SubmissionTrackUpdate,
@@ -1179,22 +1180,33 @@ def own_submission_download_metadata(
     }
 
 
-@admin_router.get("", response_model=list[StoredFileRead])
+@admin_router.get("", response_model=PaginatedStoredFilesRead)
 def admin_list_submissions(
     track: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
-) -> list[dict]:
+) -> dict:
     event = get_current_event(db)
+    filters = [Submission.event_id == event.id]
+    if track:
+        filters.append(Submission.track == _normalize_track(track))
+    total = db.scalar(select(func.count()).select_from(Submission).where(*filters)) or 0
     stmt = (
         select(Submission)
         .options(*_submission_options())
-        .where(Submission.event_id == event.id)
+        .where(*filters)
         .order_by(Submission.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
-    if track:
-        stmt = stmt.where(Submission.track == _normalize_track(track))
-    return serialize_submissions(db, db.scalars(stmt).all())
+    return {
+        "items": serialize_submissions(db, db.scalars(stmt).all()),
+        "total": int(total),
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @admin_router.post("/{submission_id}/upload-intents", response_model=SubmissionUploadIntentRead)

@@ -23,19 +23,24 @@ describe("AdminSubmissions", () => {
     let resolveMetadata: ((response: Response) => void) | undefined;
     const metadata = new Promise<Response>((resolve) => { resolveMetadata = resolve; });
     mockApi((path) => {
-      if (path.endsWith("/admin/submissions")) {
-        return Promise.resolve(json([{
-          id: 11,
-          file_name: "source.zip",
-          file_size: 2048,
-          review_status: "approved",
-          review_note: "",
-          source_kind: "self",
-          track: "normal",
-          source_song: { id: 3, song_name: "测试曲目", artist: "测试曲师", song_type: "A", remark: "", created_at: "2026-07-17T00:00:00" },
-          user: { id: 4, user_code: "player", qq_id: "4", identity: "participant", display_name: "参赛者", roles: [], is_admin: false, is_owner: false, is_pool_editor: false },
-          created_at: "2026-07-17T00:00:00",
-        }]));
+      if (path.includes("/admin/submissions") && !path.includes("download") && !path.includes("processing-jobs") && !path.includes("upload-intents") && !path.includes("batch-delete")) {
+        return Promise.resolve(json({
+          items: [{
+            id: 11,
+            file_name: "source.zip",
+            file_size: 2048,
+            review_status: "approved",
+            review_note: "",
+            source_kind: "self",
+            track: "normal",
+            source_song: { id: 3, song_name: "测试曲目", artist: "测试曲师", song_type: "A", remark: "", created_at: "2026-07-17T00:00:00" },
+            user: { id: 4, user_code: "player", qq_id: "4", identity: "participant", display_name: "参赛者", roles: [], is_admin: false, is_owner: false, is_pool_editor: false },
+            created_at: "2026-07-17T00:00:00",
+          }],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }));
       }
       if (path.includes("/admin/submissions/download-metadata")) {
         metadataAttempt += 1;

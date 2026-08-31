@@ -16,7 +16,7 @@ export const queryKeys = {
     targets: ["submissions", "targets"] as const,
     mine: ["submissions", "mine"] as const,
     jobs: ["submissions", "jobs"] as const,
-    admin: (track: string) => ["submissions", "admin", track] as const,
+    admin: (track: string, limit: number, offset: number) => ["submissions", "admin", track, limit, offset] as const,
     adminJobs: ["submissions", "admin-jobs"] as const,
   },
   guess: {

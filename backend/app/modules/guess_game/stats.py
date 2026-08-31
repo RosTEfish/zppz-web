@@ -18,7 +18,7 @@ from app.models import (
 from app.modules.events.service import get_current_event
 
 
-def build_guess_stats(db: Session, scope: str, *, include_details: bool = True) -> dict:
+def build_guess_stats(db: Session, scope: str, *, include_details: bool = False) -> dict:
     if scope not in {"all", "j"}:
         raise HTTPException(status_code=400, detail="scope 只能是 all 或 j")
     event = get_current_event(db)
