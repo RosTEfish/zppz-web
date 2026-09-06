@@ -1064,4 +1064,111 @@ describe("Material application shell", () => {
     expect(screen.getByRole("checkbox", { name: "管理员" })).toBeDisabled();
     expect(screen.queryByRole("checkbox", { name: "Owner / 最高权限" })).not.toBeInTheDocument();
   });
+
+  it("resets a member password from user management", async () => {
+    window.history.pushState({}, "", "/admin/users");
+    const admin = {
+      id: 1,
+      user_code: "admin",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "赛事管理员",
+      roles: ["owner", "admin", "pool_editor", "participant"],
+      is_admin: true,
+      is_owner: true,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    const member = {
+      id: 2,
+      user_code: "member",
+      qq_id: "2",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_owner: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const resetBodies: Array<{ user_id: number; new_password: string }> = [];
+    mockApi(async (path, init) => {
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, admin));
+      if (path.endsWith("/auth/me")) return json({ user: admin });
+      if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/admin/users") && (init?.method || "GET") === "GET") return json([member]);
+      if (path.endsWith("/admin/users/reset-password") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { user_id: number; new_password: string };
+        resetBodies.push(body);
+        return json({ message: "密码已重置，该账号的登录会话已全部注销" });
+      }
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "重置密码 member" }));
+    const dialog = await screen.findByRole("dialog", { name: "重置账号密码" });
+    fireEvent.change(within(dialog).getByLabelText("新密码"), { target: { value: "abcdef" } });
+    fireEvent.change(within(dialog).getByLabelText("确认新密码"), { target: { value: "abcdefg" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认重置" }));
+    expect(await within(dialog).findByText("两次输入的新密码不一致")).toBeInTheDocument();
+    expect(resetBodies).toHaveLength(0);
+
+    fireEvent.change(within(dialog).getByLabelText("确认新密码"), { target: { value: "abcdef" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认重置" }));
+    await waitFor(() => expect(resetBodies).toEqual([{ user_id: 2, new_password: "abcdef" }]));
+    expect(await screen.findByText("密码已重置，该账号的登录会话已全部注销")).toBeInTheDocument();
+  });
+
+  it("disables password reset for owner rows and admin targets for regular administrators", async () => {
+    window.history.pushState({}, "", "/admin/users");
+    const admin = {
+      id: 1,
+      user_code: "admin",
+      qq_id: "1",
+      identity: "participant",
+      display_name: "赛事管理员",
+      roles: ["admin", "pool_editor", "participant"],
+      is_admin: true,
+      is_owner: false,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    const owner = {
+      id: 2,
+      user_code: "owner-account",
+      qq_id: "2",
+      identity: "participant",
+      display_name: "最高权限账号",
+      roles: ["owner", "participant"],
+      is_admin: true,
+      is_owner: true,
+      is_pool_editor: true,
+      is_active: true,
+    };
+    const peerAdmin = {
+      id: 3,
+      user_code: "peer-admin",
+      qq_id: "3",
+      identity: "participant",
+      display_name: "同事管理员",
+      roles: ["admin", "participant"],
+      is_admin: true,
+      is_owner: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    mockApi(async (path) => {
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, admin));
+      if (path.endsWith("/auth/me")) return json({ user: admin });
+      if (path.endsWith("/events/current")) return json(eventPayload);
+      if (path.endsWith("/admin/users")) return json([owner, peerAdmin]);
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "重置密码 owner-account" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重置密码 peer-admin" })).toBeDisabled();
+  });
 });
+

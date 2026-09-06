@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import OWNER_ROLE, USER_IDENTITIES, ensure_roles, hash_password, is_owner, require_role, sync_identity_role, user_payload
 from app.db.session import get_db
-from app.models import Role, User
+from app.models import Role, User, UserSession
 from app.schemas import AdminUserUpdate, ResetPasswordRequest, UserRead
 
 
@@ -74,10 +74,21 @@ def update_user(
 
 
 @router.post("/reset-password")
-def reset_password(payload: ResetPasswordRequest, _: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
-    user = db.get(User, payload.user_id)
+def reset_password(
+    payload: ResetPasswordRequest,
+    actor: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.scalar(select(User).options(selectinload(User.roles)).where(User.id == payload.user_id))
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    target_is_owner = user.has_role(OWNER_ROLE)
+    target_is_admin = user.has_role("admin") or target_is_owner
+    if target_is_owner:
+        raise HTTPException(status_code=403, detail="owner 账号密码不能通过管理接口重置")
+    if target_is_admin and not is_owner(actor):
+        raise HTTPException(status_code=403, detail="only the owner can reset administrator passwords")
     user.password_hash = hash_password(payload.new_password)
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     db.commit()
-    return {"message": "密码已重置"}
+    return {"message": "密码已重置，该账号的登录会话已全部注销"}

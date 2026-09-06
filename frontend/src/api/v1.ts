@@ -474,5 +474,6 @@ export const api = {
 
   users: (signal?: AbortSignal) => apiRequest<UserRead[]>("/admin/users", { signal }),
   updateUser: (id: number, payload: { identity: string; roles: string[]; display_name: string; is_active: boolean }) => apiRequest<UserRead>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  resetPassword: (user_id: number, new_password: string) => apiRequest<{ message: string }>("/admin/users/reset-password", { method: "POST", body: JSON.stringify({ user_id, new_password }) }),
   siteStats: (signal?: AbortSignal) => apiRequest<Record<string, number>>("/admin/stats", { signal }),
 };

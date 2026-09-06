@@ -305,6 +305,148 @@ def test_password_change_keeps_current_session_and_revokes_other_sessions(client
         assert new_login.status_code == 200
 
 
+
+
+def test_admin_can_reset_user_password_and_revokes_all_sessions(client: TestClient):
+    register_user(client, "reset-target")
+
+    with TestClient(app) as other_client:
+        second_login = other_client.post(
+            "/api/v1/auth/login",
+            json={"user_code": "reset-target", "password": "secret123"},
+        )
+        assert second_login.status_code == 200
+        assert other_client.get("/api/v1/auth/me").status_code == 200
+
+        login_user(client, "admin")
+        users = client.get("/api/v1/admin/users").json()
+        target = next(user for user in users if user["user_code"] == "reset-target")
+
+        too_short = client.post(
+            "/api/v1/admin/users/reset-password",
+            json={"user_id": target["id"], "new_password": "short"},
+        )
+        assert too_short.status_code == 422
+
+        missing = client.post(
+            "/api/v1/admin/users/reset-password",
+            json={"user_id": 999999, "new_password": "new-secret-456"},
+        )
+        assert missing.status_code == 404
+
+        reset = client.post(
+            "/api/v1/admin/users/reset-password",
+            json={"user_id": target["id"], "new_password": "new-secret-456"},
+        )
+        assert reset.status_code == 200, reset.text
+        assert "密码已重置" in reset.json()["message"]
+
+        assert other_client.get("/api/v1/auth/me").status_code == 401
+        old_login = other_client.post(
+            "/api/v1/auth/login",
+            json={"user_code": "reset-target", "password": "secret123"},
+        )
+        assert old_login.status_code == 401
+        new_login = other_client.post(
+            "/api/v1/auth/login",
+            json={"user_code": "reset-target", "password": "new-secret-456"},
+        )
+        assert new_login.status_code == 200
+
+
+def test_admin_password_reset_requires_admin_and_respects_owner_rules(client: TestClient):
+    register_user(client, "plain-member")
+    register_user(client, "deputy-admin")
+    client.post("/api/v1/auth/logout")
+
+    anonymous = client.post(
+        "/api/v1/admin/users/reset-password",
+        json={"user_id": 1, "new_password": "new-secret-456"},
+    )
+    assert anonymous.status_code == 401
+
+    login_user(client, "plain-member")
+    forbidden = client.post(
+        "/api/v1/admin/users/reset-password",
+        json={"user_id": 1, "new_password": "new-secret-456"},
+    )
+    assert forbidden.status_code == 403
+
+    login_user(client, "admin")
+    users = client.get("/api/v1/admin/users").json()
+    admin = next(user for user in users if user["user_code"] == "admin")
+    deputy = next(user for user in users if user["user_code"] == "deputy-admin")
+    member = next(user for user in users if user["user_code"] == "plain-member")
+
+    promoted = client.put(
+        f"/api/v1/admin/users/{deputy['id']}",
+        json={
+            "identity": deputy["identity"],
+            "roles": [*deputy["roles"], "admin"],
+            "display_name": deputy["display_name"],
+            "is_active": True,
+        },
+    )
+    # Without owner, admin cannot promote another admin
+    assert promoted.status_code == 403
+
+    with SessionLocal() as db:
+        set_owner(db, "admin")
+
+    login_user(client, "admin")
+    users = client.get("/api/v1/admin/users").json()
+    admin = next(user for user in users if user["user_code"] == "admin")
+    deputy = next(user for user in users if user["user_code"] == "deputy-admin")
+    member = next(user for user in users if user["user_code"] == "plain-member")
+    assert admin["is_owner"] is True
+
+    promoted = client.put(
+        f"/api/v1/admin/users/{deputy['id']}",
+        json={
+            "identity": deputy["identity"],
+            "roles": [*deputy["roles"], "admin"],
+            "display_name": deputy["display_name"],
+            "is_active": True,
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+
+    # Owner cannot reset their own password through this endpoint
+    owner_reset = client.post(
+        "/api/v1/admin/users/reset-password",
+        json={"user_id": admin["id"], "new_password": "owner-new-password"},
+    )
+    assert owner_reset.status_code == 403
+
+    # Owner can reset another administrator
+    admin_reset = client.post(
+        "/api/v1/admin/users/reset-password",
+        json={"user_id": deputy["id"], "new_password": "deputy-new-password"},
+    )
+    assert admin_reset.status_code == 200, admin_reset.text
+
+    client.post("/api/v1/auth/logout")
+    relogin = client.post(
+        "/api/v1/auth/login",
+        json={"user_code": "deputy-admin", "password": "deputy-new-password"},
+    )
+    assert relogin.status_code == 200
+
+    # Regular admin cannot reset another admin or owner
+    blocked_admin = client.post(
+        "/api/v1/admin/users/reset-password",
+        json={"user_id": admin["id"], "new_password": "should-fail-456"},
+    )
+    assert blocked_admin.status_code == 403
+
+    # Regular admin can still reset a normal member
+    member_reset = client.post(
+        "/api/v1/admin/users/reset-password",
+        json={"user_id": member["id"], "new_password": "member-new-password"},
+    )
+    assert member_reset.status_code == 200, member_reset.text
+
+
 def test_song_pool_requires_auth(client: TestClient):
     response = client.get("/api/v1/song-pool/me")
     assert response.status_code == 401
