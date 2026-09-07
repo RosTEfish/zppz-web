@@ -26,27 +26,30 @@ git apply /path/to/zppz-web/preview-player/majdata-view-record/patches/0001-web-
 # or copy Assets/Scripts/** over the same paths
 ```
 
-Unity Editor version: **6000.3.17f1** (see upstream
-`ProjectSettings/ProjectVersion.txt`).
+Upstream project version: **6000.3.17f1**. The pinned WebGL player was built
+with **Unity 6000.6.0f1** (upgrade on open) plus the `JSLibFileCreator`
+API fix below.
 
 ## WebGL build
 
-1. Open the patched project in Unity 6000.3.17f1.
-2. Switch platform to WebGL; build into `Build/`
-   (`Build.loader.js`, `Build.framework.js`, `Build.data`, `Build.wasm`).
-3. Copy those four files to
-   `zppz-web/preview-player/Build/`.
+1. Open the patched project in Unity (6000.6.0f1 works after the JSLib fix).
+2. Switch platform to WebGL; build (Unity may write `build/Build/build.*`).
+3. Copy/rename the four files to `zppz-web/preview-player/Build/` as
+   `Build.loader.js`, `Build.framework.js`, `Build.data`, `Build.wasm`.
 4. From `zppz-web` run:
 
 ```bash
 python scripts/package_majdata_record_source.py
-python scripts/update_majdata_build_manifest.py
+python scripts/update_majdata_build_manifest.py \
+  --version majdataview-zppz-record1-webgl-6000.6 \
+  --source-commit "$(cat preview-player/majdata-view-record/FORK_COMMIT.txt)" \
+  --build-base-url local://preview-player/Build \
+  --source-archive-url local://preview-player/corresponding-source.zip
 ```
 
-5. Commit the updated `majdata-build.json`,
-   `corresponding-source.zip` metadata URLs / notices, then deploy as usual.
-   `scripts/publish_preview_player.py` prefers local `preview-player/Build/`
-   when present.
+5. Commit `majdata-build.json`, `preview-player/Build/`,
+   `corresponding-source.zip`, and notices; deploy as usual.
+   `scripts/publish_preview_player.py` reads `local://` paths from the manifest.
 
 ## Changed files
 
@@ -54,3 +57,4 @@ python scripts/update_majdata_build_manifest.py
 - `Assets/Scripts/GameMainManager.cs` — Play = record path
 - `Assets/Scripts/Core/AudioTimeProvider.cs` — intro delay + deferred BGM
 - `Assets/Scripts/Core/SoundEffect.cs` — `clock_count` + AP when `isOpIncluded`
+- `Assets/Scripts/Misc/JSLibFileCreator.cs` — Unity 6000.6 editor API

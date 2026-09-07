@@ -71,6 +71,5 @@ Thumbs.db
 .temp/
 .test-data/
 
-# Majdata WebGL build artifacts (pin hashes in majdata-build.json; publish from CI/local)
-preview-player/Build/
-preview-player/corresponding-source.zip
+# Majdata WebGL Library/Temp stay local; Build + corresponding-source are
+# committed when pinning a record-mode player for CI publish.

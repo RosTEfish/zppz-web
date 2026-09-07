@@ -60,12 +60,13 @@ SHA-256。播放器被 gzip 压缩后上传到不可变版本目录；相同哈�
 录制模式预览基于上游 `ad734f1272` 的修改版 WebGL（开场 SongDetail、延迟开谱、
 AP、`&clock_count`）。改动源码见 `preview-player/majdata-view-record/`。出包步骤：
 
-1. 用 Unity **6000.3.17f1** 打开打过 patch 的 MajdataView 工程并导出 WebGL。
-2. 将四个 `Build.*` 放到 `preview-player/Build/`。
+1. 用 Unity（实测 **6000.6.0f1**）打开打过 patch 的 MajdataView 工程并导出 WebGL。
+2. 将四个产物重命名为 `Build.*` 放到 `preview-player/Build/`。
 3. 运行 `python scripts/package_majdata_record_source.py` 生成对应源码 zip。
 4. 运行 `python scripts/update_majdata_build_manifest.py --version <新版本名> ...`
-5. 部署时 `publish_preview_player.py` 会优先使用本地 `Build/` 与
-   `corresponding-source.zip`（`local://` 或目录兜底）。
+   （`build_base_url` / `source_archive_url` 使用 `local://preview-player/...`）。
+5. 提交 Build、corresponding-source.zip 与 manifest；部署时
+   `publish_preview_player.py` 从 `local://` 读取并上传 R2。
 
 独立 fork 仓库建议命名为 `MajdataView-zppz-preview`，不要把完整 Unity 工程合进
 本网站仓的 `main` 历史。

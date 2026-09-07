@@ -13,25 +13,23 @@ Pinned upstream commit: ad734f1272159a52cbd948c27c68cfa7cf1dc536
 
 ZPPZ record-mode fork
 ---------------------
-Source of the playback changes (SongDetail intro, delayed start, All Perfect,
-clock_count) lives in this repository under:
+Playback changes (SongDetail intro, delayed start, All Perfect, clock_count)
+and Unity 6000.6 editor API fix live under:
 
   preview-player/majdata-view-record/
 
-Apply the patch from that directory onto the upstream commit above, build
-WebGL with Unity 6000.3.17f1, then publish via scripts/publish_preview_player.py.
-Recommended independent GitHub repository name when you push the fork:
+WebGL was built with Unity Editor 6000.6.0f1 (WebGL module) from that patched
+tree. Corresponding source is published as corresponding-source.zip beside
+the player. Local fork checkout used for the build:
 
-  MajdataView-zppz-preview
+  ~/MajdataView-zppz-preview (branch zppz-record-mode)
 
 MajdataNet
 ----------
 Project: https://github.com/TeamMajdata/MajdataNet
 License: GNU General Public License v3.0 (GPL-3.0)
-Pinned WebGL distribution commit (legacy unmodified pin):
+Previous unmodified WebGL pin (superseded by the record-mode build above):
 15581b147bfd7d1155b62f5fc19cb748bdc5a9fc
 
 The corresponding source archive and GPL license are published in the same
-immutable version directory as the player. After a record-mode WebGL build is
-pinned, that archive must match the modified fork (see
-scripts/package_majdata_record_source.py), not the unmodified upstream zip.
+immutable version directory as the player.

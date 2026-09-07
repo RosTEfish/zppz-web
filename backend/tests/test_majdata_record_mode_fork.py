@@ -12,6 +12,7 @@ CHANGED = (
     "Assets/Scripts/GameMainManager.cs",
     "Assets/Scripts/Core/AudioTimeProvider.cs",
     "Assets/Scripts/Core/SoundEffect.cs",
+    "Assets/Scripts/Misc/JSLibFileCreator.cs",
 )
 
 
