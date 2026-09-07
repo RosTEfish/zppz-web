@@ -6,7 +6,7 @@
 
 - `backend/`：FastAPI + SQLAlchemy + Alembic 后端，入口为 `app/main.py`。
 - `frontend/`：React 19 + Vite + TypeScript 前端，入口为 `src/App.tsx`。
-- `preview-player/`：谱面预览播放器的桥接代码与 MajdataView WebGL 构建声明（GPL-3.0）。
+- `preview-player/`：谱面预览播放器的桥接代码、MajdataView WebGL 构建声明，以及录制模式 fork 补丁（GPL-3.0）。
 - `infra/`：Nginx 配置。
 - `scripts/`：部署与工具脚本。
 

@@ -70,3 +70,7 @@ Thumbs.db
 *.cache
 .temp/
 .test-data/
+
+# Majdata WebGL build artifacts (pin hashes in majdata-build.json; publish from CI/local)
+preview-player/Build/
+preview-player/corresponding-source.zip

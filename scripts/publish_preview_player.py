@@ -32,6 +32,29 @@ def download(url: str, target: Path) -> None:
             output.write(chunk)
 
 
+def resolve_asset(url: str, name: str, player_dir: Path, temp_root: Path) -> Path:
+    """Fetch a Build/license/source asset from HTTPS or local://preview-player/... paths."""
+    target = temp_root / name
+    if url.startswith("local://"):
+        relative = url.removeprefix("local://")
+        local_path = Path(relative)
+        if not local_path.is_absolute():
+            local_path = Path.cwd() / local_path
+        if local_path.is_dir():
+            local_path = local_path / name
+        if not local_path.is_file():
+            # Allow shorthand local://preview-player/Build → player_dir/Build/name
+            fallback = player_dir / Path(relative).name / name
+            if fallback.is_file():
+                local_path = fallback
+            else:
+                raise RuntimeError(f"local asset missing for {name}: {url}")
+        target.write_bytes(local_path.read_bytes())
+        return target
+    download(url, target)
+    return target
+
+
 def gzip_file(source: Path, target: Path) -> None:
     with source.open("rb") as input_file, target.open("wb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=9) as output:
@@ -84,15 +107,14 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="zppz-player-publish-") as temp:
         root = Path(temp)
         prepared: dict[str, tuple[Path, str, str | None]] = {}
+        build_base = manifest["build_base_url"].rstrip("/")
         for name, item in manifest["files"].items():
-            source = root / name
-            source_url = f"{manifest['build_base_url']}/{name}"
-            download(source_url, source)
+            source = resolve_asset(f"{build_base}/{name}", name, player_dir, root)
             actual = sha256(source)
             if actual != item["sha256"]:
                 raise RuntimeError(
                     f"SHA-256 mismatch for {name}: expected {item['sha256']}, "
-                    f"downloaded {actual} ({source.stat().st_size} bytes) from {source_url}"
+                    f"got {actual} ({source.stat().st_size} bytes) from {build_base}/{name}"
                 )
             upload_path = source
             encoding = None
@@ -102,10 +124,22 @@ def main() -> None:
                 encoding = "gzip"
             prepared[name] = (upload_path, item["content_type"], encoding)
 
-        license_path = root / "LICENSE"
-        source_path = root / "corresponding-source.zip"
-        download(manifest["license_url"], license_path)
-        download(manifest["source_archive_url"], source_path)
+        license_path = resolve_asset(manifest["license_url"], "LICENSE", player_dir, root)
+        local_source = player_dir / "corresponding-source.zip"
+        if str(manifest.get("source_archive_url", "")).startswith("local://") or local_source.is_file():
+            source_url = (
+                manifest["source_archive_url"]
+                if str(manifest.get("source_archive_url", "")).startswith("local://")
+                else f"local://{local_source.as_posix()}"
+            )
+            source_path = resolve_asset(source_url, "corresponding-source.zip", player_dir, root)
+        else:
+            source_path = resolve_asset(
+                manifest["source_archive_url"],
+                "corresponding-source.zip",
+                player_dir,
+                root,
+            )
         for name in ("player.html", "player-bridge.js", "THIRD_PARTY_NOTICES.txt"):
             prepared[name] = (player_dir / name, content_type(name), None)
         prepared["LICENSE"] = (license_path, content_type("LICENSE"), None)

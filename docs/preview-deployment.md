@@ -57,6 +57,19 @@ SHA-256。播放器被 gzip 压缩后上传到不可变版本目录；相同哈�
 对应源码归档。升级或修改 MajdataView 源码时，必须更新固定 commit、哈希和
 对应源码归档；不得删除原作者版权或许可证信息。
 
+录制模式预览基于上游 `ad734f1272` 的修改版 WebGL（开场 SongDetail、延迟开谱、
+AP、`&clock_count`）。改动源码见 `preview-player/majdata-view-record/`。出包步骤：
+
+1. 用 Unity **6000.3.17f1** 打开打过 patch 的 MajdataView 工程并导出 WebGL。
+2. 将四个 `Build.*` 放到 `preview-player/Build/`。
+3. 运行 `python scripts/package_majdata_record_source.py` 生成对应源码 zip。
+4. 运行 `python scripts/update_majdata_build_manifest.py --version <新版本名> ...`
+5. 部署时 `publish_preview_player.py` 会优先使用本地 `Build/` 与
+   `corresponding-source.zip`（`local://` 或目录兜底）。
+
+独立 fork 仓库建议命名为 `MajdataView-zppz-preview`，不要把完整 Unity 工程合进
+本网站仓的 `main` 历史。
+
 ## 上线验收
 
 使用包含 `maidata.txt`、`track.mp3`、`bg.jpg` 或 `bg.png` 的真实投稿验证：
@@ -68,3 +81,7 @@ SHA-256。播放器被 gzip 压缩后上传到不可变版本目录；相同哈�
 - 关闭弹窗后 iframe 消失。
 - OGG/WEBP 只提示不支持，不影响投稿和下载。
 - MP4 解码失败时仍能使用静态背景。
+- 点击播放器内播放键后先出现 SongDetail 开场，约数秒后再出 note。
+- 曲末出现 All Perfect。
+- 带 `&clock_count=N` 的谱面在开头有 N 次拍子音；无该字段的谱面仍正常开场。
+- 切换难度或重新加载后再次点播放仍走开场。

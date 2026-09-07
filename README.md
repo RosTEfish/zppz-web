@@ -110,7 +110,7 @@ set +a
 
 **例外**：`bg/`（背景图）、`ruleDetail/`（规则 PDF）、`banlist/`（Ban 曲列表）以及 `frontend/src/assets/beian.png`（备案图标）为赛事运营资源，**不在 MIT 许可范围内**，版权归各自权利人所有，仅用于本项目运行与赛事运营，请勿另行复制、再分发或商用。这些资源属于「这谱谱这」赛事运营素材，随仓库发布以便部署时同步到站点数据目录。
 
-`preview-player/` 目录捆绑了 [MajdataView](https://github.com/TeamMajdata/MajdataView) / [MajdataNet](https://github.com/TeamMajdata/MajdataNet) 的 **GPL-3.0** WebGL 构建（见 [THIRD_PARTY_NOTICES.txt](preview-player/THIRD_PARTY_NOTICES.txt)）。该预览播放器分发物须保持 GPL-3.0 兼容；其余代码仍适用 MIT 许可证。主要依赖均为 MIT/BSD/Apache 等宽松许可证。
+`preview-player/` 目录捆绑了 [MajdataView](https://github.com/TeamMajdata/MajdataView) / [MajdataNet](https://github.com/TeamMajdata/MajdataNet) 的 **GPL-3.0** WebGL 构建（见 [THIRD_PARTY_NOTICES.txt](preview-player/THIRD_PARTY_NOTICES.txt)）。在线预览的 Play 走录制模式（开场 SongDetail、AP、`clock_count`）；改动源码与出包说明见 [`preview-player/majdata-view-record/`](preview-player/majdata-view-record/)。该预览播放器分发物须保持 GPL-3.0 兼容；其余代码仍适用 MIT 许可证。主要依赖均为 MIT/BSD/Apache 等宽松许可证。
 
 ## 社区与安全
 

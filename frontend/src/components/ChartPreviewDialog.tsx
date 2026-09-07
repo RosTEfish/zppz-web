@@ -54,7 +54,7 @@ const PHASE_LABELS: Partial<Record<PreviewPhase, string>> = {
   "loading-player": "加载播放器",
   "waiting-receiver": "初始化谱面接收器",
   "checking-assets": "检查谱面和媒体素材",
-  "loading-chart": "加载谱面和音乐",
+  "loading-chart": "谱面已就绪，点击播放器内播放键（含开场动画）",
 };
 
 export interface ChartPreviewStageProps {
@@ -314,7 +314,9 @@ export function ChartPreviewStage({
         >
           <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
             {levelLabel ? <Chip label={levelLabel} sx={{ bgcolor: "rgba(255,255,255,.92)", color: "#17211d" }} /> : null}
-            <Typography variant="body2" sx={{ color: "rgba(255,255,255,.76)" }}>Majdata 实时渲染</Typography>
+            <Typography variant="body2" sx={{ color: "rgba(255,255,255,.76)" }}>
+              Majdata 录制模式预览（开场动画后出谱）
+            </Typography>
           </Stack>
           {idleAction ?? (
             <Button

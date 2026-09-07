@@ -1,20 +1,37 @@
 Majdata preview player
 ======================
 
-This distribution includes an unmodified WebGL build of MajdataView and the
-minimal bridge required to load user-authorized chart assets.
+This distribution includes a WebGL build of MajdataView with ZPPZ
+record-mode playback changes, plus the minimal bridge required to load
+user-authorized chart assets.
 
-MajdataView
------------
+MajdataView (upstream)
+----------------------
 Project: https://github.com/TeamMajdata/MajdataView
 License: GNU General Public License v3.0 (GPL-3.0)
-Pinned source commit: ad734f1272159a52cbd948c27c68cfa7cf1dc536
+Pinned upstream commit: ad734f1272159a52cbd948c27c68cfa7cf1dc536
+
+ZPPZ record-mode fork
+---------------------
+Source of the playback changes (SongDetail intro, delayed start, All Perfect,
+clock_count) lives in this repository under:
+
+  preview-player/majdata-view-record/
+
+Apply the patch from that directory onto the upstream commit above, build
+WebGL with Unity 6000.3.17f1, then publish via scripts/publish_preview_player.py.
+Recommended independent GitHub repository name when you push the fork:
+
+  MajdataView-zppz-preview
 
 MajdataNet
 ----------
 Project: https://github.com/TeamMajdata/MajdataNet
 License: GNU General Public License v3.0 (GPL-3.0)
-Pinned WebGL distribution commit: 15581b147bfd7d1155b62f5fc19cb748bdc5a9fc
+Pinned WebGL distribution commit (legacy unmodified pin):
+15581b147bfd7d1155b62f5fc19cb748bdc5a9fc
 
 The corresponding source archive and GPL license are published in the same
-immutable version directory as the player.
+immutable version directory as the player. After a record-mode WebGL build is
+pinned, that archive must match the modified fork (see
+scripts/package_majdata_record_source.py), not the unmodified upstream zip.
