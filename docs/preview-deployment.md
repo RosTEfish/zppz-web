@@ -71,6 +71,15 @@ AP、`&clock_count`）。改动源码见 `preview-player/majdata-view-record/`�
 独立 fork 仓库建议命名为 `MajdataView-zppz-preview`，不要把完整 Unity 工程合进
 本网站仓的 `main` 历史。
 
+本地快速验收（不依赖 R2）：
+
+```bash
+python3 scripts/serve_preview_local.py --host 127.0.0.1 --port 3000
+```
+
+打开 `http://127.0.0.1:3000/`，点「加载样例谱面」，再点 Unity 左下角 Play。
+父页必须在 `:3000`，才会被 `player-bridge.js` 信任。
+
 ## 上线验收
 
 使用包含 `maidata.txt`、`track.mp3`、`bg.jpg` 或 `bg.png` 的真实投稿验证：
