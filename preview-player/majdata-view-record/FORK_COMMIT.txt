@@ -1,1 +1,1 @@
-songcover-scale42-local
+songcover-scale90-local

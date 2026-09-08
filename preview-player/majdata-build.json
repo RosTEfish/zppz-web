@@ -1,28 +1,28 @@
 {
-  "version": "majdataview-zppz-record4-webgl-6000.6",
-  "distribution_commit": "songcover-scale42-local",
-  "source_commit": "songcover-scale42-local",
+  "version": "majdataview-zppz-record5-webgl-6000.6",
+  "distribution_commit": "songcover-scale90-local",
+  "source_commit": "songcover-scale90-local",
   "source_archive_url": "local://preview-player/corresponding-source.zip",
   "license_url": "https://raw.githubusercontent.com/TeamMajdata/MajdataView/ad734f1272159a52cbd948c27c68cfa7cf1dc536/LICENSE",
   "build_base_url": "local://preview-player/Build",
   "files": {
     "Build.loader.js": {
-      "sha256": "401da1018d28b9fe91ae05b4f1be35abd9aaa75f62887635baedf48e5c857007",
+      "sha256": "8f18e8206560815111517b1e86aba0068dc5906b9d1fd281bc8fcea063b4e09d",
       "content_type": "application/javascript",
       "compress": false
     },
     "Build.framework.js": {
-      "sha256": "290db7261b3c5a29d1c062c5138d4087b12b055cb11108b5c4832867fde65378",
+      "sha256": "6c01dadfeeaec131da2ca711a558a6b070787153766059d5704439fbe2f90644",
       "content_type": "application/javascript",
       "compress": true
     },
     "Build.data": {
-      "sha256": "0ae43a76e8a1afe60451743d4f0737052004e7433678985a431af63e243c987f",
+      "sha256": "b96acfe8acaad7f5c4f0f98d751a7e59cb4c7b967fa11e2110a52520bde01a42",
       "content_type": "application/octet-stream",
       "compress": true
     },
     "Build.wasm": {
-      "sha256": "b8a132672706830a6d538fe840606aaa26be74d52d9f027d4af665bce6a7d882",
+      "sha256": "d9f2340597d5cedafd1ab350ee0cc9f23b92bd013e94d260ac5788d44d823f0c",
       "content_type": "application/wasm",
       "compress": true
     }
