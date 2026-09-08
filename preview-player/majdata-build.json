@@ -1,28 +1,28 @@
 {
-  "version": "majdataview-ad734f1272-webgl-15581b147b-bridge2",
-  "distribution_commit": "15581b147bfd7d1155b62f5fc19cb748bdc5a9fc",
-  "source_commit": "ad734f1272159a52cbd948c27c68cfa7cf1dc536",
-  "source_archive_url": "https://github.com/TeamMajdata/MajdataView/archive/ad734f1272159a52cbd948c27c68cfa7cf1dc536.zip",
+  "version": "majdataview-zppz-record2-webgl-6000.6",
+  "distribution_commit": "songcover-resources-local",
+  "source_commit": "songcover-resources-local",
+  "source_archive_url": "local://preview-player/corresponding-source.zip",
   "license_url": "https://raw.githubusercontent.com/TeamMajdata/MajdataView/ad734f1272159a52cbd948c27c68cfa7cf1dc536/LICENSE",
-  "build_base_url": "https://raw.githubusercontent.com/TeamMajdata/MajdataNet/15581b147bfd7d1155b62f5fc19cb748bdc5a9fc/public/WebGLBuild",
+  "build_base_url": "local://preview-player/Build",
   "files": {
     "Build.loader.js": {
-      "sha256": "ca1f0b74f13d467c479ca9e7f33e9a624e54f68420db6ac7ee4fb0673c795e8c",
+      "sha256": "5da7b7ee806aa09e3fc4d82654ba74a6bfb0518dc66a603cebb3f58f9639d39f",
       "content_type": "application/javascript",
       "compress": false
     },
     "Build.framework.js": {
-      "sha256": "3270d993549f8b577760731a51b00a1481a883bf2935f20e1ee8c84694a119ec",
+      "sha256": "f09640a367ae2cd57ff926c1120f24211861046c4a37b987728160ca9ec1d3e8",
       "content_type": "application/javascript",
       "compress": true
     },
     "Build.data": {
-      "sha256": "785970f410bc53ac18da1ad6aaf20edfee205212a1431f19a5e3c7369e3b9f1c",
+      "sha256": "60e5fcd18c8d6c889740d1d15123c6f12d1508e20bae8843a4305ca2e707aa87",
       "content_type": "application/octet-stream",
       "compress": true
     },
     "Build.wasm": {
-      "sha256": "5c3ab6ef92b29a46becd9b863ca789aee1bdf0ac18754e96013dfdffb0a3cd10",
+      "sha256": "0e35bac08f737e55e91e4522e17dfb7e1cfbf91add636e5158e69f4fbb52ebd4",
       "content_type": "application/wasm",
       "compress": true
     }

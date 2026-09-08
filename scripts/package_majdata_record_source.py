@@ -21,6 +21,15 @@ CHANGED = (
     "Assets/Scripts/GameMainManager.cs",
     "Assets/Scripts/Core/AudioTimeProvider.cs",
     "Assets/Scripts/Core/SoundEffect.cs",
+    "Assets/Scripts/Misc/JSLibFileCreator.cs",
+)
+# Prefab/animator moved under Resources so WebGL can Resources.Load SongDetail.
+RESOURCE_TREES = (
+    "Assets/Resources",
+)
+REMOVE_AFTER_RESOURCES = (
+    "Assets/Prefabs/SongCover",
+    "Assets/Animation/SongDetail",
 )
 
 
@@ -70,6 +79,25 @@ def main() -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
             print(f"patched {relative}")
+
+        for relative in RESOURCE_TREES:
+            source = fork_dir / relative
+            if not source.is_dir():
+                raise SystemExit(f"missing resource tree: {source}")
+            target = project / relative
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+            print(f"copied {relative}")
+
+        for relative in REMOVE_AFTER_RESOURCES:
+            target = project / relative
+            if target.exists():
+                shutil.rmtree(target)
+                print(f"removed {relative} (moved under Resources)")
+            meta = Path(str(target) + ".meta")
+            if meta.exists():
+                meta.unlink()
 
         readme = project / "ZPPZ_RECORD_MODE.md"
         readme.write_text(

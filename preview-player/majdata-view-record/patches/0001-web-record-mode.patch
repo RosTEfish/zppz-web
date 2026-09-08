@@ -1,22 +1,6 @@
-From 7ab9aa62e7eaa80c0eb28fb0763faad4803b377b Mon Sep 17 00:00:00 2001
-From: fish TE <arealtefish@gmail.com>
-Date: Mon, 7 Sep 2026 15:09:44 +0000
-Subject: [PATCH] feat: web Play uses desktop record-mode intro
-
-Enable SongDetail jacket animation, 5s intro delay, All Perfect, and
-clock_count when the viewer Play button is pressed.
----
- Assets/Scripts/BGManager.cs              |  60 +++++++++++++-
- Assets/Scripts/Core/AudioTimeProvider.cs | 101 +++++++++++++++++------
- Assets/Scripts/Core/SoundEffect.cs       |  25 +++++-
- Assets/Scripts/GameMainManager.cs        |  27 +++++-
- 4 files changed, 180 insertions(+), 33 deletions(-)
-
-diff --git a/Assets/Scripts/BGManager.cs b/Assets/Scripts/BGManager.cs
-index 41a66f0..45cecc3 100644
 --- a/Assets/Scripts/BGManager.cs
 +++ b/Assets/Scripts/BGManager.cs
-@@ -8,6 +8,7 @@ using System.IO;
+@@ -8,6 +8,7 @@
  using System.Drawing;
  using UnityEngine.UI;
  using UnityEngine.UIElements;
@@ -24,7 +8,7 @@ index 41a66f0..45cecc3 100644
  
  public class BGManager : MonoBehaviour
  {
-@@ -22,6 +23,14 @@ public class BGManager : MonoBehaviour
+@@ -22,6 +23,20 @@
  
      private bool showIdleVideoFrame = false;
      private bool lastHideStaticBackground = false;
@@ -36,10 +20,16 @@ index 41a66f0..45cecc3 100644
 +    private TMP_Text desText;
 +    private TMP_Text idText;
 +    private bool songDetailBound;
++
++    // Scene object named "Covers" is the letterbox vignette. SongDetail lives on
++    // Assets/Resources/SongCover/Covers.prefab and is instantiated at runtime.
++    private const string SongCoverRootName = "SongCoverUI";
++    private const string SongCoverResource = "SongCover/Covers";
++    private const string SongCoverAnimatorResource = "SongCover/Animation/Canvas";
  
      void Start()
      {
-@@ -30,6 +39,56 @@ public class BGManager : MonoBehaviour
+@@ -30,6 +45,117 @@
          audioTimeProvider = GameObject.Find("AudioTimeProvider").GetComponent<AudioTimeProvider>();
          videoPlayer.errorReceived += VideoPlayer_errorReceived;
          SetNewSpriteForVideo();
@@ -49,11 +39,22 @@ index 41a66f0..45cecc3 100644
 +    void BindSongDetail()
 +    {
 +        if (songDetailBound) return;
-+        coversRoot = GameObject.Find("Covers");
-+        if (coversRoot == null) return;
-+        songDetailAnimator = coversRoot.GetComponent<Animator>();
++
++        coversRoot = ResolveSongCoverRoot();
++        if (coversRoot == null)
++        {
++            Debug.LogWarning("[MJV][BGManager] SongCoverUI missing; SongDetail intro disabled");
++            return;
++        }
++
++        EnsureSongDetailAnimator();
 +        var songDetail = coversRoot.transform.Find("SongDetail");
-+        if (songDetail == null) return;
++        if (songDetail == null)
++        {
++            Debug.LogWarning("[MJV][BGManager] SongDetail child missing under SongCoverUI");
++            return;
++        }
++
 +        var jacket = songDetail.Find("Jacket");
 +        if (jacket != null) jacketImage = jacket.GetComponent<RawImage>();
 +        var wrapper = songDetail.Find("TextWrapper");
@@ -66,6 +67,55 @@ index 41a66f0..45cecc3 100644
 +        }
 +        songDetailBound = true;
 +        coversRoot.SetActive(false);
++    }
++
++    GameObject ResolveSongCoverRoot()
++    {
++        var existing = GameObject.Find(SongCoverRootName);
++        if (existing != null) return existing;
++
++        // Prefer a Covers object that actually owns SongDetail (not the vignette).
++        var transforms = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
++        foreach (var transform in transforms)
++        {
++            if (transform.name != "SongDetail") continue;
++            var parent = transform.parent;
++            if (parent == null || parent.name != "Covers") continue;
++            parent.gameObject.name = SongCoverRootName;
++            return parent.gameObject;
++        }
++
++        var prefab = Resources.Load<GameObject>(SongCoverResource);
++        if (prefab == null)
++        {
++            Debug.LogWarning("[MJV][BGManager] Resources.Load failed for " + SongCoverResource);
++            return null;
++        }
++
++        var parentCanvas = GameObject.Find("Canvas");
++        var instance = parentCanvas != null
++            ? Instantiate(prefab, parentCanvas.transform, false)
++            : Instantiate(prefab);
++        instance.name = SongCoverRootName;
++        return instance;
++    }
++
++    void EnsureSongDetailAnimator()
++    {
++        if (coversRoot == null) return;
++        songDetailAnimator = coversRoot.GetComponent<Animator>();
++        if (songDetailAnimator == null)
++        {
++            songDetailAnimator = coversRoot.AddComponent<Animator>();
++        }
++        if (songDetailAnimator.runtimeAnimatorController == null)
++        {
++            var controller = Resources.Load<RuntimeAnimatorController>(SongCoverAnimatorResource);
++            if (controller != null)
++            {
++                songDetailAnimator.runtimeAnimatorController = controller;
++            }
++        }
 +    }
 +
 +    /// <summary>
@@ -87,7 +137,8 @@ index 41a66f0..45cecc3 100644
 +        }
 +
 +        coversRoot.SetActive(true);
-+        if (songDetailAnimator != null)
++        EnsureSongDetailAnimator();
++        if (songDetailAnimator != null && songDetailAnimator.runtimeAnimatorController != null)
 +        {
 +            songDetailAnimator.Rebind();
 +            songDetailAnimator.Update(0f);
@@ -96,7 +147,7 @@ index 41a66f0..45cecc3 100644
      }
  
      private void VideoPlayer_errorReceived(VideoPlayer source, string message)
-@@ -139,7 +198,6 @@ public class BGManager : MonoBehaviour
+@@ -139,7 +265,6 @@
          if (videoPlayer.isPrepared && videoPlayer.isPlaying)
          {
              var delta = videoPlayer.time - audioTimeProvider.AudioTime;
@@ -104,215 +155,9 @@ index 41a66f0..45cecc3 100644
              if (Math.Abs(delta) > 0.1f)
              {
                  Debug.Log("[MJV][BGManager] video time is behind audio time, try speed up video");
-diff --git a/Assets/Scripts/Core/AudioTimeProvider.cs b/Assets/Scripts/Core/AudioTimeProvider.cs
-index bde87bd..2156e2a 100644
---- a/Assets/Scripts/Core/AudioTimeProvider.cs
-+++ b/Assets/Scripts/Core/AudioTimeProvider.cs
-@@ -1,32 +1,56 @@
--﻿using System.Collections;
-+using System.Collections;
- using System.Collections.Generic;
- using UnityEngine;
- using System;
- 
- public class AudioTimeProvider : MonoBehaviour
- {
-+    public const float RecordIntroDelaySeconds = 5f;
-+
-     public float AudioTime = 0f; //notes get this value
- 
-     float startTime;
-     float speed;
-     public bool isStart = false;
-+    public bool isRecordMode = false;
-     public float playStartTime = 0f;
-     public float audioOffset = 0f;
-     public AudioSource bgm;
-     public SoundEffect SE;
-     public SettingsManager settings;
- 
--    public void SetStartTime(float _playStartTime, float _speed)
-+    private bool bgmStarted;
-+    private Action onChartAudioStarted;
-+
-+    public void SetStartTime(float _playStartTime, float _speed, bool recordMode = false, Action chartAudioStarted = null)
-     {
--        playStartTime = _playStartTime;
--        AudioTime = playStartTime;
-         speed = _speed;
--        SE.generateSoundEffectList(playStartTime);
-+        isRecordMode = recordMode;
-+        onChartAudioStarted = chartAudioStarted;
-+        bgmStarted = false;
-         bgm.pitch = speed;
--        bgm.time = AudioTime;
-+
-+        if (recordMode)
-+        {
-+            // Mirror desktop isRecord: AudioTime begins introDelay before chart time zero.
-+            playStartTime = _playStartTime - RecordIntroDelaySeconds;
-+            AudioTime = playStartTime;
-+            SE.generateSoundEffectList(playStartTime, isOpIncluded: true);
-+            if (bgm.isPlaying) bgm.Stop();
-+            startTime = Time.realtimeSinceStartup;
-+            isStart = true;
-+            return;
-+        }
-+
-+        playStartTime = _playStartTime;
-+        AudioTime = playStartTime;
-+        SE.generateSoundEffectList(playStartTime, isOpIncluded: false);
-+        bgm.time = Mathf.Max(0f, AudioTime);
-         bgm.Play();
-+        bgmStarted = true;
-         startTime = Time.realtimeSinceStartup;
-         isStart = true;
-+        onChartAudioStarted?.Invoke();
-     }
- 
-     public void Pause()
-@@ -40,46 +64,69 @@ public class AudioTimeProvider : MonoBehaviour
-         startTime = Time.realtimeSinceStartup;
-         playStartTime = AudioTime;
-         isStart = true;
--        bgm.time = AudioTime;
--        bgm.Play();
-+        if (AudioTime >= 0f)
-+        {
-+            bgm.time = AudioTime;
-+            bgm.Play();
-+            bgmStarted = true;
-+        }
-     }
- 
-     public void ResetStartTime()
-     {
-         isStart = false;
-+        isRecordMode = false;
-+        bgmStarted = false;
-+        onChartAudioStarted = null;
-         AudioTime = playStartTime;
-         bgm.Stop();
-     }
- 
-     void Update()
-     {
--        if (isStart)
-+        if (!isStart) return;
-+
-+        audioOffset = settings.offset;
-+
-+        if (isRecordMode && !bgmStarted)
-         {
--            audioOffset = settings.offset;
--            if(speed !=1)
--                AudioTime = (bgm.time);
--            else
--                AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
--            var delta = AudioTime - bgm.time;
--            //print(delta);
--            if (AudioTime >= 0 && Mathf.Abs(delta) > 0.03)
-+            AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
-+            if (AudioTime < 0f) return;
-+
-+            bgm.time = Mathf.Max(0f, AudioTime);
-+            bgm.Play();
-+            bgmStarted = true;
-+            // Re-anchor so AudioTime stays continuous after BGM starts.
-+            playStartTime = AudioTime;
-+            startTime = Time.realtimeSinceStartup;
-+            onChartAudioStarted?.Invoke();
-+        }
-+
-+        if (speed != 1 && bgmStarted)
-+            AudioTime = bgm.time;
-+        else
-+            AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
-+
-+        if (!bgmStarted) return;
-+
-+        var delta = AudioTime - bgm.time;
-+        if (AudioTime >= 0 && Mathf.Abs(delta) > 0.03)
-+        {
-+            if (bgm.clip != null && AudioTime > bgm.clip.length)
-             {
--                //Debug.LogError("bgm time delay > 0.03");
--                if(AudioTime > bgm.clip.length) {
--                    bgm.Stop();
--                    isStart = false;
--                }
--                if (AudioTime > bgm.time)
--                    startTime += Mathf.Abs(delta)*0.7f;
--                else
--                    startTime -= Mathf.Abs(delta)*0.7f;
-+                bgm.Stop();
-+                isStart = false;
-             }
-+            if (AudioTime > bgm.time)
-+                startTime += Mathf.Abs(delta) * 0.7f;
-+            else
-+                startTime -= Mathf.Abs(delta) * 0.7f;
-         }
-     }
- 
-     private void FixedUpdate()
-     {
--       if(isStart)
-+        if (isStart)
-         {
-             SE.SoundEffectUpdate(audioOffset);
-         }
-diff --git a/Assets/Scripts/Core/SoundEffect.cs b/Assets/Scripts/Core/SoundEffect.cs
-index 3b04143..aac0d46 100644
---- a/Assets/Scripts/Core/SoundEffect.cs
-+++ b/Assets/Scripts/Core/SoundEffect.cs
-@@ -108,10 +108,30 @@ public class SoundEffect: MonoBehaviour
-         
-     }
- 
--    public void generateSoundEffectList(double startTime)
-+    public void generateSoundEffectList(double startTime, bool isOpIncluded = false)
-     {
-         songLength = bgmStream.clip.length;
-         waitToBePlayed = new List<SoundEffectTiming>();
-+        if (isOpIncluded)
-+        {
-+            var cmds = (SimaiProcess.other_commands ?? "").Split('\n');
-+            foreach (var cmdl in cmds)
-+            {
-+                if (cmdl.Length > 12 && cmdl.Substring(1, 11) == "clock_count")
-+                {
-+                    try
-+                    {
-+                        var clock_cnt = int.Parse(cmdl.Substring(13));
-+                        var clock_int = 60.0d / SimaiProcess.notelist[0].currentBpm;
-+                        for (var i = 0; i < clock_cnt; i++)
-+                            waitToBePlayed.Add(new SoundEffectTiming(i * clock_int, _hasClock: true));
-+                    }
-+                    catch
-+                    {
-+                    }
-+                }
-+            }
-+        }
-         foreach (var noteGroup in SimaiProcess.notelist)
-         {
-             if (noteGroup.time < startTime) { continue; }
-@@ -316,6 +336,9 @@ public class SoundEffect: MonoBehaviour
-                 waitToBePlayed.Add(stobj);
-             }
-         }
-+        if (isOpIncluded)
-+            waitToBePlayed.Add(new SoundEffectTiming(GetAllPerfectStartTime(), _hasAllPerfect: true));
-+
-         waitToBePlayed.Sort((o1, o2) => o1.time < o2.time ? -1 : 1);
- 
-         double apTime = GetAllPerfectStartTime();
-diff --git a/Assets/Scripts/GameMainManager.cs b/Assets/Scripts/GameMainManager.cs
-index 57fc45f..bc470cd 100644
 --- a/Assets/Scripts/GameMainManager.cs
 +++ b/Assets/Scripts/GameMainManager.cs
-@@ -41,22 +41,37 @@ public class GameMainManager : MonoBehaviour
+@@ -41,22 +41,37 @@
  
      private bool inited = false;
      private int status = 0;
@@ -354,17 +199,17 @@ index 57fc45f..bc470cd 100644
      }
  
      public void OnPlayPauseButtonClick()
-@@ -96,6 +111,9 @@ public class GameMainManager : MonoBehaviour
+@@ -96,6 +111,9 @@
  
      public void OnStopButtonClick(bool stopVideo)
      {
-+        var covers = GameObject.Find("Covers");
++        var covers = GameObject.Find("SongCoverUI");
 +        if (covers != null) covers.SetActive(false);
 +
          if (bgCover != null)
          {
              bgCover.color = new Color(0f, 0f, 0f, 0f);
-@@ -165,6 +183,7 @@ public class GameMainManager : MonoBehaviour
+@@ -165,6 +183,7 @@
  
      public void WebLoad(string chartpath, string bgpath, string audiopath, string videopath, int level)
      {
@@ -372,6 +217,215 @@ index 57fc45f..bc470cd 100644
          StopAllCoroutines();
          OnStopButtonClick(false);
          timeProvider.AudioTime = 0f;
--- 
-2.43.0
-
+--- a/Assets/Scripts/Core/AudioTimeProvider.cs
++++ b/Assets/Scripts/Core/AudioTimeProvider.cs
+@@ -1,32 +1,56 @@
+-﻿using System.Collections;
++using System.Collections;
+ using System.Collections.Generic;
+ using UnityEngine;
+ using System;
+ 
+ public class AudioTimeProvider : MonoBehaviour
+ {
++    public const float RecordIntroDelaySeconds = 5f;
++
+     public float AudioTime = 0f; //notes get this value
+ 
+     float startTime;
+     float speed;
+     public bool isStart = false;
++    public bool isRecordMode = false;
+     public float playStartTime = 0f;
+     public float audioOffset = 0f;
+     public AudioSource bgm;
+     public SoundEffect SE;
+     public SettingsManager settings;
+ 
+-    public void SetStartTime(float _playStartTime, float _speed)
++    private bool bgmStarted;
++    private Action onChartAudioStarted;
++
++    public void SetStartTime(float _playStartTime, float _speed, bool recordMode = false, Action chartAudioStarted = null)
+     {
++        speed = _speed;
++        isRecordMode = recordMode;
++        onChartAudioStarted = chartAudioStarted;
++        bgmStarted = false;
++        bgm.pitch = speed;
++
++        if (recordMode)
++        {
++            // Mirror desktop isRecord: AudioTime begins introDelay before chart time zero.
++            playStartTime = _playStartTime - RecordIntroDelaySeconds;
++            AudioTime = playStartTime;
++            SE.generateSoundEffectList(playStartTime, isOpIncluded: true);
++            if (bgm.isPlaying) bgm.Stop();
++            startTime = Time.realtimeSinceStartup;
++            isStart = true;
++            return;
++        }
++
+         playStartTime = _playStartTime;
+         AudioTime = playStartTime;
+-        speed = _speed;
+-        SE.generateSoundEffectList(playStartTime);
+-        bgm.pitch = speed;
+-        bgm.time = AudioTime;
++        SE.generateSoundEffectList(playStartTime, isOpIncluded: false);
++        bgm.time = Mathf.Max(0f, AudioTime);
+         bgm.Play();
++        bgmStarted = true;
+         startTime = Time.realtimeSinceStartup;
+         isStart = true;
++        onChartAudioStarted?.Invoke();
+     }
+ 
+     public void Pause()
+@@ -40,46 +64,69 @@
+         startTime = Time.realtimeSinceStartup;
+         playStartTime = AudioTime;
+         isStart = true;
+-        bgm.time = AudioTime;
+-        bgm.Play();
++        if (AudioTime >= 0f)
++        {
++            bgm.time = AudioTime;
++            bgm.Play();
++            bgmStarted = true;
++        }
+     }
+ 
+     public void ResetStartTime()
+     {
+         isStart = false;
++        isRecordMode = false;
++        bgmStarted = false;
++        onChartAudioStarted = null;
+         AudioTime = playStartTime;
+         bgm.Stop();
+     }
+ 
+     void Update()
+     {
+-        if (isStart)
++        if (!isStart) return;
++
++        audioOffset = settings.offset;
++
++        if (isRecordMode && !bgmStarted)
+         {
+-            audioOffset = settings.offset;
+-            if(speed !=1)
+-                AudioTime = (bgm.time);
++            AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
++            if (AudioTime < 0f) return;
++
++            bgm.time = Mathf.Max(0f, AudioTime);
++            bgm.Play();
++            bgmStarted = true;
++            // Re-anchor so AudioTime stays continuous after BGM starts.
++            playStartTime = AudioTime;
++            startTime = Time.realtimeSinceStartup;
++            onChartAudioStarted?.Invoke();
++        }
++
++        if (speed != 1 && bgmStarted)
++            AudioTime = bgm.time;
++        else
++            AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
++
++        if (!bgmStarted) return;
++
++        var delta = AudioTime - bgm.time;
++        if (AudioTime >= 0 && Mathf.Abs(delta) > 0.03)
++        {
++            if (bgm.clip != null && AudioTime > bgm.clip.length)
++            {
++                bgm.Stop();
++                isStart = false;
++            }
++            if (AudioTime > bgm.time)
++                startTime += Mathf.Abs(delta) * 0.7f;
+             else
+-                AudioTime = (Time.realtimeSinceStartup - startTime) + playStartTime;
+-            var delta = AudioTime - bgm.time;
+-            //print(delta);
+-            if (AudioTime >= 0 && Mathf.Abs(delta) > 0.03)
+-            {
+-                //Debug.LogError("bgm time delay > 0.03");
+-                if(AudioTime > bgm.clip.length) {
+-                    bgm.Stop();
+-                    isStart = false;
+-                }
+-                if (AudioTime > bgm.time)
+-                    startTime += Mathf.Abs(delta)*0.7f;
+-                else
+-                    startTime -= Mathf.Abs(delta)*0.7f;
+-            }
++                startTime -= Mathf.Abs(delta) * 0.7f;
+         }
+     }
+ 
+     private void FixedUpdate()
+     {
+-       if(isStart)
++        if (isStart)
+         {
+             SE.SoundEffectUpdate(audioOffset);
+         }
+--- a/Assets/Scripts/Core/SoundEffect.cs
++++ b/Assets/Scripts/Core/SoundEffect.cs
+@@ -108,10 +108,30 @@
+         
+     }
+ 
+-    public void generateSoundEffectList(double startTime)
++    public void generateSoundEffectList(double startTime, bool isOpIncluded = false)
+     {
+         songLength = bgmStream.clip.length;
+         waitToBePlayed = new List<SoundEffectTiming>();
++        if (isOpIncluded)
++        {
++            var cmds = (SimaiProcess.other_commands ?? "").Split('\n');
++            foreach (var cmdl in cmds)
++            {
++                if (cmdl.Length > 12 && cmdl.Substring(1, 11) == "clock_count")
++                {
++                    try
++                    {
++                        var clock_cnt = int.Parse(cmdl.Substring(13));
++                        var clock_int = 60.0d / SimaiProcess.notelist[0].currentBpm;
++                        for (var i = 0; i < clock_cnt; i++)
++                            waitToBePlayed.Add(new SoundEffectTiming(i * clock_int, _hasClock: true));
++                    }
++                    catch
++                    {
++                    }
++                }
++            }
++        }
+         foreach (var noteGroup in SimaiProcess.notelist)
+         {
+             if (noteGroup.time < startTime) { continue; }
+@@ -316,6 +336,9 @@
+                 waitToBePlayed.Add(stobj);
+             }
+         }
++        if (isOpIncluded)
++            waitToBePlayed.Add(new SoundEffectTiming(GetAllPerfectStartTime(), _hasAllPerfect: true));
++
+         waitToBePlayed.Sort((o1, o2) => o1.time < o2.time ? -1 : 1);
+ 
+         double apTime = GetAllPerfectStartTime();
+--- a/Assets/Scripts/Misc/JSLibFileCreator.cs
++++ b/Assets/Scripts/Misc/JSLibFileCreator.cs
+@@ -25,7 +25,7 @@
+             path = path.Replace(Path.GetFileName(AssetDatabase.GetAssetPath(Selection.activeObject)), "");
+         }
+ 				// Creating a .jslib file with a template
+-        ProjectWindowUtil.CreateAssetWithContent(AssetDatabase.GenerateUniqueAssetPath(path + "/JSScript.jslib"), asset);
++        ProjectWindowUtil.CreateAssetWithTextContent(AssetDatabase.GenerateUniqueAssetPath(path + "/JSScript.jslib"), asset);
+         // Saving Assets
+       	AssetDatabase.SaveAssets();
+     }

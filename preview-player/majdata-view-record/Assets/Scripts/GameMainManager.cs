@@ -111,7 +111,7 @@ public class GameMainManager : MonoBehaviour
 
     public void OnStopButtonClick(bool stopVideo)
     {
-        var covers = GameObject.Find("Covers");
+        var covers = GameObject.Find("SongCoverUI");
         if (covers != null) covers.SetActive(false);
 
         if (bgCover != null)
