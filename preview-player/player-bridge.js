@@ -248,7 +248,7 @@ function bootstrap() {
       streamingAssetsUrl: "StreamingAssets",
       companyName: "Majdata",
       productName: "MajdataView",
-      productVersion: "zppz-record3-6000.6",
+      productVersion: "zppz-record4-6000.6",
       showBanner(text, type) {
         if (type === "error") {
           setStatus("播放器加载失败");

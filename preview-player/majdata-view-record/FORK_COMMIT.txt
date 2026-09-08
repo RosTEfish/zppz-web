@@ -1,1 +1,1 @@
-songcover-overlay-local
+songcover-scale42-local
