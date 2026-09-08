@@ -18,6 +18,10 @@ and Unity 6000.6 editor API fix live under:
 
   preview-player/majdata-view-record/
 
+SongDetail is loaded from Assets/Resources/SongCover at runtime. The currently
+pinned WebGL build (`majdataview-zppz-record1-webgl-6000.6`) was produced before
+that Resources fix; rebuild and bump the version after syncing Resources.
+
 WebGL was built with Unity Editor 6000.6.0f1 (WebGL module) from that patched
 tree. Corresponding source is published as corresponding-source.zip beside
 the player. Local fork checkout used for the build:

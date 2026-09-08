@@ -32,6 +32,12 @@ public class BGManager : MonoBehaviour
     private TMP_Text idText;
     private bool songDetailBound;
 
+    // Scene object named "Covers" is the letterbox vignette. SongDetail lives on
+    // Assets/Resources/SongCover/Covers.prefab and is instantiated at runtime.
+    private const string SongCoverRootName = "SongCoverUI";
+    private const string SongCoverResource = "SongCover/Covers";
+    private const string SongCoverAnimatorResource = "SongCover/Animation/Canvas";
+
     void Start()
     {
         spriteRender = GetComponent<SpriteRenderer>();
@@ -45,11 +51,22 @@ public class BGManager : MonoBehaviour
     void BindSongDetail()
     {
         if (songDetailBound) return;
-        coversRoot = GameObject.Find("Covers");
-        if (coversRoot == null) return;
-        songDetailAnimator = coversRoot.GetComponent<Animator>();
+
+        coversRoot = ResolveSongCoverRoot();
+        if (coversRoot == null)
+        {
+            Debug.LogWarning("[MJV][BGManager] SongCoverUI missing; SongDetail intro disabled");
+            return;
+        }
+
+        EnsureSongDetailAnimator();
         var songDetail = coversRoot.transform.Find("SongDetail");
-        if (songDetail == null) return;
+        if (songDetail == null)
+        {
+            Debug.LogWarning("[MJV][BGManager] SongDetail child missing under SongCoverUI");
+            return;
+        }
+
         var jacket = songDetail.Find("Jacket");
         if (jacket != null) jacketImage = jacket.GetComponent<RawImage>();
         var wrapper = songDetail.Find("TextWrapper");
@@ -62,6 +79,55 @@ public class BGManager : MonoBehaviour
         }
         songDetailBound = true;
         coversRoot.SetActive(false);
+    }
+
+    GameObject ResolveSongCoverRoot()
+    {
+        var existing = GameObject.Find(SongCoverRootName);
+        if (existing != null) return existing;
+
+        // Prefer a Covers object that actually owns SongDetail (not the vignette).
+        var transforms = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var transform in transforms)
+        {
+            if (transform.name != "SongDetail") continue;
+            var parent = transform.parent;
+            if (parent == null || parent.name != "Covers") continue;
+            parent.gameObject.name = SongCoverRootName;
+            return parent.gameObject;
+        }
+
+        var prefab = Resources.Load<GameObject>(SongCoverResource);
+        if (prefab == null)
+        {
+            Debug.LogWarning("[MJV][BGManager] Resources.Load failed for " + SongCoverResource);
+            return null;
+        }
+
+        var parentCanvas = GameObject.Find("Canvas");
+        var instance = parentCanvas != null
+            ? Instantiate(prefab, parentCanvas.transform, false)
+            : Instantiate(prefab);
+        instance.name = SongCoverRootName;
+        return instance;
+    }
+
+    void EnsureSongDetailAnimator()
+    {
+        if (coversRoot == null) return;
+        songDetailAnimator = coversRoot.GetComponent<Animator>();
+        if (songDetailAnimator == null)
+        {
+            songDetailAnimator = coversRoot.AddComponent<Animator>();
+        }
+        if (songDetailAnimator.runtimeAnimatorController == null)
+        {
+            var controller = Resources.Load<RuntimeAnimatorController>(SongCoverAnimatorResource);
+            if (controller != null)
+            {
+                songDetailAnimator.runtimeAnimatorController = controller;
+            }
+        }
     }
 
     /// <summary>
@@ -83,7 +149,8 @@ public class BGManager : MonoBehaviour
         }
 
         coversRoot.SetActive(true);
-        if (songDetailAnimator != null)
+        EnsureSongDetailAnimator();
+        if (songDetailAnimator != null && songDetailAnimator.runtimeAnimatorController != null)
         {
             songDetailAnimator.Rebind();
             songDetailAnimator.Update(0f);

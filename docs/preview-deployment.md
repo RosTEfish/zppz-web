@@ -58,7 +58,13 @@ SHA-256。播放器被 gzip 压缩后上传到不可变版本目录；相同哈�
 对应源码归档；不得删除原作者版权或许可证信息。
 
 录制模式预览基于上游 `ad734f1272` 的修改版 WebGL（开场 SongDetail、延迟开谱、
-AP、`&clock_count`）。改动源码见 `preview-player/majdata-view-record/`。出包步骤：
+AP、`&clock_count`）。改动源码见 `preview-player/majdata-view-record/`。
+
+**SongDetail 根因**：场景里的 `Covers` 是 letterbox，封面 UI 在
+`Assets/Resources/SongCover/Covers.prefab`，需重新 WebGL 出包后才会在线上生效。
+当前已钉死的 `majdataview-zppz-record1-webgl-6000.6` **尚未**包含该修复。
+
+出包步骤：
 
 1. 用 Unity（实测 **6000.6.0f1**）打开打过 patch 的 MajdataView 工程并导出 WebGL。
 2. 将四个产物重命名为 `Build.*` 放到 `preview-player/Build/`。

@@ -25,13 +25,24 @@ def test_record_mode_fork_files_exist() -> None:
         text = path.read_text(encoding="utf-8")
         if relative.endswith("BGManager.cs"):
             assert "PlaySongDetail" in text
+            assert "SongCover/Covers" in text
+            assert 'Find("Covers")' not in text
         if relative.endswith("GameMainManager.cs"):
             assert "recordMode: true" in text
+            assert "SongCoverUI" in text
         if relative.endswith("AudioTimeProvider.cs"):
             assert "RecordIntroDelaySeconds" in text
         if relative.endswith("SoundEffect.cs"):
             assert "isOpIncluded" in text
             assert "clock_count" in text
+
+
+def test_record_mode_songcover_resources_exist() -> None:
+    prefab = FORK_DIR / "Assets/Resources/SongCover/Covers.prefab"
+    controller = FORK_DIR / "Assets/Resources/SongCover/Animation/Canvas.controller"
+    assert prefab.is_file()
+    assert controller.is_file()
+    assert "SongDetail" in prefab.read_text(encoding="utf-8", errors="replace")
 
 
 def test_record_mode_patch_targets_upstream_commit() -> None:
