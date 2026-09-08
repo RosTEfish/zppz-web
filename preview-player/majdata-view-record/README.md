@@ -37,8 +37,9 @@ API fix below.
 
 `Main.unity` 里名为 `Covers` 的对象是四边 letterbox，**不是**封面 UI。
 真正的 `SongDetail` 在 `Assets/Resources/SongCover/Covers.prefab`，由
-`BGManager` 在运行时 `Resources.Load` 并挂到 `Canvas` 下（实例名
-`SongCoverUI`）。若仍使用旧的 `GameObject.Find("Covers")`，开场封面不会出现。
+`BGManager` 在运行时 `Resources.Load` 成独立 `ScreenSpaceOverlay` Canvas
+（实例名 `SongCoverUI`，并放大显示）。不要再 `Find("Covers")` 或挂到场景
+主 `Canvas` 下，否则开场封面不可见或极小。
 
 ## WebGL rebuild (required after SongCover fix)
 

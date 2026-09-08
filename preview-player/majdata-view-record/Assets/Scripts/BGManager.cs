@@ -37,6 +37,9 @@ public class BGManager : MonoBehaviour
     private const string SongCoverRootName = "SongCoverUI";
     private const string SongCoverResource = "SongCover/Covers";
     private const string SongCoverAnimatorResource = "SongCover/Animation/Canvas";
+    // Prefab SongDetail is authored at ~47x75 with world-space scale; enlarge the
+    // root so Screen Space Overlay stays readable on web.
+    private const float SongCoverOverlayScale = 16f;
 
     void Start()
     {
@@ -59,13 +62,15 @@ public class BGManager : MonoBehaviour
             return;
         }
 
-        EnsureSongDetailAnimator();
         var songDetail = coversRoot.transform.Find("SongDetail");
         if (songDetail == null)
         {
             Debug.LogWarning("[MJV][BGManager] SongDetail child missing under SongCoverUI");
             return;
         }
+
+        EnsureSongCoverOverlay(songDetail);
+        EnsureSongDetailAnimator();
 
         var jacket = songDetail.Find("Jacket");
         if (jacket != null) jacketImage = jacket.GetComponent<RawImage>();
@@ -79,6 +84,7 @@ public class BGManager : MonoBehaviour
         }
         songDetailBound = true;
         coversRoot.SetActive(false);
+        Debug.Log("[MJV][BGManager] SongCoverUI bound jacket=" + (jacketImage != null));
     }
 
     GameObject ResolveSongCoverRoot()
@@ -104,12 +110,48 @@ public class BGManager : MonoBehaviour
             return null;
         }
 
-        var parentCanvas = GameObject.Find("Canvas");
-        var instance = parentCanvas != null
-            ? Instantiate(prefab, parentCanvas.transform, false)
-            : Instantiate(prefab);
+        // Do not parent under the scene UI Canvas: prefab root is a plain Transform
+        // and SongDetail is authored for a separate overlay / world-space setup.
+        var instance = Instantiate(prefab);
         instance.name = SongCoverRootName;
         return instance;
+    }
+
+    void EnsureSongCoverOverlay(Transform songDetail)
+    {
+        if (coversRoot == null || songDetail == null) return;
+
+        var canvas = coversRoot.GetComponent<Canvas>();
+        if (canvas == null) canvas = coversRoot.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 200;
+        canvas.pixelPerfect = false;
+
+        if (coversRoot.GetComponent<CanvasScaler>() == null)
+        {
+            var scaler = coversRoot.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+        if (coversRoot.GetComponent<GraphicRaycaster>() == null)
+        {
+            coversRoot.AddComponent<GraphicRaycaster>();
+        }
+
+        // Prefab root is Transform; keep SongDetail as the visible UI card and
+        // enlarge the whole tree for overlay readability.
+        coversRoot.transform.localScale = Vector3.one * SongCoverOverlayScale;
+        songDetail.localPosition = Vector3.zero;
+        songDetail.gameObject.SetActive(true);
+
+        // Ensure UIGraphics start opaque even if Entry has not advanced yet.
+        foreach (var graphic in coversRoot.GetComponentsInChildren<Graphic>(true))
+        {
+            var color = graphic.color;
+            color.a = 1f;
+            graphic.color = color;
+        }
     }
 
     void EnsureSongDetailAnimator()
@@ -126,6 +168,10 @@ public class BGManager : MonoBehaviour
             if (controller != null)
             {
                 songDetailAnimator.runtimeAnimatorController = controller;
+            }
+            else
+            {
+                Debug.LogWarning("[MJV][BGManager] Resources.Load failed for " + SongCoverAnimatorResource);
             }
         }
     }
@@ -149,13 +195,30 @@ public class BGManager : MonoBehaviour
         }
 
         coversRoot.SetActive(true);
+        var songDetail = coversRoot.transform.Find("SongDetail");
+        if (songDetail != null)
+        {
+            EnsureSongCoverOverlay(songDetail);
+            songDetail.gameObject.SetActive(true);
+        }
+
         EnsureSongDetailAnimator();
         if (songDetailAnimator != null && songDetailAnimator.runtimeAnimatorController != null)
         {
+            songDetailAnimator.enabled = true;
             songDetailAnimator.Rebind();
             songDetailAnimator.Update(0f);
             songDetailAnimator.Play("Entry", 0, 0f);
+            // Advance a few frames so Entry does not leave the card fully transparent.
+            songDetailAnimator.Update(0.35f);
         }
+
+        Debug.Log(
+            "[MJV][BGManager] PlaySongDetail title=" +
+            (titleText != null ? titleText.text : "") +
+            " scale=" +
+            SongCoverOverlayScale
+        );
     }
 
     private void VideoPlayer_errorReceived(VideoPlayer source, string message)
