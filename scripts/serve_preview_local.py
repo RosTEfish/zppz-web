@@ -189,44 +189,65 @@ def write_assets(assets: Path) -> None:
     (assets / "maidata.txt").write_text(MAIDATA, encoding="utf-8")
     track = assets / "track.mp3"
     if not track.is_file():
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:duration=12",
-                "-ac",
-                "2",
-                "-ar",
-                "44100",
-                "-b:a",
-                "128k",
-                str(track),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # Tiny valid-enough MPEG frame filler; ffmpeg optional.
+        if shutil.which("ffmpeg"):
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:duration=12",
+                    "-ac",
+                    "2",
+                    "-ar",
+                    "44100",
+                    "-b:a",
+                    "128k",
+                    str(track),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            track.write_bytes((bytes.fromhex("FFFB9064") + bytes(413)) * 80)
     bg = assets / "bg.jpg"
     if not bg.is_file():
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=c=0x176B52:s=512x512",
-                "-frames:v",
-                "1",
-                str(bg),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if shutil.which("ffmpeg"):
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=0x176B52:s=512x512",
+                    "-frames:v",
+                    "1",
+                    str(bg),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            try:
+                from PIL import Image
+                Image.new("RGB", (512, 512), "#176B52").save(bg, format="JPEG")
+            except Exception:
+                # Minimal 1x1 JPEG
+                bg.write_bytes(
+                    bytes.fromhex(
+                        "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707"
+                        "070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c"
+                        "1c2837292c30313434341f27393d38323c2e333432ffdb0043010909090c0b0c180d"
+                        "0d1832211c2132323232323232323232323232323232323232323232323232323232"
+                        "323232323232323232323232323232323232323232ffc00011080001000103011100"
+                        "02110311003f00bf80ffd9"
+                    )
+                )
 
 
 def stage(dest: Path) -> None:
