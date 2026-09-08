@@ -37,9 +37,12 @@ public class BGManager : MonoBehaviour
     private const string SongCoverRootName = "SongCoverUI";
     private const string SongCoverResource = "SongCover/Covers";
     private const string SongCoverAnimatorResource = "SongCover/Animation/Canvas";
-    // Prefab SongDetail is authored at ~47x75 with world-space scale; enlarge the
-    // root so Screen Space Overlay stays readable on web.
-    private const float SongCoverOverlayScale = 16f;
+    // Prefab SongDetail is authored at ~47×75 (world-space). For Screen Space
+    // Overlay, scale the root so the card is about 42% of a 1080p-tall frame.
+    private const float SongDetailPrefabHeight = 75f;
+    private const float SongCoverTargetHeightFraction = 0.42f;
+    private const float SongCoverMinScale = 4f;
+    private const float SongCoverMaxScale = 10f;
 
     void Start()
     {
@@ -140,9 +143,12 @@ public class BGManager : MonoBehaviour
         }
 
         // Prefab root is Transform; keep SongDetail as the visible UI card and
-        // enlarge the whole tree for overlay readability.
-        coversRoot.transform.localScale = Vector3.one * SongCoverOverlayScale;
+        // enlarge the whole tree for overlay readability (~42% of 1080p height).
+        var overlayScale = ComputeSongCoverOverlayScale();
+        coversRoot.transform.localScale = Vector3.one * overlayScale;
         songDetail.localPosition = Vector3.zero;
+        // Entry anim drives SongDetail scale; start from authored baseline.
+        songDetail.localScale = Vector3.one;
         songDetail.gameObject.SetActive(true);
 
         // Ensure UIGraphics start opaque even if Entry has not advanced yet.
@@ -152,6 +158,13 @@ public class BGManager : MonoBehaviour
             color.a = 1f;
             graphic.color = color;
         }
+    }
+
+    static float ComputeSongCoverOverlayScale()
+    {
+        // CanvasScaler reference height is 1080; map prefab height to a fraction of it.
+        var scale = 1080f * SongCoverTargetHeightFraction / SongDetailPrefabHeight;
+        return Mathf.Clamp(scale, SongCoverMinScale, SongCoverMaxScale);
     }
 
     void EnsureSongDetailAnimator()
@@ -217,7 +230,7 @@ public class BGManager : MonoBehaviour
             "[MJV][BGManager] PlaySongDetail title=" +
             (titleText != null ? titleText.text : "") +
             " scale=" +
-            SongCoverOverlayScale
+            ComputeSongCoverOverlayScale()
         );
     }
 
