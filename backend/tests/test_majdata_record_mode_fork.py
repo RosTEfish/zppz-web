@@ -27,7 +27,7 @@ def test_record_mode_fork_files_exist() -> None:
             assert "PlaySongDetail" in text
             assert "SongCover/Covers" in text
             assert "ScreenSpaceOverlay" in text
-            assert "SongCoverTargetHeightFraction" in text
+            assert "SongCoverOverlayScale = 90f" in text
             assert 'Find("Covers")' not in text
         if relative.endswith("GameMainManager.cs"):
             assert "recordMode: true" in text
