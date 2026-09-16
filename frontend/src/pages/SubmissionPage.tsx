@@ -345,6 +345,7 @@ function SubmissionPageContent() {
                 onRemove={() =>
                   target.submission && void remove(target.submission, target.song.id)
                 }
+                onCancelJob={job ? () => void cancelJob(job) : undefined}
               />
             );
           })}
@@ -452,6 +453,7 @@ function SubmissionCard({
   onUpload,
   onPreview,
   onRemove,
+  onCancelJob,
 }: {
   target: SubmissionTargetRead;
   job?: SubmissionProcessingJob;
@@ -464,6 +466,7 @@ function SubmissionCard({
   onUpload: (file?: File) => void;
   onPreview: () => void;
   onRemove: () => void;
+  onCancelJob?: () => void;
 }) {
   const submitted = target.submission;
   return (
@@ -503,13 +506,13 @@ function SubmissionCard({
           label="若查重提示疑似 Ban，确认这不是同一首曲目"
           sx={{ mt: 1, alignItems: "flex-start" }}
         />
-                {job ? (
-                  <ProcessingJobNotice
-                    job={job}
-                    replacing={Boolean(submitted)}
-                    onCancel={() => void cancelJob(job)}
-                  />
-                ) : null}
+        {job ? (
+          <ProcessingJobNotice
+            job={job}
+            replacing={Boolean(submitted)}
+            onCancel={onCancelJob}
+          />
+        ) : null}
         {submitted ? <FileSummary file={submitted} /> : null}
         <Stack
           direction={{ xs: "column", sm: "row" }}
