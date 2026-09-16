@@ -120,13 +120,19 @@ def _create_upload_intent(
     if not safe_file_name or any(ord(character) < 32 for character in safe_file_name):
         raise HTTPException(status_code=422, detail="投稿文件名无效")
     suffix = validate_upload_metadata(safe_file_name, file_size, content_type)
+    now = datetime.utcnow()
+    active_intent_statuses = ("pending", "uploaded", "processing")
     in_progress = None
     if submission_id is not None:
         in_progress = db.scalar(
             select(SubmissionUploadIntent.id).where(
                 SubmissionUploadIntent.event_id == event_id,
                 SubmissionUploadIntent.replace_submission_id == submission_id,
-                SubmissionUploadIntent.status.in_(("uploaded", "processing")),
+                SubmissionUploadIntent.status.in_(active_intent_statuses),
+                or_(
+                    SubmissionUploadIntent.status != "pending",
+                    SubmissionUploadIntent.expires_at > now,
+                ),
             )
         )
     elif song_id is not None:
@@ -136,7 +142,11 @@ def _create_upload_intent(
                 SubmissionUploadIntent.user_id == user.id,
                 SubmissionUploadIntent.source_song_id == song_id,
                 SubmissionUploadIntent.replace_submission_id.is_(None),
-                SubmissionUploadIntent.status.in_(("uploaded", "processing")),
+                SubmissionUploadIntent.status.in_(active_intent_statuses),
+                or_(
+                    SubmissionUploadIntent.status != "pending",
+                    SubmissionUploadIntent.expires_at > now,
+                ),
             )
         )
     if in_progress:
@@ -941,6 +951,21 @@ def submission_processing_jobs(
     event = get_current_event(db)
     return serialize_processing_jobs(db, list_visible_jobs(db, event_id=event.id, user_id=user.id))
 
+
+@router.post("/processing-jobs/{job_id}/cancel", response_model=SubmissionProcessingJobRead)
+def cancel_submission_processing_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    from app.modules.submissions.processing import cancel_processing_job, serialize_processing_job
+
+    event = get_current_event(db)
+    job = db.get(SubmissionProcessingJob, job_id)
+    if not job or job.event_id != event.id or job.user_id != user.id:
+        raise HTTPException(status_code=404, detail="后台任务不存在")
+    cancelled = cancel_processing_job(db, job)
+    return serialize_processing_job(db, cancelled)
 
 @router.delete("/upload-intents/{intent_id}", status_code=204)
 def cancel_submission_upload_intent(

@@ -407,6 +407,7 @@ export const api = {
   uploadExhibition: (file: File, acknowledgeBanWarning = false, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ track: "exhibition", acknowledge_ban_warning: acknowledgeBanWarning }, file, undefined, options),
   replaceSubmission: (id: number, track: Track, file: File, acknowledgeBanWarning = false, options?: SubmissionUploadOptions) => uploadSubmissionThroughIntent({ submission_id: id, track, acknowledge_ban_warning: acknowledgeBanWarning }, file, undefined, options),
   submissionProcessingJobs: (signal?: AbortSignal) => apiRequest<SubmissionProcessingJob[]>("/submissions/processing-jobs", { cache: "no-store", signal }),
+  cancelSubmissionProcessingJob: (jobId: string) => apiRequest<SubmissionProcessingJob>(`/submissions/processing-jobs/${jobId}/cancel`, { method: "POST" }),
   updateSubmissionTrack: (id: number, track: Track) => apiRequest<StoredFileRead>(`/submissions/${id}/track`, { method: "PATCH", body: JSON.stringify({ track }) }),
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   submissionPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/submissions/${id}/preview-manifest`, { signal }),

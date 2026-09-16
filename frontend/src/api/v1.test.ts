@@ -191,6 +191,78 @@ describe("v1 API helpers", () => {
     expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "confirming", percent: 100 }));
   });
 
+  it("recovers a durable job when complete fails but cancel is rejected as already processing", async () => {
+    const paths: string[] = [];
+    const job = {
+      id: "job-recovered",
+      intent_id: "intent-recovered",
+      status: "queued",
+      stage: "uploaded",
+      message: "等待后台校验",
+      file_name: "recovered.zip",
+      file_size: 3,
+      source_song_id: 4,
+      replace_submission_id: null,
+      submission: null,
+      created_at: "2026-07-17T12:00:00Z",
+      updated_at: "2026-07-17T12:00:00Z",
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      paths.push(`${init?.method || "GET"} ${path}`);
+      if (path.endsWith("/upload-intents")) {
+        return new Response(JSON.stringify({
+          id: "intent-recovered",
+          upload_url: "https://example.r2.cloudflarestorage.com/recovered",
+          method: "PUT",
+          headers: { "Content-Type": "application/zip" },
+          expires_at: "2026-07-17T12:00:00Z",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (path.endsWith("/complete")) {
+        return new Response(JSON.stringify({ detail: "network lost after enqueue" }), {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (path.endsWith("/status")) {
+        if (paths.filter((item) => item.includes("/status")).length === 1) {
+          return new Response(JSON.stringify({ detail: "temporary status miss" }), {
+            status: 409,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify(job), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (path.endsWith("/intent-recovered") && init?.method === "DELETE") {
+        return new Response(JSON.stringify({ detail: "文件已经进入后台处理，无法取消" }), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ detail: "unexpected" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    installXhr((xhr) => {
+      xhr.status = 200;
+      xhr.onload?.();
+    });
+
+    await expect(api.uploadSubmission(4, "normal", new File([new Uint8Array([1, 2, 3])], "recovered.zip"))).resolves.toMatchObject({
+      id: "job-recovered",
+      status: "queued",
+    });
+    expect(paths).toEqual([
+      "POST /api/v1/submissions/upload-intents",
+      "POST /api/v1/submissions/upload-intents/intent-recovered/complete",
+      "GET /api/v1/submissions/upload-intents/intent-recovered/status",
+      "DELETE /api/v1/submissions/upload-intents/intent-recovered",
+      "GET /api/v1/submissions/upload-intents/intent-recovered/status",
+    ]);
+  });
+
   it("does not complete an upload when the signed PUT fails", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith("/upload-intents")) {

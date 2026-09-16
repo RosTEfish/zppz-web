@@ -147,19 +147,30 @@ export async function uploadSubmissionThroughIntent(
   const completePath = adminSubmissionId === undefined
     ? `/submissions/upload-intents/${intent.id}/complete`
     : `/admin/submissions/upload-intents/${intent.id}/complete`;
+  const statusPath = adminSubmissionId === undefined
+    ? `/submissions/upload-intents/${intent.id}/status`
+    : `/admin/submissions/upload-intents/${intent.id}/status`;
+  const cancelPath = adminSubmissionId === undefined
+    ? `/submissions/upload-intents/${intent.id}`
+    : `/admin/submissions/upload-intents/${intent.id}`;
   try {
     return await apiRequest<SubmissionProcessingJob>(completePath, { method: "POST" });
   } catch (completionError) {
-    const statusPath = adminSubmissionId === undefined
-      ? `/submissions/upload-intents/${intent.id}/status`
-      : `/admin/submissions/upload-intents/${intent.id}/status`;
+    // The server may have enqueued the durable job even if the complete response
+    // never reached the browser. Prefer recovering that job over showing a false
+    // failure while the card keeps spinning on "正在校验并解析谱面".
     try {
       return await apiRequest<SubmissionProcessingJob>(statusPath, { cache: "no-store" });
     } catch {
-      const cancelPath = adminSubmissionId === undefined
-        ? `/submissions/upload-intents/${intent.id}`
-        : `/admin/submissions/upload-intents/${intent.id}`;
-      await apiRequest<void>(cancelPath, { method: "DELETE" }).catch(() => undefined);
+      try {
+        await apiRequest<void>(cancelPath, { method: "DELETE" });
+      } catch {
+        try {
+          return await apiRequest<SubmissionProcessingJob>(statusPath, { cache: "no-store" });
+        } catch {
+          throw completionError;
+        }
+      }
       throw completionError;
     }
   }

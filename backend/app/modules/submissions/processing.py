@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta
 import json
 import logging
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
@@ -49,6 +52,7 @@ logger = logging.getLogger(__name__)
 LEASE_SECONDS = 20 * 60
 RETRY_DELAYS = (30, 120, 600)
 ACTIVE_JOB_STATUSES = ("queued", "processing")
+VALIDATION_TIMEOUT_SECONDS = int(os.getenv("SUBMISSION_VALIDATION_TIMEOUT_SECONDS", str(5 * 60)))
 
 
 class ActiveProcessingJobConflict(Exception):
@@ -167,7 +171,12 @@ def serialize_processing_jobs(db: Session, jobs: list[SubmissionProcessingJob]) 
         submission_payload = serialize_submission(submission, preview_bundle) if submission else None
         file_name = intent.file_name if intent else (submission_payload or {}).get("file_name", "投稿资源")
         file_size = intent.file_size if intent else int((submission_payload or {}).get("file_size", 0))
-        message = job.error_message if job.status == "failed" else STAGE_MESSAGES.get(job.stage, "后台处理中")
+        if job.status == "failed":
+            message = job.error_message or "后台处理失败"
+        elif job.status == "queued" and job.error_message:
+            message = job.error_message
+        else:
+            message = STAGE_MESSAGES.get(job.stage, "后台处理中")
         payloads.append({
             "id": job.id,
             "intent_id": job.upload_intent_id,
@@ -328,6 +337,30 @@ def list_visible_jobs(
             .order_by(SubmissionProcessingJob.created_at.desc())
         ).all()
     )
+
+
+def cancel_processing_job(db: Session, job: SubmissionProcessingJob) -> SubmissionProcessingJob:
+    if job.status not in ACTIVE_JOB_STATUSES:
+        raise HTTPException(status_code=409, detail="该后台任务已经结束，无需取消")
+    if job.result_submission_id is not None or job.stage not in {"uploaded", "validating"}:
+        raise HTTPException(status_code=409, detail="投稿已进入后续处理，无法取消，请等待完成或联系管理员")
+    job.status = "cancelled"
+    job.finished_at = datetime.utcnow()
+    job.lease_until = None
+    job.next_attempt_at = None
+    job.error_code = "cancelled_by_user"
+    job.error_message = "已取消后台处理，可以重新上传"
+    if job.upload_intent_id:
+        intent = db.get(SubmissionUploadIntent, job.upload_intent_id)
+        if intent and intent.status in {"pending", "uploaded", "processing"}:
+            intent.status = "cancelled"
+            intent.error_message = job.error_message
+            enqueue_storage_deletion(db, intent.object_key)
+    # Keep the cancelled job out of the participant job list, but leave an audit trail.
+    job.superseded_at = datetime.utcnow()
+    db.flush()
+    drain_storage_deletions(db)
+    return job
 
 
 def claim_next_job(db: Session) -> str | None:
@@ -641,6 +674,64 @@ def _publish_video(
         logger.exception("Preview video failed for submission=%s job=%s", row.id, job.id)
 
 
+def _download_and_prepare_archive(source_path: str, suffix: str, assets_dir: Path) -> tuple[PreparedArchive, int]:
+    with materialized_object(source_path, suffix) as archive_path:
+        size = archive_path.stat().st_size
+        prepared = prepare_archive(archive_path, assets_dir)
+        return prepared, size
+
+
+def _prepare_archive_with_timeout(
+    source_path: str,
+    suffix: str,
+    assets_dir: Path,
+    *,
+    timeout_seconds: int | None = None,
+) -> tuple[PreparedArchive, int]:
+    """Download and parse the archive, failing cleanly if validation hangs."""
+    limit = VALIDATION_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(_download_and_prepare_archive, source_path, suffix, assets_dir)
+        try:
+            return future.result(timeout=limit)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise ArchiveParseError(
+                f"谱面校验超时（超过 {limit} 秒），请检查压缩包后重新上传"
+            ) from exc
+    finally:
+        # Do not block the worker loop on a hung extract/download thread.
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _fail_job(
+    db: Session,
+    job_id: str,
+    *,
+    error_code: str,
+    error_message: str,
+    delete_upload_object: bool = True,
+) -> None:
+    current = db.get(SubmissionProcessingJob, job_id)
+    if not current:
+        return
+    current.status = "failed"
+    current.error_code = error_code
+    current.error_message = error_message
+    current.finished_at = datetime.utcnow()
+    current.lease_until = None
+    current.next_attempt_at = None
+    if delete_upload_object and current.upload_intent_id:
+        upload = db.get(SubmissionUploadIntent, current.upload_intent_id)
+        if upload:
+            upload.status = "failed"
+            upload.error_message = error_message
+            enqueue_storage_deletion(db, upload.object_key)
+    db.flush()
+    drain_storage_deletions(db)
+
+
 def process_job(job_id: str) -> None:
     with SessionLocal() as db:
         job = db.get(SubmissionProcessingJob, job_id)
@@ -652,84 +743,79 @@ def process_job(job_id: str) -> None:
             suffix = Path(intent.file_name if intent else source_path).suffix.lower()
             _record_stage(db, job, "validating")
             download_started = perf_counter()
-            with materialized_object(source_path, suffix) as archive_path:
-                with TemporaryDirectory(prefix="zppz-submission-job-") as directory_text:
-                    directory = Path(directory_text)
+            with TemporaryDirectory(prefix="zppz-submission-job-") as directory_text:
+                directory = Path(directory_text)
+                prepared, archive_size = _prepare_archive_with_timeout(
+                    source_path,
+                    suffix,
+                    directory / "assets",
+                )
+                _record_stage(
+                    db,
+                    job,
+                    "validating",
+                    download_started,
+                    bytes_processed=archive_size,
+                    metric_name="download_extract_parse",
+                )
+                if row is None:
+                    assert intent is not None
+                    promote_started = perf_counter()
+                    row, _, _ = _promote_submission(db, job, intent, prepared, user, event)
                     _record_stage(
                         db,
                         job,
-                        "validating",
-                        download_started,
-                        bytes_processed=archive_path.stat().st_size,
-                        metric_name="download",
+                        "accepted",
+                        promote_started,
+                        bytes_processed=intent.file_size,
                     )
-                    parse_started = perf_counter()
-                    prepared = prepare_archive(archive_path, directory / "assets")
-                    _record_stage(
-                        db,
-                        job,
-                        "validating",
-                        parse_started,
-                        metric_name="extract_parse",
-                    )
-                    if row is None:
-                        assert intent is not None
-                        promote_started = perf_counter()
-                        row, _, _ = _promote_submission(db, job, intent, prepared, user, event)
-                        _record_stage(
-                            db,
-                            job,
-                            "accepted",
-                            promote_started,
-                            bytes_processed=intent.file_size,
-                        )
-                    else:
-                        if row.storage_path != job.source_storage_path:
-                            raise ArchiveParseError("投稿版本已经变更，旧任务已停止")
+                else:
+                    if row.storage_path != job.source_storage_path:
+                        raise ArchiveParseError("投稿版本已经变更，旧任务已停止")
 
-                    _record_stage(db, job, "preview_core")
-                    preview_started = perf_counter()
-                    _publish_core_preview(db, job, row, prepared)
-                    core_bytes = sum(
-                        path.stat().st_size
-                        for name, path in prepared.files.items()
-                        if name == "maidata.txt" or name.startswith("track.") or name.startswith("bg.")
-                    )
-                    _record_stage(
-                        db,
-                        job,
-                        "preview_core",
-                        preview_started,
-                        bytes_processed=core_bytes,
-                    )
+                _record_stage(db, job, "preview_core")
+                preview_started = perf_counter()
+                _publish_core_preview(db, job, row, prepared)
+                core_bytes = sum(
+                    path.stat().st_size
+                    for name, path in prepared.files.items()
+                    if name == "maidata.txt" or name.startswith("track.") or name.startswith("bg.")
+                )
+                _record_stage(
+                    db,
+                    job,
+                    "preview_core",
+                    preview_started,
+                    bytes_processed=core_bytes,
+                )
 
-                    _record_stage(db, job, "public_package")
-                    package_started = perf_counter()
-                    _publish_public_package(db, job, row, prepared, directory)
-                    public_path = directory / "public.zip"
-                    _record_stage(
-                        db,
-                        job,
-                        "public_package",
-                        package_started,
-                        bytes_processed=public_path.stat().st_size if public_path.exists() else 0,
-                    )
+                _record_stage(db, job, "public_package")
+                package_started = perf_counter()
+                _publish_public_package(db, job, row, prepared, directory)
+                public_path = directory / "public.zip"
+                _record_stage(
+                    db,
+                    job,
+                    "public_package",
+                    package_started,
+                    bytes_processed=public_path.stat().st_size if public_path.exists() else 0,
+                )
 
-                    _record_stage(db, job, "video")
-                    video_started = perf_counter()
-                    _publish_video(db, job, row, prepared)
-                    video_bytes = (
-                        prepared.files[prepared.video_name].stat().st_size
-                        if prepared.video_name
-                        else 0
-                    )
-                    _record_stage(
-                        db,
-                        job,
-                        "video",
-                        video_started,
-                        bytes_processed=video_bytes,
-                    )
+                _record_stage(db, job, "video")
+                video_started = perf_counter()
+                _publish_video(db, job, row, prepared)
+                video_bytes = (
+                    prepared.files[prepared.video_name].stat().st_size
+                    if prepared.video_name
+                    else 0
+                )
+                _record_stage(
+                    db,
+                    job,
+                    "video",
+                    video_started,
+                    bytes_processed=video_bytes,
+                )
 
             _record_stage(db, job, "cleanup")
             if intent:
@@ -751,21 +837,12 @@ def process_job(job_id: str) -> None:
             return
         except (ArchiveParseError, HTTPException) as exc:
             db.rollback()
-            current = db.get(SubmissionProcessingJob, job_id)
-            if current:
-                current.status = "failed"
-                current.error_code = "archive_invalid"
-                current.error_message = _public_validation_message(exc)
-                current.finished_at = datetime.utcnow()
-                current.lease_until = None
-                if current.upload_intent_id:
-                    upload = db.get(SubmissionUploadIntent, current.upload_intent_id)
-                    if upload:
-                        upload.status = "failed"
-                        upload.error_message = current.error_message
-                        enqueue_storage_deletion(db, upload.object_key)
-                db.flush()
-                drain_storage_deletions(db)
+            _fail_job(
+                db,
+                job_id,
+                error_code="archive_invalid",
+                error_message=_public_validation_message(exc),
+            )
         except Exception:
             db.rollback()
             current = db.get(SubmissionProcessingJob, job_id)
@@ -778,23 +855,15 @@ def process_job(job_id: str) -> None:
                     )
                     current.error_code = "temporary_processing_error"
                     current.error_message = "后台处理暂时失败，系统将自动重试"
-                else:
-                    current.status = "failed"
-                    current.finished_at = datetime.utcnow()
-                    current.error_code = "processing_failed"
-                    current.error_message = "后台处理失败，请重新上传或联系管理员"
-                    if current.upload_intent_id:
-                        upload = db.get(SubmissionUploadIntent, current.upload_intent_id)
-                        if upload:
-                            upload.status = "failed"
-                            upload.error_message = current.error_message
-                            enqueue_storage_deletion(db, upload.object_key)
-                current.lease_until = None
-                db.flush()
-                if current.status == "failed":
-                    drain_storage_deletions(db)
-                else:
+                    current.lease_until = None
                     db.commit()
+                else:
+                    _fail_job(
+                        db,
+                        job_id,
+                        error_code="processing_failed",
+                        error_message="后台处理失败，请重新上传或联系管理员",
+                    )
             logger.exception("Submission processing job failed: %s", job_id)
 
 

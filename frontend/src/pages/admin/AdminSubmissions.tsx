@@ -35,7 +35,10 @@ export default function AdminSubmissions() {
   const handleQueued = useCallback((job: SubmissionProcessingJob) => {
     jobs.setData((current) => [job, ...(current ?? []).filter((item) => item.id !== job.id)]);
   }, [jobs.setData]);
-  const uploadDialog = useSubmissionUploadDialog(handleQueued);
+  const refreshJobs = useCallback(() => {
+    void jobs.reload();
+  }, [jobs.reload]);
+  const uploadDialog = useSubmissionUploadDialog(handleQueued, refreshJobs);
   const hasActiveJobs = jobs.data?.some((job) => job.status === "queued" || job.status === "processing") ?? false;
   useEffect(() => {
     if (hasActiveJobs && !jobs.validating) void files.reload();
