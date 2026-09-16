@@ -106,7 +106,10 @@ function SubmissionPageContent() {
     },
     [processingJobs.setData],
   );
-  const uploadDialog = useSubmissionUploadDialog(handleQueued);
+  const refreshProcessingJobs = useCallback(() => {
+    void processingJobs.reload();
+  }, [processingJobs.reload]);
+  const uploadDialog = useSubmissionUploadDialog(handleQueued, refreshProcessingJobs);
   const activeJobIds = useMemo(
     () =>
       new Set(
@@ -265,6 +268,25 @@ function SubmissionPageContent() {
     }
   }
 
+  async function cancelJob(job: SubmissionProcessingJob) {
+    const result = await confirm({
+      title: "取消后台处理",
+      description: `确认取消“${job.file_name}”的后台校验？取消后可以重新上传。`,
+      confirmationText: "取消处理",
+      confirmationButtonProps: { color: "warning" },
+    });
+    if (!result.confirmed) return;
+    setError("");
+    try {
+      await api.cancelSubmissionProcessingJob(job.id);
+      processingJobs.setData((current) => (current ?? []).filter((item) => item.id !== job.id));
+      enqueueSnackbar("已取消后台处理，可以重新上传", { variant: "info" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "取消失败");
+      void processingJobs.reload();
+    }
+  }
+
   return (
     <Stack spacing={3}>
       <PageHeader
@@ -359,7 +381,13 @@ function SubmissionPageContent() {
             />
           </Button>
         </Stack>
-        {exhibitionJobs.map((job) => <ProcessingJobNotice key={job.id} job={job} />)}
+        {exhibitionJobs.map((job) => (
+          <ProcessingJobNotice
+            key={job.id}
+            job={job}
+            onCancel={() => void cancelJob(job)}
+          />
+        ))}
         {exhibitions.length ? (
           <Stack spacing={1} sx={{ mt: 2 }}>
             {exhibitions.map((file) => (
@@ -475,7 +503,13 @@ function SubmissionCard({
           label="若查重提示疑似 Ban，确认这不是同一首曲目"
           sx={{ mt: 1, alignItems: "flex-start" }}
         />
-        {job ? <ProcessingJobNotice job={job} replacing={Boolean(submitted)} /> : null}
+                {job ? (
+                  <ProcessingJobNotice
+                    job={job}
+                    replacing={Boolean(submitted)}
+                    onCancel={() => void cancelJob(job)}
+                  />
+                ) : null}
         {submitted ? <FileSummary file={submitted} /> : null}
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -552,11 +586,18 @@ function SubmissionCard({
 function ProcessingJobNotice({
   job,
   replacing = false,
+  onCancel,
 }: {
   job: SubmissionProcessingJob;
   replacing?: boolean;
+  onCancel?: () => void;
 }) {
   const failed = job.status === "failed";
+  const cancellable =
+    Boolean(onCancel) &&
+    (job.status === "queued" || job.status === "processing") &&
+    (job.stage === "uploaded" || job.stage === "validating") &&
+    !job.submission;
   const stages: SubmissionProcessingJob["stage"][] = [
     "uploaded",
     "validating",
@@ -589,14 +630,27 @@ function ProcessingJobNotice({
         </Box>
       )}
       sx={{ mt: 2 }}
+      action={
+        cancellable ? (
+          <Button color="inherit" size="small" onClick={onCancel}>
+            取消处理
+          </Button>
+        ) : undefined
+      }
     >
       <Typography variant="body2" sx={{ fontWeight: 750 }}>
         {failed ? "后台校验失败" : replacing ? "新版本正在处理" : "后台处理中"}
         {!failed ? ` · ${STAGE_LABELS[job.stage]}` : ""}
       </Typography>
-      <Typography variant="caption" color="text.secondary">
-        {job.file_name} · {formatMB(job.file_size)} · {job.message}
+      <Typography variant="caption" color={failed ? "error.main" : "text.secondary"} sx={{ display: "block" }}>
+        {job.file_name} · {formatMB(job.file_size)}
+        {failed ? "" : ` · ${job.message}`}
       </Typography>
+      {failed && job.message ? (
+        <Typography variant="body2" color="error.main" sx={{ mt: 0.75 }}>
+          {job.message}
+        </Typography>
+      ) : null}
       {!failed ? (
         <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
           {visibleStages.map(([stage, label]) => {

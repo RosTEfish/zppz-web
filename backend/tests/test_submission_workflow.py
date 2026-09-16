@@ -434,6 +434,124 @@ def test_processing_intent_blocks_a_new_upload_for_the_same_song(client: TestCli
     assert "上一份投稿仍在服务器处理中" in blocked.json()["detail"]
 
 
+def test_pending_intent_blocks_a_second_upload_for_the_same_song(client: TestClient):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes()
+    metadata = {
+        "song_id": own_id,
+        "track": "normal",
+        "file_name": "first.zip",
+        "file_size": len(payload),
+        "content_type": "application/zip",
+    }
+    created = client.post("/api/v1/submissions/upload-intents", json=metadata)
+    assert created.status_code == 200
+    blocked = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={**metadata, "file_name": "second.zip"},
+    )
+    assert blocked.status_code == 409
+    assert "上一份投稿仍在服务器处理中" in blocked.json()["detail"]
+
+
+def test_user_can_cancel_stuck_validating_job_and_reupload(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes("Cancel Me")
+
+    def hang_forever(*_args, **_kwargs):
+        raise submission_processing.ArchiveParseError("谱面校验超时（超过 1 秒），请检查压缩包后重新上传")
+
+    monkeypatch.setattr(submission_processing, "_prepare_archive_with_timeout", hang_forever)
+
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "cancel-me.zip",
+            "file_size": len(payload),
+            "content_type": "application/zip",
+        },
+    )
+    intent = created.json()
+    assert client.put(intent["upload_url"], content=payload, headers=intent["headers"]).status_code == 204
+    started = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert started.status_code == 200
+    job_id = started.json()["id"]
+
+    # Simulate a job stuck in validating before the worker finishes failing it.
+    with SessionLocal() as db:
+        job = db.get(SubmissionProcessingJob, job_id)
+        assert job is not None
+        job.status = "processing"
+        job.stage = "validating"
+        job.lease_until = datetime.utcnow() + timedelta(minutes=20)
+        db.commit()
+
+    cancelled = client.post(f"/api/v1/submissions/processing-jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+
+    jobs = client.get("/api/v1/submissions/processing-jobs")
+    assert jobs.status_code == 200
+    assert all(item["id"] != job_id for item in jobs.json())
+
+    retry = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "retry.zip",
+            "file_size": len(payload),
+            "content_type": "application/zip",
+        },
+    )
+    assert retry.status_code == 200, retry.text
+
+
+def test_validation_timeout_marks_job_failed(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    register(client, "owner")
+    register(client, "player")
+    _, own_id, _ = create_candidate_rows()
+    set_manual_phase("submission_1")
+    payload = archive_bytes("Timeout Chart")
+
+    def slow_prepare(*_args, **_kwargs):
+        import time
+
+        time.sleep(0.2)
+        return submission_processing.prepare_archive(*_args, **_kwargs)
+
+    monkeypatch.setattr(submission_processing, "_download_and_prepare_archive", slow_prepare)
+    monkeypatch.setattr(submission_processing, "VALIDATION_TIMEOUT_SECONDS", 0.01)
+
+    created = client.post(
+        "/api/v1/submissions/upload-intents",
+        json={
+            "song_id": own_id,
+            "track": "normal",
+            "file_name": "timeout.zip",
+            "file_size": len(payload),
+            "content_type": "application/zip",
+        },
+    )
+    intent = created.json()
+    assert client.put(intent["upload_url"], content=payload, headers=intent["headers"]).status_code == 204
+    started = client.post(f"/api/v1/submissions/upload-intents/{intent['id']}/complete")
+    assert started.status_code == 200
+    run_next_processing_job()
+    result = client.get(f"/api/v1/submissions/upload-intents/{intent['id']}/status")
+    assert result.status_code == 200
+    assert result.json()["status"] == "failed"
+    assert "校验超时" in result.json()["message"]
+
+
 def test_background_storage_cleanup_keeps_failures_and_retries(monkeypatch: pytest.MonkeyPatch):
     class FakeStore:
         def __init__(self):

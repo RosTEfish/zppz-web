@@ -55,7 +55,10 @@ function formatEta(value: number | null): string {
   return `约 ${minutes} 分 ${remainder} 秒`;
 }
 
-export function useSubmissionUploadDialog(onQueued: (job: SubmissionProcessingJob) => void) {
+export function useSubmissionUploadDialog(
+  onQueued: (job: SubmissionProcessingJob) => void,
+  onUploadIssue?: () => void,
+) {
   const [state, setState] = useState<UploadDialogState>({
     open: false,
     phase: "preparing",
@@ -100,13 +103,16 @@ export function useSubmissionUploadDialog(onQueued: (job: SubmissionProcessingJo
     } catch (error) {
       controllerRef.current = null;
       const cancelled = error instanceof DOMException && error.name === "AbortError";
+      // A lost complete response can leave a durable job running while this dialog
+      // shows an error. Refresh the job list so the card does not stay stale.
+      onUploadIssue?.();
       setState((current) => ({
         ...current,
         phase: cancelled ? "cancelled" : "error",
         error: cancelled ? "上传已取消，当前投稿未发生变化。" : error instanceof Error ? error.message : "上传失败",
       }));
     }
-  }, [onQueued]);
+  }, [onQueued, onUploadIssue]);
 
   const cancel = useCallback(() => {
     controllerRef.current?.abort();
