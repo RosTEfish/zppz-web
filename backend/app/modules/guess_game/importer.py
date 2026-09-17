@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 from tempfile import TemporaryDirectory
+from threading import Lock
 import warnings
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
@@ -50,6 +51,9 @@ INOTE_PATTERN = re.compile(
 MAX_ARCHIVE_ENTRIES = 2048
 MAX_MAIDATA_BYTES = 1024 * 1024
 MAX_COVER_BYTES = 20 * 1024 * 1024
+COVER_THUMB_MAX_EDGE = 640
+COVER_THUMB_QUALITY = 80
+_COVER_THUMB_LOCK = Lock()
 MAX_MEMBER_BYTES = 512 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 200
@@ -860,6 +864,32 @@ def parse_stored_archive(storage_path: str) -> ParsedArchive:
     return parse_archive(storage_path_to_absolute(storage_path))
 
 
+def cover_thumbnail_path(cover_file: Path) -> Path:
+    return cover_file.with_name(f"{cover_file.stem}.thumb.webp")
+
+
+def ensure_cover_thumbnail(cover_file: Path) -> Path | None:
+    if not cover_file.is_file():
+        return None
+    thumb = cover_thumbnail_path(cover_file)
+    with _COVER_THUMB_LOCK:
+        if thumb.is_file() and thumb.stat().st_mtime >= cover_file.stat().st_mtime:
+            return thumb
+        try:
+            with Image.open(cover_file) as image:
+                converted = image.convert("RGB")
+                converted.thumbnail((COVER_THUMB_MAX_EDGE, COVER_THUMB_MAX_EDGE), Image.Resampling.LANCZOS)
+                temporary = cover_file.parent / f".{uuid4().hex}.tmp"
+                try:
+                    converted.save(temporary, "WEBP", quality=COVER_THUMB_QUALITY, method=4)
+                    temporary.replace(thumb)
+                finally:
+                    temporary.unlink(missing_ok=True)
+        except (OSError, UnidentifiedImageError, ValueError):
+            return None
+        return thumb if thumb.is_file() else None
+
+
 def _write_cover(event_id: int, source_type: str, source_id: int, parsed: ParsedArchive) -> str:
     if parsed.cover_bytes is None:
         return ""
@@ -875,6 +905,7 @@ def _write_cover(event_id: int, source_type: str, source_id: int, parsed: Parsed
             temporary.replace(target)
         finally:
             temporary.unlink(missing_ok=True)
+    ensure_cover_thumbnail(target)
     return f"/api/v1/assets/guess-covers/{file_name}"
 
 
@@ -893,6 +924,10 @@ def delete_cover_paths(cover_paths: set[str]) -> None:
             continue
         try:
             path.unlink(missing_ok=True)
+        except OSError:
+            continue
+        try:
+            cover_thumbnail_path(path).unlink(missing_ok=True)
         except OSError:
             continue
 

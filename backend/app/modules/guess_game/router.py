@@ -40,6 +40,7 @@ from app.modules.events.phase_policy import ALWAYS_PUBLIC_CHART_SOURCE_TYPES, ap
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     delete_cover_paths,
+    ensure_cover_thumbnail,
     parse_stored_archive,
     rebuild_event_charts,
     sync_parsed_source,
@@ -261,21 +262,38 @@ def download_chart_metadata(chart_id: int, db: Session = Depends(get_db)) -> dic
     }
 
 
+COVER_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"}
+
+
+def _chart_cover_file(chart: GuessChart) -> Path:
+    file_name = Path(chart.cover_path).name
+    return get_settings().assets_dir / "guess-covers" / file_name
+
+
+def _require_cover_file(chart: GuessChart) -> Path:
+    file = _chart_cover_file(chart)
+    if not file.name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=404, detail="谱面封面不存在")
+    return file
+
+
 @router.get("/charts/{chart_id}/cover")
 def chart_cover(chart_id: int, db: Session = Depends(get_db)):
     event = get_current_event(db)
     chart = _visible_chart(db, event, chart_id)
-    file_name = Path(chart.cover_path).name
-    file = get_settings().assets_dir / "guess-covers" / file_name
-    if not file_name or not file.is_file() or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-        raise HTTPException(status_code=404, detail="谱面封面不存在")
     # Cover URLs are uuid-content-addressed and versioned with ?v=<uuid-stem>, so a
     # replacement chart cover gets a brand-new URL and this response can be cached
     # indefinitely by the browser and any shared edge cache (e.g. Cloudflare).
-    return FileResponse(
-        file,
-        headers={"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"},
-    )
+    return FileResponse(_require_cover_file(chart), headers=COVER_CACHE_HEADERS)
+
+
+@router.get("/charts/{chart_id}/cover-thumb")
+def chart_cover_thumb(chart_id: int, db: Session = Depends(get_db)):
+    event = get_current_event(db)
+    chart = _visible_chart(db, event, chart_id)
+    cover_file = _require_cover_file(chart)
+    thumb = ensure_cover_thumbnail(cover_file)
+    return FileResponse(thumb or cover_file, headers=COVER_CACHE_HEADERS)
 
 
 @router.get("/charts", response_model=list[PublicGuessChartRead])

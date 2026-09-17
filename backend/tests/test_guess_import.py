@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import os
 import re
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -15,7 +16,14 @@ from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
-from app.modules.guess_game.importer import ArchiveParseError, parse_archive, prepare_archive, write_public_package
+from app.modules.guess_game.importer import (
+    ArchiveParseError,
+    cover_thumbnail_path,
+    ensure_cover_thumbnail,
+    parse_archive,
+    prepare_archive,
+    write_public_package,
+)
 
 
 def image_bytes(
@@ -360,9 +368,55 @@ def test_upload_creates_charts_and_serves_cover(client: TestClient):
     assert {row["source_level_slot"]: row["designer"] for row in charts.json()} == {"4": "Global", "5": "Expert"}
     assert {row["source_level_slot"] for row in charts.json()} == {"4", "5"}
     cover_path = charts.json()[0]["cover_path"]
+    thumb_path = charts.json()[0]["cover_thumb_path"]
     assert cover_path.startswith("/api/v1/guess-game/charts/")
     assert "/cover?v=" in cover_path
+    assert "/cover-thumb?v=" in thumb_path
     assert client.get(cover_path).status_code == 200
+    thumbnail = client.get(thumb_path)
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"].startswith("image/webp")
+
+
+def test_cover_thumbnail_resizes_and_backfills_on_demand(tmp_path: Path, client: TestClient):
+    def noisy_png(size: tuple[int, int]) -> bytes:
+        buffer = BytesIO()
+        Image.frombytes("RGB", size, os.urandom(size[0] * size[1] * 3)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    cover = tmp_path / "abc123.png"
+    cover.write_bytes(noisy_png((1200, 800)))
+    thumb = ensure_cover_thumbnail(cover)
+    assert thumb is not None
+    assert thumb == cover_thumbnail_path(cover)
+    with Image.open(thumb) as image:
+        assert image.format == "WEBP"
+        assert max(image.size) <= 640
+    assert thumb.stat().st_size < cover.stat().st_size
+    assert ensure_cover_thumbnail(cover) == thumb
+
+    register(client)
+    large_cover = noisy_png((1200, 800))
+    response = upload(client, archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13", cover=large_cover))
+    assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "guess"
+        stored_cover = db.scalar(select(GuessChart.cover_path))
+        db.commit()
+    charts = client.get("/api/v1/guess-game/charts").json()
+    thumb_url = charts[0]["cover_thumb_path"]
+    stored_file = get_settings().assets_dir / "guess-covers" / Path(stored_cover).name
+    stored_thumb = cover_thumbnail_path(stored_file)
+    stored_thumb.unlink()
+    rebuilt = client.get(thumb_url)
+    assert rebuilt.status_code == 200
+    assert rebuilt.headers["content-type"].startswith("image/webp")
+    assert stored_thumb.is_file()
+    assert len(rebuilt.content) < len(large_cover)
+    with Image.open(BytesIO(rebuilt.content)) as image:
+        assert max(image.size) <= 640
 
 
 def test_j_track_upload_and_delete_sync_charts(client: TestClient):
@@ -408,7 +462,9 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
         assert user and slot_four
         original_chart_id = slot_four.id
         original_cover_file = get_settings().assets_dir / "guess-covers" / Path(slot_four.cover_path).name
+        original_thumb_file = cover_thumbnail_path(original_cover_file)
         assert original_cover_file.is_file()
+        assert original_thumb_file.is_file()
         db.add(GuessVote(chart_id=slot_four.id, user_id=user.id, vote_type="love"))
         db.add(GuessComment(chart_id=slot_four.id, user_id=user.id, content="keep"))
         db.add(GuessAuthorGuess(chart_id=slot_four.id, user_id=user.id, guessed_user_id=user.id))
@@ -460,6 +516,7 @@ def test_incremental_replace_preserves_matching_chart_interactions(client: TestC
     assert replaced_cover_url != first_cover_url
     assert client.get(replaced_cover_url).content == NEW_PNG_COVER
     assert not original_cover_file.exists()
+    assert not original_thumb_file.exists()
 
 
 def test_invalid_upload_and_replace_leave_no_partial_state(client: TestClient):
@@ -596,11 +653,17 @@ def test_delete_submission_removes_only_its_charts_and_cover(client: TestClient)
     assert created.status_code == 200
     with SessionLocal() as db:
         cover_path = db.scalar(select(GuessChart.cover_path))
+    cover_file = get_settings().assets_dir / "guess-covers" / Path(cover_path).name
+    thumb_file = cover_thumbnail_path(cover_file)
+    assert cover_file.is_file()
+    assert thumb_file.is_file()
     response = client.delete(f"/api/v1/submissions/{created.json()['id']}")
     assert response.status_code == 200
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(GuessChart)) == 0
     assert client.get(cover_path).status_code == 404
+    assert not cover_file.exists()
+    assert not thumb_file.exists()
 
 
 def test_public_visibility_neutral_package_and_audience_author_guess(client: TestClient):
