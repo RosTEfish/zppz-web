@@ -1,6 +1,6 @@
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
-import { CircleUserRound, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Settings, Sparkles, Upload, Vote } from "lucide-react";
+import { Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { SWRConfig } from "swr";
 import { LoadingBlock } from "./components/PagePrimitives";
@@ -130,7 +130,77 @@ function AppShell() {
       <Box sx={{ flex: 1 }} />
       <Divider />
       <Box sx={{ p: 1.5 }}>
-        {isLoggedIn ? <Box sx={{ bgcolor: "#F1F3EF", borderRadius: 2.5, p: 1 }}><Stack spacing={0.5}><ListItemButton component={Link} to="/account" selected={location.pathname === "/account"} onPointerEnter={() => void loadAccountPage()} onFocus={() => void loadAccountPage()} sx={{ borderRadius: 1, px: 1, borderLeft: "3px solid transparent", "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: "rgba(23, 107, 82, 0.06)", color: "primary.dark" } }}><ListItemIcon sx={{ minWidth: 34 }}><CircleUserRound size={20} /></ListItemIcon><ListItemText primary={<Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>{user?.display_name || user?.user_code}</Typography>} secondary={<Typography variant="caption" color="text.secondary" noWrap>{identityLabel(user?.identity)} · 账号设置</Typography>} /><Settings size={16} /></ListItemButton><Button color="inherit" startIcon={<LogOut size={17} />} onClick={() => void logout().then(() => navigate("/"))}>退出登录</Button></Stack></Box> : <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>}
+        {isLoggedIn ? (
+          <Stack spacing={0.75}>
+            <Box
+              component={Link}
+              to="/account"
+              aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
+              onPointerEnter={() => void loadAccountPage()}
+              onFocus={() => void loadAccountPage()}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1.25,
+                minHeight: 48,
+                px: 1,
+                py: 0.75,
+                borderRadius: 2,
+                textDecoration: "none",
+                color: "inherit",
+                bgcolor: location.pathname === "/account" ? "rgba(23, 107, 82, 0.08)" : "transparent",
+                "&:hover": { bgcolor: location.pathname === "/account" ? "rgba(23, 107, 82, 0.12)" : "rgba(23, 33, 28, 0.04)" },
+                "&.Mui-focusVisible, &:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+              }}
+            >
+              <Box
+                aria-hidden="true"
+                sx={{
+                  width: 36,
+                  height: 36,
+                  flexShrink: 0,
+                  borderRadius: "50%",
+                  display: "grid",
+                  placeItems: "center",
+                  fontWeight: 750,
+                  fontSize: 14,
+                  letterSpacing: "-0.02em",
+                  color: "#fff",
+                  background: "linear-gradient(145deg, #1A7A5C 0%, #0E523E 100%)",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)",
+                }}
+              >
+                {(user?.display_name || user?.user_code || "?").trim().charAt(0).toUpperCase() || "?"}
+              </Box>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography noWrap sx={{ fontWeight: 700, fontSize: 14, lineHeight: 1.25 }}>
+                  {user?.display_name || user?.user_code}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", lineHeight: 1.35, mt: 0.15 }}>
+                  {identityLabel(user?.identity)} · 账号设置
+                </Typography>
+              </Box>
+            </Box>
+            <Button
+              size="small"
+              color="inherit"
+              startIcon={<LogOut size={15} />}
+              onClick={() => void logout().then(() => navigate("/"))}
+              sx={{
+                justifyContent: "flex-start",
+                px: 1.25,
+                minHeight: 36,
+                color: "text.secondary",
+                fontWeight: 600,
+                "&:hover": { color: "text.primary", bgcolor: "rgba(23, 33, 28, 0.04)" },
+              }}
+            >
+              退出登录
+            </Button>
+          </Stack>
+        ) : (
+          <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>
+        )}
       </Box>
     </Box>
   );
