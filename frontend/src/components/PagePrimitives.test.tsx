@@ -40,4 +40,31 @@ describe("useApiResource", () => {
     await act(async () => requests[0].resolve("stale result"));
     expect(screen.queryByText("stale result")).not.toBeInTheDocument();
   });
+
+  it("does not refetch when the window is focused", async () => {
+    let calls = 0;
+
+    function Probe() {
+      const resource = useApiResource("focus-probe", async () => {
+        calls += 1;
+        return "ready";
+      });
+      return <div>{resource.data ?? "loading"}</div>;
+    }
+
+    render(
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <Probe />
+      </SWRConfig>,
+    );
+    await screen.findByText("ready");
+    expect(calls).toBe(1);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 40));
+    expect(calls).toBe(1);
+  });
 });

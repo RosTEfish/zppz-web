@@ -95,6 +95,11 @@ def _chart_payload(
             if chart.cover_path
             else ""
         ),
+        "cover_thumb_path": (
+            f"/api/v1/guess-game/charts/{chart.id}/cover-thumb?v={Path(chart.cover_path).stem}"
+            if chart.cover_path
+            else ""
+        ),
         "is_self_selected": chart.is_self_selected,
         "track_duration_seconds": track_duration_seconds,
         "is_long_track": bool(track_duration_seconds is not None and track_duration_seconds > 240),
@@ -113,6 +118,7 @@ def _chart_payload(
             "storage_path": chart.storage_path,
             "cover_path": chart.cover_path,
         })
+        payload.pop("cover_thumb_path", None)
     return payload
 
 

@@ -68,6 +68,54 @@ function LoveVoteQuotaPanel({ quota }: { quota: LoveVoteQuotaRead }) {
   return <Paper variant="outlined" aria-live="polite" aria-label="真爱票额度" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: { sm: "center" } }}><Typography variant="body2" sx={{ fontWeight: 800 }}>真爱票额度</Typography><Chip size="small" variant="outlined" label={`14 以下：已用 ${quota.below_14.used}/${quota.below_14.limit}，剩余 ${quota.below_14.remaining}`} /><Chip size="small" variant="outlined" label={`14 及以上：已用 ${quota.at_least_14.used}/${quota.at_least_14.limit}，剩余 ${quota.at_least_14.remaining}`} /></Stack></Paper>;
 }
 
+const DesignerGuessSelect = memo(function DesignerGuessSelect({
+  ariaLabel,
+  guessedUserId,
+  emptyLabel,
+  candidates,
+  candidateLabels,
+  disabled,
+  onGuess,
+}: {
+  ariaLabel: string;
+  guessedUserId?: number | null;
+  emptyLabel: string;
+  candidates: DesignerGuessOverview["candidates"];
+  candidateLabels: ReadonlyMap<number, string>;
+  disabled: boolean;
+  onGuess: (userId: number | null) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const selectedValue = guessedUserId ?? "";
+  return (
+    <FormControl size="small" fullWidth disabled={disabled}>
+      <InputLabel shrink>谱师猜测</InputLabel>
+      <Select
+        label="谱师猜测"
+        displayEmpty
+        open={menuOpen}
+        onOpen={() => setMenuOpen(true)}
+        onClose={() => setMenuOpen(false)}
+        value={selectedValue}
+        inputProps={{ "aria-label": ariaLabel }}
+        renderValue={(value) => value ? candidateLabels.get(Number(value)) || "-" : <em>{emptyLabel}</em>}
+        onChange={(event) => onGuess(event.target.value ? Number(event.target.value) : null)}
+      >
+        {menuOpen ? (
+          [
+            <MenuItem key="empty" value=""><em>未选择</em></MenuItem>,
+            ...candidates.map((candidate) => (
+              <MenuItem key={candidate.user_id} value={candidate.user_id}>{candidate.display_id}</MenuItem>
+            )),
+          ]
+        ) : (
+          <MenuItem value={selectedValue}>{selectedValue ? candidateLabels.get(Number(selectedValue)) || "-" : emptyLabel}</MenuItem>
+        )}
+      </Select>
+    </FormControl>
+  );
+});
+
 const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected, selectionDisabled, candidates, candidateLabels, canGuess, guessedUserId, guessBusy, onOpen, onGuess }: { chart: GuessChartRead; selecting: boolean; selected: boolean; selectionDisabled: boolean; candidates: DesignerGuessOverview["candidates"]; candidateLabels: ReadonlyMap<number, string>; canGuess: boolean; guessedUserId?: number | null; guessBusy: boolean; onOpen: (chart: GuessChartRead) => void; onGuess: (chart: GuessChartRead, userId: number | null) => void }) {
   const isJ = chart.lane === "j";
   const isExhibition = chart.lane === "exhibition" || chart.source_submission_type === "exhibition";
@@ -75,10 +123,11 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
   const levelSurface = GUESS_LEVEL_SURFACES[levelSlot] ?? "background.paper";
   const chartCanGuess = canGuess && !isJ && !isExhibition && chart.can_author_guess !== false;
   const emptyLabel = chartCanGuess ? (candidates.length ? "未选择" : "暂无谱师候选") : isJ || isExhibition ? "该类型不参与作者竞猜" : "当前不可竞猜";
+  const coverUrl = chart.cover_thumb_path || chart.cover_path;
   return (
     <Card variant="outlined" data-lane={isJ ? "j" : "normal"} data-level-slot={levelSlot ? `lv_${levelSlot}` : undefined} sx={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", borderWidth: isJ ? 2 : 1, borderColor: selected ? "primary.main" : isJ ? "secondary.main" : "divider", outline: selected ? "2px solid" : "none", outlineColor: "primary.main", contentVisibility: "auto", containIntrinsicSize: "420px" }}>
       <CardActionArea onClick={() => onOpen(chart)} sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
-        {chart.cover_path ? <CardMedia component="img" height="164" image={chart.cover_path} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "#E4EAE6" }} /> : <Box sx={{ height: 164, flexShrink: 0, display: "grid", placeItems: "center", bgcolor: "#E4EAE6", color: "text.secondary" }}><Music2 size={38} /></Box>}
+        {coverUrl ? <CardMedia component="img" height="164" image={coverUrl} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "#E4EAE6" }} /> : <Box sx={{ height: 164, flexShrink: 0, display: "grid", placeItems: "center", bgcolor: "#E4EAE6", color: "text.secondary" }}><Music2 size={38} /></Box>}
         <CardContent sx={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", bgcolor: levelSurface, color: "#17211D", transition: "background-color 160ms ease", "& .MuiTypography-colorTextSecondary": { color: "#45534D" } }}>
           <Typography variant="h3" noWrap title={chart.title}>{chart.title}</Typography>
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}><Chip size="small" label={chart.level} /><Chip size="small" color={isJ ? "secondary" : isExhibition ? "info" : "default"} variant={isJ || isExhibition ? "filled" : "outlined"} label={isJ ? "J 谱" : isExhibition ? "场外" : "普通谱"} /><Chip size="small" color={chart.is_self_selected ? "warning" : "default"} variant={chart.is_self_selected ? "filled" : "outlined"} label={chart.is_self_selected ? "自选" : "非自选"} /></Stack>
@@ -87,12 +136,15 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
         </CardContent>
       </CardActionArea>
       {!isJ && !isExhibition ? <Box sx={{ p: 1.5, borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
-        <FormControl size="small" fullWidth disabled={selecting || guessBusy || !chartCanGuess || !candidates.length}>
-          <InputLabel shrink>谱师猜测</InputLabel>
-          <Select label="谱师猜测" displayEmpty value={guessedUserId ?? ""} inputProps={{ "aria-label": `谱师猜测 ${chart.title}` }} renderValue={(value) => value ? candidateLabels.get(Number(value)) || "-" : <em>{emptyLabel}</em>} onChange={(event) => onGuess(chart, event.target.value ? Number(event.target.value) : null)}>
-            <MenuItem value=""><em>未选择</em></MenuItem>{candidates.map((candidate) => <MenuItem key={candidate.user_id} value={candidate.user_id}>{candidate.display_id}</MenuItem>)}
-          </Select>
-        </FormControl>
+        <DesignerGuessSelect
+          ariaLabel={`谱师猜测 ${chart.title}`}
+          guessedUserId={guessedUserId}
+          emptyLabel={emptyLabel}
+          candidates={candidates}
+          candidateLabels={candidateLabels}
+          disabled={selecting || guessBusy || !chartCanGuess || !candidates.length}
+          onGuess={(userId) => onGuess(chart, userId)}
+        />
       </Box> : null}
       {selecting ? <Checkbox checked={selected} disabled={selectionDisabled} slotProps={{ input: { "aria-label": `选择 ${chart.title}` } }} sx={{ position: "absolute", top: 6, right: 6, bgcolor: "rgba(255,255,255,.9)", "&:hover": { bgcolor: "white" } }} onChange={() => onOpen(chart)} /> : null}
     </Card>

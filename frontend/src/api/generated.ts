@@ -1409,6 +1409,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/guess-game/charts/{chart_id}/cover-thumb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chart Cover Thumb */
+        get: operations["chart_cover_thumb_api_v1_guess_game_charts__chart_id__cover_thumb_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/guess-game/charts/{chart_id}/designer-guess": {
         parameters: {
             query?: never;
@@ -2752,6 +2769,11 @@ export interface components {
             can_vote: boolean;
             /** Cover Path */
             cover_path: string;
+            /**
+             * Cover Thumb Path
+             * @default
+             */
+            cover_thumb_path: string;
             /**
              * Created At
              * Format: date-time
@@ -5693,6 +5715,37 @@ export interface operations {
         };
     };
     chart_cover_api_v1_guess_game_charts__chart_id__cover_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chart_cover_thumb_api_v1_guess_game_charts__chart_id__cover_thumb_get: {
         parameters: {
             query?: never;
             header?: never;

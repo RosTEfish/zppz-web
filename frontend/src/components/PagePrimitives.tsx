@@ -23,6 +23,7 @@ export function useApiResource<T>(
 ): ApiResource<T> {
   const { data, error, isLoading, isValidating, mutate } = useSWR<T>(enabled ? key : null, () => loader(), {
     keepPreviousData: true,
+    revalidateOnFocus: false,
     ...configuration,
   });
   const reload = useCallback(async () => (await mutate()) ?? null, [mutate]);

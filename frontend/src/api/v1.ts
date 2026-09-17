@@ -205,6 +205,7 @@ export interface GuessChartRead {
   source_submission_id?: number | null;
   source_level_slot?: string;
   cover_path: string;
+  cover_thumb_path?: string;
   storage_path?: string;
   is_self_selected: boolean;
   plays: number;

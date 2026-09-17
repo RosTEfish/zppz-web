@@ -44,7 +44,7 @@ const InteractionProviders = lazy(() => import("./components/InteractionProvider
 
 function App() {
   return (
-    <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+    <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, revalidateOnFocus: false }}>
       <Suspense fallback={null}>
         <InteractionProviders>
           <BrowserRouter>

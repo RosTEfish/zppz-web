@@ -497,6 +497,7 @@ class PublicGuessChartRead(BaseModel):
     source_submission_type: str
     source_level_slot: str
     cover_path: str
+    cover_thumb_path: str = ""
     is_self_selected: bool
     plays: int
     created_at: datetime
