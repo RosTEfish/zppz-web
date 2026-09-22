@@ -7,6 +7,7 @@ export const PHASE_LABELS: Record<EventPhaseName, string> = {
   registration: "报名",
   submission_1: "征稿一阶段",
   submission_2: "征稿二阶段",
+  submission_buffer: "交稿缓冲期",
   guess: "猜谱",
 };
 

@@ -8,6 +8,7 @@ EventPhaseName = Literal[
     "registration",
     "submission_1",
     "submission_2",
+    "submission_buffer",
     "guess",
 ]
 

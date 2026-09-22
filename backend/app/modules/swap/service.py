@@ -21,7 +21,7 @@ from app.models import (
     User,
 )
 from app.modules.draw.service import ensure_global_draw
-from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.phase_policy import SWAP_PHASES, get_phase_status
 from app.modules.events.service import get_current_event
 
 
@@ -33,10 +33,17 @@ def _begin_write_transaction(db: Session) -> None:
 
 
 def _stage2_window(db: Session, event_id: int) -> tuple[datetime, datetime]:
-    phase = db.scalar(select(EventPhase).where(EventPhase.event_id == event_id, EventPhase.phase == "submission_2"))
-    if not phase:
+    phases = list(
+        db.scalars(
+            select(EventPhase).where(
+                EventPhase.event_id == event_id,
+                EventPhase.phase.in_(SWAP_PHASES),
+            )
+        ).all()
+    )
+    if not any(row.phase == "submission_2" for row in phases):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="尚未配置 Stage2 时间")
-    return phase.starts_at, phase.ends_at
+    return min(row.starts_at for row in phases), max(row.ends_at for row in phases)
 
 
 def _round_options():

@@ -69,7 +69,7 @@ export default function AdminPhasesAndSwap() {
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
           <Box>
             <Typography variant="h3">赛事阶段</Typography>
-            <Typography variant="body2" color="text.secondary">报名 → Stage1 投稿 → Stage2 投稿 / 换曲 → 猜谱。时间以 UTC 存储，输入与展示使用北京时间。</Typography>
+            <Typography variant="body2" color="text.secondary">报名 → Stage1 投稿 → Stage2 投稿 / 换曲 → 交稿缓冲期 → 猜谱。时间以 UTC 存储，输入与展示使用北京时间。</Typography>
           </Box>
           <Stack direction="row" spacing={1}>
             <Button variant={form.phase_mode === "auto" ? "contained" : "outlined"} disabled={busy || form.phase_mode === "auto"} onClick={() => void save({ ...form, phase_mode: "auto", manual_phase: null })}>恢复自动</Button>

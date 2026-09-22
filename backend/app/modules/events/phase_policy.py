@@ -14,8 +14,12 @@ PHASES = (
     "registration",
     "submission_1",
     "submission_2",
+    "submission_buffer",
     "guess",
 )
+
+SWAP_PHASES = ("submission_2", "submission_buffer")
+SUBMISSION_PHASES = ("submission_1", "submission_2", "submission_buffer")
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,13 @@ CAPABILITIES: dict[str, PhaseCapabilities] = {
     "registration": PhaseCapabilities(song_pool_edit=True),
     "submission_1": PhaseCapabilities(submission=True),
     "submission_2": PhaseCapabilities(submission=True, swap=True),
+    "submission_buffer": PhaseCapabilities(
+        submission=True,
+        swap=True,
+        normal_submission_public=True,
+        author_guess=True,
+        quality_vote=True,
+    ),
     "guess": PhaseCapabilities(
         normal_submission_public=True,
         author_guess=True,

@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.models import DrawAssignment, Submission, SwapRequest, SwapRound, User
 from app.modules.common import serialize_song
 from app.modules.draw.service import ensure_global_draw
-from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.phase_policy import SUBMISSION_PHASES, get_phase_status
 from app.modules.events.service import get_current_event
 from app.modules.swap.service import active_assignments_for_user, get_swap_rounds, roll_for_user
 from app.schemas import SwapSelectionUpdate
@@ -85,7 +85,7 @@ def _current_continuous_round(rounds: list[SwapRound]) -> SwapRound | None:
 def _my_payload(db: Session, user: User, round_row: SwapRound | None = None, last_roll: SwapRequest | None = None) -> dict:
     event = get_current_event(db)
     phase = get_phase_status(db, event)
-    if phase.active_phase in {"submission_1", "submission_2"}:
+    if phase.active_phase in SUBMISSION_PHASES:
         ensure_global_draw(db)
 
     rounds = get_swap_rounds(db, event.id)

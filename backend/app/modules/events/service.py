@@ -15,7 +15,7 @@ from app.models import (
     SwapRound,
     User,
 )
-from app.modules.events.phase_policy import PHASES, get_phase_status, phase_status_payload
+from app.modules.events.phase_policy import PHASES, SWAP_PHASES, get_phase_status, phase_status_payload
 from app.schemas import EventPhasesUpdate, EventUpdate
 
 
@@ -176,6 +176,7 @@ def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
     event.settings.manual_phase = payload.manual_phase if payload.phase_mode == "manual" else None
     db.flush()
     stage2_window = next((row for row in rows if row[0] == "submission_2"), None)
+    swap_rows = [row for row in rows if row[0] in SWAP_PHASES]
     open_swap_round = db.scalar(
         select(SwapRound).where(
             SwapRound.event_id == event.id,
@@ -183,9 +184,9 @@ def update_phase_schedule(db: Session, payload: EventPhasesUpdate) -> dict:
             SwapRound.round_kind == "continuous",
         )
     )
-    if open_swap_round and stage2_window:
-        open_swap_round.starts_at = stage2_window[1]
-        open_swap_round.roll_ends_at = stage2_window[2]
+    if open_swap_round and stage2_window and swap_rows:
+        open_swap_round.starts_at = min(row[1] for row in swap_rows)
+        open_swap_round.roll_ends_at = max(row[2] for row in swap_rows)
     db.commit()
     event = get_current_event(db)
     return get_phase_schedule(db, event)
