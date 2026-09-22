@@ -161,6 +161,60 @@ def test_phase_policy_auto_boundaries_and_manual_override():
         assert after_guess.capabilities.quality_vote is False
 
 
+def test_submission_buffer_capabilities_and_public_interactions(client: TestClient):
+    register(client, "buffer-candidate")
+    register(client, "buffer-viewer", identity="audience")
+    normal_id, j_id = create_chart_pair()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        candidate = db.scalar(select(User).where(User.user_code == "buffer-candidate"))
+        assert event and event.settings and candidate
+        db.add(GuessAuthorCandidate(event_id=event.id, user_id=candidate.id, display_id="P01"))
+        now = datetime.utcnow()
+        db.add(
+            EventPhase(
+                event_id=event.id,
+                phase="submission_buffer",
+                starts_at=now - timedelta(hours=1),
+                ends_at=now + timedelta(hours=1),
+            )
+        )
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_buffer"
+        db.commit()
+        candidate_id = candidate.id
+
+    status = client.get("/api/v1/event/phases")
+    assert status.status_code == 200
+    capabilities = status.json()["capabilities"]
+    assert status.json()["active_phase"] == "submission_buffer"
+    assert capabilities == {
+        "song_pool_edit": False,
+        "submission": True,
+        "swap": True,
+        "normal_submission_public": True,
+        "author_guess": True,
+        "quality_vote": True,
+    }
+
+    login(client, "buffer-viewer")
+    charts = client.get("/api/v1/guess-game/charts")
+    assert charts.status_code == 200
+    listed_ids = {row["id"] for row in charts.json()}
+    assert listed_ids == {normal_id, j_id}
+    normal = next(row for row in charts.json() if row["id"] == normal_id)
+    assert normal["can_vote"] is True
+    assert normal["can_author_guess"] is True
+
+    vote = client.post("/api/v1/guess-game/vote", json={"chart_id": normal_id, "vote_type": "love"})
+    assert vote.status_code == 200, vote.text
+    guess = client.put(
+        f"/api/v1/guess-game/charts/{normal_id}/designer-guess",
+        json={"guessed_user_id": candidate_id},
+    )
+    assert guess.status_code == 200, guess.text
+
+
 def test_phase_schedule_is_idempotent_and_restore_auto_is_always_available(client: TestClient):
     login(client, "admin", "change-me-please")
     now = datetime.now(timezone.utc).replace(microsecond=0)

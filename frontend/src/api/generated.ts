@@ -2421,7 +2421,7 @@ export interface components {
              * Phase
              * @enum {string}
              */
-            phase: "registration" | "submission_1" | "submission_2" | "guess";
+            phase: "registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess";
             /**
              * Starts At
              * Format: date-time
@@ -2462,7 +2462,7 @@ export interface components {
              * Phase
              * @enum {string}
              */
-            phase: "registration" | "submission_1" | "submission_2" | "guess";
+            phase: "registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess";
             /**
              * Starts At
              * Format: date-time
@@ -2472,12 +2472,12 @@ export interface components {
         /** EventPhasesRead */
         EventPhasesRead: {
             /** Active Phase */
-            active_phase?: ("registration" | "submission_1" | "submission_2" | "guess") | null;
+            active_phase?: ("registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess") | null;
             capabilities: components["schemas"]["PhaseCapabilitiesRead"];
             /** Event Id */
             event_id: number;
             /** Manual Phase */
-            manual_phase?: ("registration" | "submission_1" | "submission_2" | "guess") | null;
+            manual_phase?: ("registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess") | null;
             /** Next Transition At */
             next_transition_at?: string | null;
             /**
@@ -2503,7 +2503,7 @@ export interface components {
         /** EventPhasesUpdate */
         EventPhasesUpdate: {
             /** Manual Phase */
-            manual_phase?: ("registration" | "submission_1" | "submission_2" | "guess") | null;
+            manual_phase?: ("registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess") | null;
             /**
              * Phase Mode
              * @default auto
@@ -2536,7 +2536,7 @@ export interface components {
             /** Funny Vote Limit */
             funny_vote_limit: number;
             /** Manual Phase */
-            manual_phase?: ("registration" | "submission_1" | "submission_2" | "guess") | null;
+            manual_phase?: ("registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess") | null;
             /** Participant Song Limit */
             participant_song_limit: number;
             /**

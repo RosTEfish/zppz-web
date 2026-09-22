@@ -54,9 +54,27 @@ def set_phase(phase: str) -> None:
         assert event and event.settings
         event.settings.phase_mode = "manual"
         event.settings.manual_phase = phase
-        if phase == "submission_2":
+        if phase in {"submission_2", "submission_buffer"}:
             now = datetime.utcnow()
-            db.add(EventPhase(event_id=event.id, phase=phase, starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
+            existing = {row.phase for row in event.phases}
+            if "submission_2" not in existing:
+                db.add(
+                    EventPhase(
+                        event_id=event.id,
+                        phase="submission_2",
+                        starts_at=now - timedelta(hours=2),
+                        ends_at=now - timedelta(hours=1) if phase == "submission_buffer" else now + timedelta(hours=1),
+                    )
+                )
+            if phase == "submission_buffer" and "submission_buffer" not in existing:
+                db.add(
+                    EventPhase(
+                        event_id=event.id,
+                        phase="submission_buffer",
+                        starts_at=now - timedelta(hours=1),
+                        ends_at=now + timedelta(hours=1),
+                    )
+                )
         db.commit()
 
 
@@ -342,6 +360,53 @@ def test_stage2_roll_is_rejected_after_deadline(client: TestClient) -> None:
     login(client, "player")
     response = client.post("/api/v1/swap/me/roll", json={"assignment_ids": allocation["player"]})
     assert response.status_code == 409
+
+
+def test_submission_buffer_extends_continuous_swap_deadline(client: TestClient) -> None:
+    register(client, "player")
+    register(client, "other")
+    allocation = create_complete_allocation(free_songs=1)
+    now = datetime.utcnow().replace(microsecond=0)
+    buffer_end = now + timedelta(hours=2)
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event and event.settings
+        db.add(
+            EventPhase(
+                event_id=event.id,
+                phase="submission_2",
+                starts_at=now - timedelta(hours=3),
+                ends_at=now - timedelta(hours=1),
+            )
+        )
+        db.add(
+            EventPhase(
+                event_id=event.id,
+                phase="submission_buffer",
+                starts_at=now - timedelta(minutes=30),
+                ends_at=buffer_end,
+            )
+        )
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "submission_buffer"
+        db.commit()
+
+    login(client, "player")
+    response = client.post("/api/v1/swap/me/roll", json={"assignment_ids": allocation["player"]})
+    assert response.status_code == 200, response.text
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        assert event
+        round_row = db.scalar(
+            select(SwapRound).where(
+                SwapRound.event_id == event.id,
+                SwapRound.round_kind == "continuous",
+                SwapRound.status == "open",
+            )
+        )
+        assert round_row is not None
+        assert round_row.roll_ends_at == buffer_end
 
 
 def test_0014_preserves_legacy_windows_and_merges_stage2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,7 +12,7 @@ export { submissionContentType } from "./uploads";
 export type { SubmissionUploadOptions, SubmissionUploadProgress } from "./uploads";
 
 export type Track = "normal" | "j" | "exhibition";
-export type EventPhaseName = "registration" | "submission_1" | "submission_2" | "guess";
+export type EventPhaseName = "registration" | "submission_1" | "submission_2" | "submission_buffer" | "guess";
 
 export type PhaseCapabilities = components["schemas"]["PhaseCapabilitiesRead"];
 export type EventPhaseWindow = components["schemas"]["EventPhaseRead"];

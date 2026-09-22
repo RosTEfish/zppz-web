@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import SONG_POOL_IDENTITIES
 from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, User
-from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.phase_policy import SUBMISSION_PHASES, get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
 
 
@@ -59,8 +59,8 @@ def ensure_global_draw(db: Session) -> None:
         return
 
     phase = get_phase_status(db, event)
-    if phase.active_phase == "submission_2" and _has_active_allocation(db, event):
-        # Stage2 participants may intentionally return songs without drawing
+    if phase.active_phase in {"submission_2", "submission_buffer"} and _has_active_allocation(db, event):
+        # Stage2 / buffer participants may intentionally return songs without drawing
         # replacements, so an incomplete active allocation is expected.
         return
 
@@ -196,7 +196,7 @@ def _draw_is_due(event, db: Session) -> bool:
         return False
     if _has_submission(db, event.id):
         return False
-    if phase.active_phase in {"submission_1", "submission_2"}:
+    if phase.active_phase in SUBMISSION_PHASES:
         return True
     if event.settings.phase_mode != "auto":
         return False
@@ -286,7 +286,7 @@ def _is_retryable_operational_error(exc: OperationalError) -> bool:
 
 def _assert_draw_is_mutable(db: Session, event, *, allow_redraw: bool) -> None:
     phase = get_phase_status(db, event)
-    allowed_phases = {"submission_1"} if allow_redraw else {"submission_1", "submission_2"}
+    allowed_phases = {"submission_1"} if allow_redraw else set(SUBMISSION_PHASES)
     if phase.active_phase not in allowed_phases and not _draw_is_due(event, db):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="全局分配仅允许在投稿阶段开始后执行")
     if _has_submission(db, event.id):
@@ -313,7 +313,7 @@ def _load_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssi
 def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssignment]:
     event = get_current_event(db)
     phase = get_phase_status(db, event)
-    if phase.active_phase in {"submission_1", "submission_2"}:
+    if phase.active_phase in SUBMISSION_PHASES:
         ensure_global_draw(db)
     return _load_draw_results(db, user_id)
 

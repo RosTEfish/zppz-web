@@ -27,7 +27,23 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
     { label: "投稿", value: phases?.capabilities.submission ? "开放中" : "当前未开放", icon: Upload, to: "/submissions" },
     { label: "猜谱", value: phases ? phaseStatusLabel(phases) : "查看与投票", icon: Vote, to: "/guess" },
   ].filter(({ to }) => to !== "/guess" || isAdmin || isPoolEditor || guessGameAvailable);
-  const nextAction = !isLoggedIn ? "登录或注册后选择参赛者、观众或访客身份" : guessEnded ? "猜谱已截止，可查看谱面与已有互动记录" : user?.identity === "participant" ? (phases?.capabilities.swap ? "在 Stage2 检查曲目、连续换曲并提交投稿" : phases?.capabilities.submission ? "上传或检查你的投稿包" : phases?.capabilities.author_guess ? "浏览普通稿并提交作者竞猜" : "关注下一阶段开放时间") : phases?.capabilities.author_guess ? "当前身份可以参与普通稿作者竞猜" : "关注赛程，猜谱阶段即可参与互动";
+  const nextAction = !isLoggedIn
+    ? "登录或注册后选择参赛者、观众或访客身份"
+    : guessEnded
+      ? "猜谱已截止，可查看谱面与已有互动记录"
+      : user?.identity === "participant"
+        ? phases?.capabilities.swap && phases?.capabilities.normal_submission_public
+          ? "缓冲期内可继续投稿、换曲，并参与已公开谱面的投票与作者竞猜"
+          : phases?.capabilities.swap
+            ? "在 Stage2 检查曲目、连续换曲并提交投稿"
+            : phases?.capabilities.submission
+              ? "上传或检查你的投稿包"
+              : phases?.capabilities.author_guess
+                ? "浏览普通稿并提交作者竞猜"
+                : "关注下一阶段开放时间"
+        : phases?.capabilities.author_guess
+          ? "当前身份可以参与普通稿作者竞猜"
+          : "关注赛程，猜谱阶段即可参与互动";
   return (
     <Stack spacing={3}>
       <Paper sx={{ p: { xs: 2.5, md: 4 }, minHeight: { xs: 292, md: 246 }, borderLeft: 5, borderColor: "primary.main", position: "relative", overflow: "hidden", borderRadius: "16px", backgroundImage: "radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.13), transparent 62%), radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.11), transparent 58%)" }}>
