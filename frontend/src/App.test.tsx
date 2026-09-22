@@ -814,8 +814,8 @@ describe("Material application shell", () => {
 
     render(<App />);
     expect(await screen.findByRole("heading", { name: "赛事阶段" }, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getAllByText("开始", { selector: "label" })).toHaveLength(4);
-    expect(screen.getAllByText("结束", { selector: "label" })).toHaveLength(4);
+    expect(screen.getAllByText("开始", { selector: "label" })).toHaveLength(5);
+    expect(screen.getAllByText("结束", { selector: "label" })).toHaveLength(5);
     expect(screen.queryByText("揭晓")).not.toBeInTheDocument();
     expect(screen.queryByText("已结束")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));
