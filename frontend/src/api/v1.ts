@@ -413,9 +413,9 @@ export const api = {
   deleteSubmission: (id: number) => apiRequest<{ message: string }>(`/submissions/${id}`, { method: "DELETE" }),
   submissionPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/submissions/${id}/preview-manifest`, { signal }),
   downloadSubmission: (id: number) => downloadPrepared(`/submissions/${id}/download-metadata`),
-  adminSubmissions: (track?: Track | "all", limit = 50, offset = 0, signal?: AbortSignal) => {
+  adminSubmissions: (tracks?: Track[], limit = 50, offset = 0, signal?: AbortSignal) => {
     const params = new URLSearchParams();
-    if (track && track !== "all") params.set("track", track);
+    if (tracks?.length && tracks.length < 3) params.set("tracks", tracks.join(","));
     params.set("limit", String(limit));
     params.set("offset", String(offset));
     return apiRequest<PaginatedStoredFilesRead>(`/admin/submissions?${params.toString()}`, { signal });
@@ -427,10 +427,10 @@ export const api = {
   batchDeleteAdminSubmissions: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/submissions/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   downloadAdminSubmission: (id: number) => downloadPrepared(`/admin/submissions/${id}/download-metadata`),
   rebuildSubmissionPreview: (id: number) => apiRequest<PreviewManifest>(`/admin/submissions/${id}/preview/rebuild`, { method: "POST" }),
-  downloadAdminSubmissions: (ids?: number[], track?: Track | "all") => {
+  downloadAdminSubmissions: (ids?: number[], tracks?: Track[]) => {
     const params = new URLSearchParams();
     if (ids?.length) params.set("ids", ids.join(","));
-    if (track && track !== "all") params.set("track", track);
+    if (tracks?.length && tracks.length < 3) params.set("tracks", tracks.join(","));
     return downloadPrepared(`/admin/submissions/download-metadata${params.size ? `?${params}` : ""}`, true);
   },
 

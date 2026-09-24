@@ -1197,3 +1197,60 @@ def test_admin_archive_import_and_grouped_author_stats(client: TestClient):
     assert (get_settings().data_dir / storage_path).is_file()
     assert client.delete(f"/api/v1/admin/guess-game/charts/{second_manual['id']}").status_code == 200
     assert not (get_settings().data_dir / storage_path).exists()
+
+
+def test_admin_list_and_download_can_exclude_tracks_and_mark_readme(client: TestClient):
+    login_admin(client)
+    settings = get_settings()
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        admin = db.scalar(select(User).where(User.user_code == "admin"))
+        song_ids: dict[str, int] = {}
+        for track in ("normal", "j", "exhibition"):
+            song = Song(event_id=event.id, submitted_by_id=admin.id, song_name=track, artist="Artist", song_type="A")
+            db.add(song)
+            db.flush()
+            song_ids[track] = song.id
+        ids: dict[str, int] = {}
+        for track, include_readme in (("normal", True), ("j", False), ("exhibition", False)):
+            payload = archive_bytes(track)
+            if include_readme:
+                buffer = BytesIO(payload)
+                with ZipFile(buffer, "a") as archive:
+                    archive.writestr("nested/README.md", "notes")
+                payload = buffer.getvalue()
+            relative = f"uploads/admin-{track}.zip"
+            target = settings.data_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            row = Submission(
+                event_id=event.id,
+                user_id=admin.id,
+                source_song_id=song_ids[track],
+                source_kind="self",
+                track=track,
+                file_name=f"{track}.zip",
+                storage_path=relative,
+                file_size=len(payload),
+            )
+            db.add(row)
+            db.flush()
+            ids[track] = row.id
+        db.commit()
+
+    listed = client.get("/api/v1/admin/submissions?tracks=normal,j")
+    assert listed.status_code == 200, listed.text
+    by_track = {item["track"]: item for item in listed.json()["items"]}
+    assert set(by_track) == {"normal", "j"}
+    assert by_track["normal"]["has_readme"] is True
+    assert by_track["j"]["has_readme"] is False
+    assert client.get("/api/v1/admin/submissions?tracks=side").status_code == 422
+
+    downloaded = client.get(
+        f"/api/v1/admin/submissions/download.zip?ids={ids['normal']},{ids['exhibition']}&tracks=normal,j"
+    )
+    assert downloaded.status_code == 200, downloaded.text
+    with ZipFile(BytesIO(downloaded.content)) as archive:
+        names = archive.namelist()
+    assert len(names) == 1
+    assert names[0].startswith("normal_")

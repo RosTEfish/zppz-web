@@ -2897,6 +2897,8 @@ export interface components {
             file_name: string;
             /** File Size */
             file_size: number;
+            /** Has Readme */
+            has_readme?: boolean | null;
             /** Id */
             id: number;
             /**
@@ -4080,6 +4082,7 @@ export interface operations {
     admin_list_submissions_api_v1_admin_submissions_get: {
         parameters: {
             query?: {
+                tracks?: string | null;
                 track?: string | null;
                 limit?: number;
                 offset?: number;
@@ -4147,6 +4150,7 @@ export interface operations {
         parameters: {
             query?: {
                 ids?: string | null;
+                tracks?: string | null;
                 track?: string | null;
             };
             header?: never;
@@ -4179,6 +4183,7 @@ export interface operations {
         parameters: {
             query?: {
                 ids?: string | null;
+                tracks?: string | null;
                 track?: string | null;
                 download_token?: string | null;
             };

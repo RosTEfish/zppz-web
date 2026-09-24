@@ -32,6 +32,7 @@ def serialize_submission(item: Submission, preview_bundle: PreviewBundle | None 
         "source_kind": item.source_kind,
         "track": item.track,
         "track_duration_seconds": item.track_duration_seconds,
+        "has_readme": item.has_readme,
         "is_long_track": bool(item.track_duration_seconds is not None and item.track_duration_seconds > 240),
         "public_package_ready": bool(item.public_storage_path),
         "public_package_status": item.public_package_status,

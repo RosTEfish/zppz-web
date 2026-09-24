@@ -99,6 +99,7 @@ class ParsedArchive:
     track_duration_seconds: float = 0.0
     archive_path: Path | None = None
     public_files: tuple[PublicArchiveMember, ...] = ()
+    has_readme: bool = False
 
 
 @dataclass(frozen=True)
@@ -523,6 +524,7 @@ def _prepared_result(path: Path, files: dict[str, Path]) -> PreparedArchive:
             track_duration_seconds=duration,
             archive_path=path,
             public_files=public_files,
+            has_readme=archive_has_readme(path),
         ),
         files,
     )
@@ -813,6 +815,35 @@ def _read_rar(path: Path) -> tuple[bytes, bytes, str, float, tuple[PublicArchive
     return maidata, cover, Path(cover_name).suffix.lower(), duration, tuple(public_files)
 
 
+def _is_readme_member(name: str) -> bool:
+    basename = PurePosixPath(str(name).replace("\\", "/")).name.casefold()
+    return basename == "readme" or basename.startswith("readme.")
+
+
+def archive_has_readme(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    if suffix == ".zip":
+        with ZipFile(path, "r") as archive:
+            names = [
+                getattr(info, "orig_filename", info.filename)
+                for info in archive.infolist()
+                if not info.is_dir()
+            ]
+    elif suffix == ".7z":
+        if py7zr is None:
+            raise ArchiveParseError("服务器未安装 py7zr，无法解析 7z 文件")
+        with py7zr.SevenZipFile(path, mode="r") as archive:
+            names = [str(info.filename) for info in archive.list() if not getattr(info, "is_directory", False)]
+    elif suffix == ".rar":
+        if rarfile is None:
+            raise ArchiveParseError("服务器未安装 rarfile，无法解析 RAR 文件")
+        with rarfile.RarFile(path, mode="r") as archive:
+            names = [info.filename for info in archive.infolist() if not info.isdir()]
+    else:
+        return False
+    return any(_is_readme_member(name) for name in names)
+
+
 def parse_archive(path: Path) -> ParsedArchive:
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_ARCHIVE_SUFFIXES:
@@ -844,6 +875,7 @@ def parse_archive(path: Path) -> ParsedArchive:
         track_duration_seconds=duration,
         archive_path=path,
         public_files=public_files,
+        has_readme=archive_has_readme(path),
     )
 
 

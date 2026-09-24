@@ -280,6 +280,7 @@ class StoredFileRead(BaseModel):
     source_kind: str = ""
     track: str = "normal"
     track_duration_seconds: float | None = None
+    has_readme: bool | None = None
     is_long_track: bool = False
     public_package_ready: bool = False
     public_package_status: Literal["processing", "ready", "failed"] = "processing"

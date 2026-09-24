@@ -20,10 +20,12 @@ describe("AdminSubmissions", () => {
 
   it("reports preparation, success, and a later batch download failure", async () => {
     let metadataAttempt = 0;
+    const listUrls: string[] = [];
     let resolveMetadata: ((response: Response) => void) | undefined;
     const metadata = new Promise<Response>((resolve) => { resolveMetadata = resolve; });
     mockApi((path) => {
       if (path.includes("/admin/submissions") && !path.includes("download") && !path.includes("processing-jobs") && !path.includes("upload-intents") && !path.includes("batch-delete")) {
+        listUrls.push(path);
         return Promise.resolve(json({
           items: [{
             id: 11,
@@ -58,6 +60,8 @@ describe("AdminSubmissions", () => {
 
     render(<SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}><SnackbarProvider><AdminSubmissions /></SnackbarProvider></SWRConfig>);
     expect(await screen.findByText("测试曲目")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "场外" }));
+    await waitFor(() => expect(listUrls.some((url) => url.includes("tracks=normal%2Cj") || url.includes("tracks=normal,j"))).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "全选" }));
     fireEvent.click(screen.getByRole("button", { name: "下载 1 份" }));
 

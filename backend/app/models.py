@@ -355,6 +355,7 @@ class Submission(Base, TimestampMixin):
     public_package_status: Mapped[str] = mapped_column(String(20), default="processing", nullable=False)
     public_package_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     track_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    has_readme: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     review_status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
     review_note: Mapped[str] = mapped_column(String(500), default="", nullable=False)

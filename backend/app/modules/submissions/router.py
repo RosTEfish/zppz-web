@@ -50,6 +50,7 @@ from app.modules.guess_game.importer import (
     delete_source_charts,
     parse_stored_archive,
     parse_archive,
+    archive_has_readme,
     sync_parsed_source,
     write_public_package,
 )
@@ -256,11 +257,48 @@ def _require_submission_phase(db: Session, event) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="投稿尚未开放")
 
 
+_TRACK_VALUES = ("normal", "j", "exhibition")
+
+
 def _normalize_track(track: str | None, fallback: str = "normal") -> str:
     value = (track or fallback).strip().lower()
-    if value not in {"normal", "j", "exhibition"}:
+    if value not in _TRACK_VALUES:
         raise HTTPException(status_code=422, detail="投稿类型必须为 normal、j 或 exhibition")
     return value
+
+
+def _parse_tracks(tracks: str | None, track: str | None = None) -> list[str] | None:
+    if tracks is not None:
+        selected: list[str] = []
+        for item in tracks.split(","):
+            value = item.strip().lower()
+            if not value:
+                continue
+            if value not in _TRACK_VALUES:
+                raise HTTPException(status_code=422, detail="投稿类型必须为 normal、j 或 exhibition")
+            if value not in selected:
+                selected.append(value)
+        if not selected:
+            raise HTTPException(status_code=422, detail="请至少选择一个赛道")
+        return selected
+    if track:
+        return [_normalize_track(track)]
+    return None
+
+
+def _backfill_readme_flags(db: Session, rows: list[Submission]) -> None:
+    pending = [row for row in rows if row.has_readme is None]
+    changed = False
+    for row in pending:
+        suffix = Path(row.storage_path).suffix.lower()
+        try:
+            with materialized_object(row.storage_path, suffix) as path:
+                row.has_readme = archive_has_readme(path)
+            changed = True
+        except Exception:
+            continue
+    if changed:
+        db.commit()
 
 
 def _eligible_song(db: Session, event_id: int, user: User, song_id: int) -> tuple[Song, str]:
@@ -395,6 +433,7 @@ def _create_submission(
         db.add(row)
         db.flush()
         row.track_duration_seconds = parsed.track_duration_seconds
+        row.has_readme = parsed.has_readme
         public_storage_path = write_public_package(event_id, row.id, parsed)
         row.public_storage_path = public_storage_path
         row.public_package_status = "ready"
@@ -454,6 +493,7 @@ def _replace_submission(
         row.storage_path = new_storage_path
         row.file_size = size
         row.track_duration_seconds = parsed.track_duration_seconds
+        row.has_readme = parsed.has_readme
         new_public_storage_path = write_public_package(row.event_id, row.id, parsed)
         row.public_storage_path = new_public_storage_path
         row.public_package_status = "ready"
@@ -816,6 +856,7 @@ def _complete_intent(
                 row.public_package_message = ""
                 row.file_size = info.size
                 row.track_duration_seconds = parsed.track_duration_seconds
+                row.has_readme = parsed.has_readme
                 row.source_kind = source_kind
                 intent.status = "completed"
                 intent.result_submission_id = row.id
@@ -1207,6 +1248,7 @@ def own_submission_download_metadata(
 
 @admin_router.get("", response_model=PaginatedStoredFilesRead)
 def admin_list_submissions(
+    tracks: str | None = Query(None),
     track: str | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -1215,8 +1257,9 @@ def admin_list_submissions(
 ) -> dict:
     event = get_current_event(db)
     filters = [Submission.event_id == event.id]
-    if track:
-        filters.append(Submission.track == _normalize_track(track))
+    selected_tracks = _parse_tracks(tracks, track)
+    if selected_tracks is not None:
+        filters.append(Submission.track.in_(selected_tracks))
     total = db.scalar(select(func.count()).select_from(Submission).where(*filters)) or 0
     stmt = (
         select(Submission)
@@ -1226,8 +1269,10 @@ def admin_list_submissions(
         .limit(limit)
         .offset(offset)
     )
+    items = list(db.scalars(stmt).all())
+    _backfill_readme_flags(db, items)
     return {
-        "items": serialize_submissions(db, db.scalars(stmt).all()),
+        "items": serialize_submissions(db, items),
         "total": int(total),
         "limit": limit,
         "offset": offset,
@@ -1458,6 +1503,7 @@ def admin_delete_submission(
 @admin_router.get("/download.zip")
 def admin_download_zip(
     ids: str | None = Query(None),
+    tracks: str | None = Query(None),
     track: str | None = Query(None),
     download_token: str | None = Query(
         None,
@@ -1469,25 +1515,26 @@ def admin_download_zip(
     db: Session = Depends(get_db),
 ):
     event = get_current_event(db)
-    rows, _, _ = _select_admin_downloads(db, event.id, ids, track)
+    rows, _, _ = _select_admin_downloads(db, event.id, ids, tracks, track)
     return _prepare_submission_zip(rows, "submissions.zip").response(download_token)
 
 
 @admin_router.get("/download-metadata", response_model=DownloadPreparation)
 def admin_download_metadata(
     ids: str | None = Query(None),
+    tracks: str | None = Query(None),
     track: str | None = Query(None),
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
 ) -> dict:
     event = get_current_event(db)
-    rows, selected_ids, selected_track = _select_admin_downloads(db, event.id, ids, track)
+    rows, selected_ids, selected_tracks = _select_admin_downloads(db, event.id, ids, tracks, track)
     prepared = _prepare_submission_zip(rows, "submissions.zip")
     params: dict[str, str] = {}
     if selected_ids is not None:
         params["ids"] = ",".join(str(item) for item in selected_ids)
-    if selected_track:
-        params["track"] = selected_track
+    if selected_tracks is not None:
+        params["tracks"] = ",".join(selected_tracks)
     query = urlencode(params)
     base_url = f"{get_settings().api_prefix}/admin/submissions/download.zip"
     return {
@@ -1501,8 +1548,9 @@ def _select_admin_downloads(
     db: Session,
     event_id: int,
     ids: str | None,
-    track: str | None,
-) -> tuple[list[Submission], list[int] | None, str | None]:
+    tracks: str | None,
+    track: str | None = None,
+) -> tuple[list[Submission], list[int] | None, list[str] | None]:
     stmt = select(Submission).options(*_submission_options()).where(Submission.event_id == event_id)
     selected_ids = parse_csv_ids(
         ids,
@@ -1513,13 +1561,13 @@ def _select_admin_downloads(
     )
     if selected_ids is not None:
         stmt = stmt.where(Submission.id.in_(selected_ids))
-    selected_track = _normalize_track(track) if track else None
-    if selected_track:
-        stmt = stmt.where(Submission.track == selected_track)
+    selected_tracks = _parse_tracks(tracks, track)
+    if selected_tracks is not None:
+        stmt = stmt.where(Submission.track.in_(selected_tracks))
     rows = list(db.scalars(stmt.order_by(Submission.id.asc())).all())
     if not rows:
         raise HTTPException(status_code=404, detail="没有可下载的投稿")
-    return rows, selected_ids, selected_track
+    return rows, selected_ids, selected_tracks
 
 
 @admin_router.get("/{submission_id}/download")

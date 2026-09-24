@@ -84,6 +84,20 @@ def archive_bytes(
     return buffer.getvalue()
 
 
+def test_parser_records_readme_members(tmp_path: Path):
+    path = tmp_path / "chart.zip"
+    path.write_bytes(archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13"))
+    assert parse_archive(path).has_readme is False
+    with ZipFile(path, "a") as archive:
+        archive.writestr("nested/README.md", "notes")
+    assert parse_archive(path).has_readme is True
+    notes = tmp_path / "notes.zip"
+    notes.write_bytes(archive_bytes("&title=Song\n&artist=Artist\n&lv_4=13"))
+    with ZipFile(notes, "a") as archive:
+        archive.writestr("nested/notes.txt", "not a readme")
+    assert parse_archive(notes).has_readme is False
+
+
 def register(client: TestClient, code: str = "player1") -> None:
     response = client.post(
         "/api/v1/auth/register",

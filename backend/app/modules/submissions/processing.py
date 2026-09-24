@@ -504,6 +504,7 @@ def _promote_submission(
     row.storage_path = final_source
     row.file_size = intent.file_size
     row.track_duration_seconds = prepared.parsed.track_duration_seconds
+    row.has_readme = prepared.parsed.has_readme
     row.source_kind = source_kind
     row.public_storage_path = None
     row.public_file_size = None
