@@ -1,6 +1,6 @@
 import type { components } from "./generated";
 import { apiRequest } from "./base";
-import { downloadDirect, downloadPrepared } from "./downloads";
+import { downloadDirect, downloadPrepared, downloadRemoteFiles } from "./downloads";
 import { uploadSubmissionThroughIntent } from "./uploads";
 import type { SubmissionUploadOptions } from "./uploads";
 import type { Identity } from "../identity";
@@ -439,7 +439,7 @@ export const api = {
   guessChart: (id: number) => apiRequest<GuessChartRead>(`/guess-game/charts/${id}`),
   downloadChart: (id: number) => downloadPrepared(`/guess-game/charts/${id}/download-metadata`),
   guessPreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/guess-game/charts/${id}/preview-manifest`, { signal }),
-  downloadCharts: (ids: number[]) => downloadPrepared(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`, true),
+  downloadCharts: (ids: number[]) => downloadRemoteFiles(`/guess-game/charts/download-metadata?ids=${ids.join(",")}`),
   vote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "POST", body: JSON.stringify({ chart_id, vote_type }) }),
   unvote: (chart_id: number, vote_type: "love" | "funny") => apiRequest<VoteMutationResponse>("/guess-game/vote", { method: "DELETE", body: JSON.stringify({ chart_id, vote_type }) }),
   comments: (chartId: number) => apiRequest<GuessCommentRead[]>(`/guess-game/charts/${chartId}/comments`),

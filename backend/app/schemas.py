@@ -425,10 +425,17 @@ class SwapValidationRead(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class DownloadFile(BaseModel):
+    download_url: str
+    file_name: str
+    file_size: int
+
+
 class DownloadPreparation(BaseModel):
     download_url: str
     file_name: str
     file_size: int
+    files: list[DownloadFile] = Field(default_factory=list)
 
 
 class BatchDeleteRequest(BaseModel):

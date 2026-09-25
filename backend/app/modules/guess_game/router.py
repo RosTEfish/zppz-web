@@ -186,6 +186,15 @@ def download_charts_metadata(
 ) -> dict:
     event = get_current_event(db)
     charts, missing_ids, chart_ids = _select_chart_downloads(db, event.id, ids)
+    store = get_object_store()
+    if store.backend == "r2":
+        files = _chart_r2_downloads(db, charts, missing_ids)
+        return {
+            "download_url": "",
+            "file_name": "guess-charts.zip",
+            "file_size": sum(item["file_size"] for item in files),
+            "files": files,
+        }
     prepared = _prepare_chart_zip(db, charts, missing_ids)
     query = urlencode({"ids": ",".join(str(item) for item in chart_ids)})
     return {
@@ -910,11 +919,11 @@ def _chart_download_name(
     )
 
 
-def _prepare_chart_zip(
+def _named_chart_downloads(
     db: Session,
     charts: list[GuessChart],
     missing_ids: list[int],
-) -> PreparedZip:
+) -> tuple[list[tuple[GuessChart, Path | str, str, int, bool, str]], list[str]]:
     selected: list[tuple[GuessChart, Path | str, str, int, bool]] = []
     seen_sources: set[tuple[str, int | str]] = set()
     skipped: list[str] = [f"谱面 ID {chart_id} 不存在" for chart_id in missing_ids]
@@ -939,7 +948,7 @@ def _prepare_chart_zip(
     if not selected:
         raise HTTPException(status_code=404, detail="所选谱面均无可下载文件")
 
-    entries: list[DownloadEntry] = []
+    named: list[tuple[GuessChart, Path | str, str, int, bool, str]] = []
     used_names: set[str] = set()
     for chart, location, file_name, file_size, remote in selected:
         base = _chart_download_name(chart, file_name, include_id=True)
@@ -949,6 +958,39 @@ def _prepare_chart_zip(
             name = f"{Path(base).stem}_{counter}{Path(base).suffix}"
             counter += 1
         used_names.add(name.casefold())
+        named.append((chart, location, file_name, file_size, remote, name))
+    return named, skipped
+
+
+def _chart_r2_downloads(
+    db: Session,
+    charts: list[GuessChart],
+    missing_ids: list[int],
+) -> list[dict]:
+    store = get_object_store()
+    files: list[dict] = []
+    named, _skipped = _named_chart_downloads(db, charts, missing_ids)
+    for _chart, location, _file_name, file_size, remote, name in named:
+        if not remote:
+            raise HTTPException(status_code=409, detail="批量下载文件不在对象存储中")
+        files.append(
+            {
+                "download_url": store.create_download_url(str(location), name),
+                "file_name": name,
+                "file_size": file_size,
+            }
+        )
+    return files
+
+
+def _prepare_chart_zip(
+    db: Session,
+    charts: list[GuessChart],
+    missing_ids: list[int],
+) -> PreparedZip:
+    named, skipped = _named_chart_downloads(db, charts, missing_ids)
+    entries: list[DownloadEntry] = []
+    for _chart, location, _file_name, file_size, remote, name in named:
         if remote:
             entries.append(
                 DownloadEntry(
@@ -960,8 +1002,4 @@ def _prepare_chart_zip(
             )
         else:
             entries.append(DownloadEntry(path=Path(location), archive_name=name))
-    return prepare_streaming_zip(
-        entries,
-        file_name="guess-charts.zip",
-        report="\n".join(skipped),
-    )
+    return prepare_streaming_zip(entries, file_name="guess-charts.zip", report="\n".join(skipped))

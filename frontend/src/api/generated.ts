@@ -2383,6 +2383,17 @@ export interface components {
             file_name: string;
             /** File Size */
             file_size: number;
+            /** Files */
+            files?: components["schemas"]["DownloadFile"][];
+        };
+        /** DownloadFile */
+        DownloadFile: {
+            /** Download Url */
+            download_url: string;
+            /** File Name */
+            file_name: string;
+            /** File Size */
+            file_size: number;
         };
         /** DrawAssignmentRead */
         DrawAssignmentRead: {

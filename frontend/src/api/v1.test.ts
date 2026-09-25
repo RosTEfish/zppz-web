@@ -401,6 +401,32 @@ describe("v1 API helpers", () => {
     expect(document.cookie).not.toContain(`zppz_download_${token}=1`);
   });
 
+  it("packs R2 chart files into one zip without using the server archive", async () => {
+    const payload = new TextEncoder().encode("chart-bytes");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (String(url).includes("download-metadata")) {
+        return new Response(JSON.stringify({
+          download_url: "",
+          file_name: "guess-charts.zip",
+          file_size: payload.byteLength,
+          files: [{ download_url: "https://r2.example/chart.zip", file_name: "song.zip", file_size: payload.byteLength }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(payload);
+    }));
+    let clickedName = "";
+    URL.createObjectURL = () => "blob:charts";
+    URL.revokeObjectURL = () => {};
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click() {
+      clickedName = this.download;
+    });
+
+    await api.downloadCharts([7]);
+
+    expect(clickedName).toBe("guess-charts.zip");
+    expect(fetch).toHaveBeenCalledWith("https://r2.example/chart.zip");
+  });
+
   it("fails a batch download after five minutes without browser confirmation", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
