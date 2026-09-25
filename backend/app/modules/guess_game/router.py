@@ -98,8 +98,8 @@ def _require_quality_voteable_chart(chart: GuessChart) -> None:
 
 
 def _require_author_guess(db: Session, event, chart: GuessChart) -> None:
-    if chart.source_submission_type != "normal":
-        raise HTTPException(status_code=403, detail="J 和场外投稿不参与作者竞猜")
+    if chart.source_submission_type not in {"normal", "j"}:
+        raise HTTPException(status_code=403, detail="场外投稿不参与作者竞猜")
     if not get_phase_status(db, event).can("author_guess"):
         raise HTTPException(status_code=409, detail="当前阶段不能竞猜作者")
 
@@ -144,7 +144,7 @@ def _public_chart_payloads(
                 "can_vote": phase_status.can("quality_vote") and chart.source_submission_type != "exhibition",
                 "can_comment": True,
                 "can_author_guess": (
-                    chart.source_submission_type == "normal"
+                    chart.source_submission_type in {"normal", "j"}
                     and phase_status.can("author_guess")
                 ),
             }
@@ -401,7 +401,7 @@ def designer_guess_overview(
     charts = list(
         db.scalars(
             select(GuessChart)
-            .where(GuessChart.event_id == event.id, GuessChart.source_submission_type == "normal")
+            .where(GuessChart.event_id == event.id, GuessChart.source_submission_type.in_(("normal", "j")))
             .order_by(GuessChart.id.asc())
         ).all()
     )
@@ -450,7 +450,7 @@ def author_guess_state(
     phase_status = get_phase_status(db, event)
     can_view = bool(
         user
-        and chart.source_submission_type == "normal"
+        and chart.source_submission_type in {"normal", "j"}
         and phase_status.can("normal_submission_public")
     )
     can_guess = bool(can_view and phase_status.can("author_guess"))

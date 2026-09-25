@@ -742,7 +742,7 @@ def test_public_visibility_neutral_package_and_audience_author_guess(client: Tes
     assert client.put(
         f"/api/v1/guess-game/charts/{j_chart['id']}/author-guess",
         json={"guessed_user_id": player_id},
-    ).status_code == 403
+    ).status_code == 200
 
 
 def test_guess_availability_requires_a_public_chart(client: TestClient):

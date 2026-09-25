@@ -121,8 +121,8 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
   const isExhibition = chart.lane === "exhibition" || chart.source_submission_type === "exhibition";
   const levelSlot = getChartLevelSlot(chart.source_level_slot);
   const levelSurface = GUESS_LEVEL_SURFACES[levelSlot] ?? "background.paper";
-  const chartCanGuess = canGuess && !isJ && !isExhibition && chart.can_author_guess !== false;
-  const emptyLabel = chartCanGuess ? (candidates.length ? "未选择" : "暂无谱师候选") : isJ || isExhibition ? "该类型不参与作者竞猜" : "当前不可竞猜";
+  const chartCanGuess = canGuess && !isExhibition && chart.can_author_guess !== false;
+  const emptyLabel = chartCanGuess ? (candidates.length ? "未选择" : "暂无谱师候选") : isExhibition ? "该类型不参与作者竞猜" : "当前不可竞猜";
   const coverUrl = chart.cover_thumb_path || chart.cover_path;
   return (
     <Card variant="outlined" data-lane={isJ ? "j" : "normal"} data-level-slot={levelSlot ? `lv_${levelSlot}` : undefined} sx={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", borderWidth: isJ ? 2 : 1, borderColor: selected ? "primary.main" : isJ ? "secondary.main" : "divider", outline: selected ? "2px solid" : "none", outlineColor: "primary.main", contentVisibility: "auto", containIntrinsicSize: "420px" }}>
@@ -135,7 +135,7 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
           <Stack direction="row" spacing={2} sx={{ mt: "auto", pt: 1.5 }}>{!isExhibition ? <><Typography variant="caption"><Heart size={13} /> {chart.love_votes}</Typography><Typography variant="caption"><Sparkles size={13} /> {chart.funny_votes}</Typography></> : null}<Typography variant="caption">查看 {chart.plays}</Typography></Stack>
         </CardContent>
       </CardActionArea>
-      {!isJ && !isExhibition ? <Box sx={{ p: 1.5, borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
+      {!isExhibition ? <Box sx={{ p: 1.5, borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
         <DesignerGuessSelect
           ariaLabel={`谱师猜测 ${chart.title}`}
           guessedUserId={guessedUserId}
@@ -419,7 +419,7 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
               </Paper>
             ) : null}
 
-            {!isJ && !isExhibition ? (
+            {!isExhibition ? (
               <FormControl size="small" disabled={guessBusy || !canGuess || !candidates.length || chart.can_author_guess === false}>
                 <InputLabel shrink>谱师猜测</InputLabel>
                 <Select

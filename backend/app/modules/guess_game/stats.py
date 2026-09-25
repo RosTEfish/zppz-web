@@ -118,7 +118,7 @@ def build_guess_stats(db: Session, scope: str, *, include_details: bool = False)
             if is_correct:
                 correct_guesses += 1
                 user_aggregate[guess.user_id]["correct"] += 1
-            if anchor_chart.source_submission_type == "normal" and owner_id is not None:
+            if anchor_chart.source_submission_type in {"normal", "j"} and owner_id is not None:
                 author_aggregate[owner_id]["received_guesses"] += 1
                 if is_correct:
                     author_aggregate[owner_id]["received_correct"] += 1
@@ -193,7 +193,7 @@ def build_guess_stats(db: Session, scope: str, *, include_details: bool = False)
     normal_author_ids = sorted({
         owner_id
         for chart_id, owner_id in owner_by_chart.items()
-        if chart_by_id[chart_id].source_submission_type == "normal"
+        if chart_by_id[chart_id].source_submission_type in {"normal", "j"}
     })
     author_stats = [
         {
