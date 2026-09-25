@@ -396,7 +396,7 @@ def test_exhibition_chart_cannot_receive_quality_votes(client: TestClient):
     assert client.request("DELETE", "/api/v1/guess-game/vote", json=payload).status_code == 403
 
 
-def test_audience_can_guess_normal_but_not_j_and_anonymous_cannot_write(client: TestClient):
+def test_audience_can_guess_normal_and_j_and_anonymous_cannot_write(client: TestClient):
     register(client, "candidate")
     register(client, "viewer", identity="audience")
     normal_id, j_id = create_chart_pair()
@@ -430,11 +430,11 @@ def test_audience_can_guess_normal_but_not_j_and_anonymous_cannot_write(client: 
         guess = db.scalar(select(GuessAuthorGuess).where(GuessAuthorGuess.user_id != candidate_id))
         assert guess and guess.guessed_user_id == candidate_id
 
-    rejected = client.put(
+    saved_j = client.put(
         f"/api/v1/guess-game/charts/{j_id}/designer-guess",
         json={"guessed_user_id": candidate_id},
     )
-    assert rejected.status_code == 403
+    assert saved_j.status_code == 200, saved_j.text
 
 
 def test_guess_history_stays_visible_and_comments_stay_open_after_guess_deadline(client: TestClient):
