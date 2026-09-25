@@ -845,8 +845,8 @@ def test_admin_open_validation_and_draw_lock(client: TestClient):
     payload = {"name": event["name"], **event["settings"], "participant_song_limit": 0, "audience_song_limit": 0}
     payload.pop("phase_mode")
     payload.pop("manual_phase")
-    rejected = client.put("/api/v1/admin/events/current", json=payload)
-    assert rejected.status_code == 400
+    saved = client.put("/api/v1/admin/events/current", json=payload)
+    assert saved.status_code == 200, saved.text
     with SessionLocal() as db:
         player = db.scalar(select(User).where(User.user_code == "player"))
         db.add(DrawAssignment(event_id=event_id, assigned_to_id=player.id, song_id=assigned_id))

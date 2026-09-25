@@ -4,9 +4,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.core.security import SONG_POOL_IDENTITIES, has_admin_access
+from app.core.security import SONG_POOL_IDENTITIES
 from app.models import (
-    DrawAssignment,
     Event,
     EventPhase,
     EventPhaseSnapshot,
@@ -50,7 +49,6 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
             event.id,
             participant_limit=payload.participant_song_limit,
             audience_limit=payload.audience_song_limit,
-            draw_songs_per_participant=payload.draw_songs_per_participant,
         )
     event.name = payload.name
     settings = event.settings
@@ -253,7 +251,6 @@ def assert_submission_ready(
     *,
     participant_limit: int,
     audience_limit: int,
-    draw_songs_per_participant: int,
 ) -> None:
     assert_song_pool_complete(
         db,
@@ -261,35 +258,6 @@ def assert_submission_ready(
         participant_limit=participant_limit,
         audience_limit=audience_limit,
     )
-    participants = [
-        user
-        for user in db.scalars(
-            select(User)
-            .options(selectinload(User.roles))
-            .where(User.identity == "participant", User.is_active.is_(True))
-            .order_by(User.user_code)
-        ).all()
-        if not has_admin_access(user)
-    ]
-    assignment_counts = dict(
-        db.execute(
-            select(DrawAssignment.assigned_to_id, func.count(DrawAssignment.id))
-            .where(DrawAssignment.event_id == event_id, DrawAssignment.status == "active")
-            .group_by(DrawAssignment.assigned_to_id)
-        ).all()
-    )
-    missing = [
-        participant.user_code
-        for participant in participants
-        if assignment_counts.get(participant.id, 0) < draw_songs_per_participant
-    ]
-    if missing:
-        preview = "、".join(missing[:8])
-        suffix = "等" if len(missing) > 8 else ""
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"以下参赛者尚未完成抽签：{preview}{suffix}",
-        )
 
 
 def assert_song_limit(db: Session, user_id: int, identity: str) -> None:
