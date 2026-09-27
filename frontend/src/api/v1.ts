@@ -214,6 +214,8 @@ export interface GuessChartRead {
   funny_votes: number;
   my_votes: string[];
   love_vote_bucket: LoveVoteBucket;
+  love_vote_bucket_override?: LoveVoteBucket | null;
+  love_vote_bucket_auto?: LoveVoteBucket;
   track_duration_seconds?: number | null;
   is_long_track?: boolean;
   can_download?: boolean;
@@ -457,7 +459,7 @@ export const api = {
     form.set("file", file);
     return apiRequest<{ archive_id: number; charts: GuessChartRead[] }>("/admin/guess-game/charts/import", { method: "POST", body: form });
   },
-  updateChart: (id: number, payload: { title: string; author: string; designer: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean }) => apiRequest<GuessChartRead>(`/admin/guess-game/charts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  updateChart: (id: number, payload: { title: string; author: string; designer: string; level: string; lane: string; guess_group_key: string; is_self_selected: boolean; love_vote_bucket_override: LoveVoteBucket | null }) => apiRequest<GuessChartRead>(`/admin/guess-game/charts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteChart: (id: number) => apiRequest<{ message: string }>(`/admin/guess-game/charts/${id}`, { method: "DELETE" }),
   batchDeleteAdminCharts: (ids: number[]) => apiRequest<BatchDeleteResponse>("/admin/guess-game/charts/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
   parseSubmissions: () => apiRequest<GuessImportSummary>("/admin/guess-game/parse-submissions", { method: "POST" }),

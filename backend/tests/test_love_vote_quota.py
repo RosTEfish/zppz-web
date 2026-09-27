@@ -11,7 +11,8 @@ from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, EventSetting, GuessChart, GuessVote, User
-from app.modules.guess_game.vote_quota import love_vote_bucket
+from app.modules.guess_game.importer import ParsedArchive, ParsedLevel, sync_parsed_source
+from app.modules.guess_game.vote_quota import love_vote_bucket, resolve_love_vote_bucket
 
 
 @pytest.fixture(autouse=True)
@@ -101,6 +102,13 @@ def configure_guess_phase(*, below_limit: int = 1, at_least_limit: int = 1) -> d
 )
 def test_love_vote_bucket_boundaries(level: str, expected: str):
     assert love_vote_bucket(level) == expected
+    assert resolve_love_vote_bucket(level, None) == expected
+    assert resolve_love_vote_bucket(level, "not-a-bucket") == expected
+
+
+def test_manual_override_replaces_level_bucket():
+    assert resolve_love_vote_bucket("13+", "at_least_14") == "at_least_14"
+    assert resolve_love_vote_bucket("15", "below_14") == "below_14"
 
 
 def test_vote_buckets_are_independent_and_mutations_return_quota(client: TestClient):
@@ -256,6 +264,126 @@ def test_j_is_votable_exhibition_is_not_and_chart_contract_has_bucket(client: Te
     assert settings_payload["true_love_vote_limit_below_14"] == 2
     assert settings_payload["true_love_vote_limit_at_least_14"] == 2
     assert "true_love_vote_limit" not in settings_payload
+
+
+def login(client: TestClient, code: str, password: str) -> None:
+    response = client.post("/api/v1/auth/login", json={"user_code": code, "password": password})
+    assert response.status_code == 200, response.text
+
+
+def chart_update_payload(row: dict, override: str | None) -> dict:
+    return {
+        "title": row["title"],
+        "author": row["author"],
+        "designer": row["designer"],
+        "level": row["level"],
+        "lane": row["lane"],
+        "guess_group_key": row["guess_group_key"],
+        "is_self_selected": row["is_self_selected"],
+        "love_vote_bucket_override": override,
+    }
+
+
+def test_admin_can_override_love_vote_bucket_for_one_chart(client: TestClient):
+    register(client)
+    charts = configure_guess_phase(below_limit=1, at_least_limit=1)
+    voted = client.post(
+        "/api/v1/guess-game/vote",
+        json={"chart_id": charts["Below A"], "vote_type": "love"},
+    )
+    assert voted.status_code == 200, voted.text
+
+    login(client, "admin", "change-me-please")
+    listed = client.get("/api/v1/admin/guess-game/charts")
+    assert listed.status_code == 200, listed.text
+    row = next(item for item in listed.json() if item["id"] == charts["Below A"])
+    assert row["love_vote_bucket"] == "below_14"
+    assert row["love_vote_bucket_auto"] == "below_14"
+    assert row["love_vote_bucket_override"] is None
+
+    updated = client.put(
+        f"/api/v1/admin/guess-game/charts/{charts['Below A']}",
+        json=chart_update_payload(row, "at_least_14"),
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["love_vote_bucket"] == "at_least_14"
+    assert updated.json()["love_vote_bucket_auto"] == "below_14"
+    assert updated.json()["love_vote_bucket_override"] == "at_least_14"
+
+    unchanged = client.put(
+        f"/api/v1/admin/guess-game/charts/{charts['Below A']}",
+        json={key: value for key, value in chart_update_payload(row, "at_least_14").items() if key != "love_vote_bucket_override"},
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["love_vote_bucket_override"] == "at_least_14"
+
+    rejected = client.put(
+        f"/api/v1/admin/guess-game/charts/{charts['Below A']}",
+        json=chart_update_payload(row, "middle"),
+    )
+    assert rejected.status_code == 422
+
+    with SessionLocal() as db:
+        chart = db.get(GuessChart, charts["Below A"])
+        assert chart is not None
+        chart.source_submission_type = "normal"
+        chart.source_submission_id = 41
+        chart.source_level_slot = "4"
+        db.commit()
+        sync_parsed_source(
+            db,
+            event_id=chart.event_id,
+            source_type="normal",
+            source_id=41,
+            file_name="chart.zip",
+            storage_path=chart.storage_path,
+            parsed=ParsedArchive(
+                title=chart.title,
+                author=chart.author,
+                levels=(ParsedLevel(slot="4", level="13+", designer=chart.designer),),
+            ),
+        )
+        db.commit()
+        refreshed = db.get(GuessChart, charts["Below A"])
+        assert refreshed is not None
+        assert refreshed.love_vote_bucket_override == "at_least_14"
+
+    public = client.get("/api/v1/guess-game/charts")
+    assert public.status_code == 200, public.text
+    public_row = next(item for item in public.json() if item["id"] == charts["Below A"])
+    assert public_row["love_vote_bucket"] == "at_least_14"
+    assert "love_vote_bucket_override" not in public_row
+
+    login(client, "quota-viewer", "secret123")
+    moved = client.get("/api/v1/guess-game/vote-quota")
+    assert moved.status_code == 200, moved.text
+    assert moved.json() == {
+        "below_14": {"used": 0, "limit": 1, "remaining": 1},
+        "at_least_14": {"used": 1, "limit": 1, "remaining": 0},
+    }
+    assert client.post(
+        "/api/v1/guess-game/vote",
+        json={"chart_id": charts["Below J"], "vote_type": "love"},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/guess-game/vote",
+        json={"chart_id": charts["Upper A"], "vote_type": "love"},
+    ).status_code == 400
+
+    login(client, "admin", "change-me-please")
+    cleared = client.put(
+        f"/api/v1/admin/guess-game/charts/{charts['Below A']}",
+        json=chart_update_payload(row, None),
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["love_vote_bucket"] == "below_14"
+    assert cleared.json()["love_vote_bucket_override"] is None
+
+    login(client, "quota-viewer", "secret123")
+    restored = client.get("/api/v1/guess-game/vote-quota")
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["below_14"]["used"] == 2
+    assert restored.json()["at_least_14"]["used"] == 0
 
 
 def _load_quota_migration():

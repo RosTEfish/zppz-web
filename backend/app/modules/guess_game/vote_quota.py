@@ -27,11 +27,17 @@ def love_vote_bucket(level: str) -> LoveVoteBucket:
         return "at_least_14"
 
 
+def resolve_love_vote_bucket(level: str, override: str | None = None) -> LoveVoteBucket:
+    if override == "below_14" or override == "at_least_14":
+        return override
+    return love_vote_bucket(level)
+
+
 def love_vote_quota(db: Session, user_id: int, event: Event | None = None) -> dict[str, dict[str, int]]:
     event = event or get_current_event(db)
     used = {bucket: 0 for bucket in LOVE_VOTE_BUCKETS}
-    levels = db.scalars(
-        select(GuessChart.level)
+    rows = db.execute(
+        select(GuessChart.level, GuessChart.love_vote_bucket_override)
         .join(GuessVote, GuessVote.chart_id == GuessChart.id)
         .where(
             GuessChart.event_id == event.id,
@@ -40,8 +46,8 @@ def love_vote_quota(db: Session, user_id: int, event: Event | None = None) -> di
             GuessVote.vote_type == "love",
         )
     ).all()
-    for level in levels:
-        used[love_vote_bucket(str(level))] += 1
+    for level, override in rows:
+        used[resolve_love_vote_bucket(str(level), override)] += 1
 
     limits = {
         "below_14": event.settings.true_love_vote_limit_below_14,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Switch, TextField, Tooltip, Typography } from "@mui/material";
 import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
 import { Check, FileArchive, Pencil, RefreshCw, Save as SaveIcon, Trash2 } from "lucide-react";
-import { api, type AuthorCandidateAdmin, type GuessChartRead } from "../../api/v1";
+import { api, type AuthorCandidateAdmin, type GuessChartRead, type LoveVoteBucket } from "../../api/v1";
 import { type ApiResource, ResourceState, useApiResource } from "../../components/PagePrimitives";
 import { queryKeys } from "../../api/queryKeys";
 import { BatchDeleteDialog } from "./AdminShared";
@@ -12,6 +12,26 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { chartSchema, type ChartFormValues } from "../../forms/schemas";
 import { dataGridZhCN } from "../../components/dataGridLocale";
 import { identityLabel } from "../../identity";
+
+const BUCKET_LABEL: Record<LoveVoteBucket, string> = { below_14: "14 以下", at_least_14: "14 及以上" };
+
+function chartWritePayload(chart: GuessChartRead, override: LoveVoteBucket | null) {
+  return {
+    title: chart.title,
+    author: chart.author,
+    designer: chart.designer,
+    level: chart.level,
+    lane: chart.lane,
+    guess_group_key: chart.guess_group_key,
+    is_self_selected: chart.is_self_selected,
+    love_vote_bucket_override: override,
+  };
+}
+
+function LoveVoteBucketSelect({ chart, disabled, onChange }: { chart: GuessChartRead; disabled: boolean; onChange: (chart: GuessChartRead, override: LoveVoteBucket | null) => void }) {
+  const auto = chart.love_vote_bucket_auto ?? chart.love_vote_bucket;
+  return <Select size="small" value={chart.love_vote_bucket_override ?? "auto"} disabled={disabled} aria-label={`真爱票分类 ${chart.title} ${chart.level}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={(event) => onChange(chart, event.target.value === "auto" ? null : event.target.value as LoveVoteBucket)} sx={{ minWidth: 188 }}><MenuItem value="auto">跟随等级（{BUCKET_LABEL[auto]}）</MenuItem><MenuItem value="below_14">14 以下</MenuItem><MenuItem value="at_least_14">14 及以上</MenuItem></Select>;
+}
 
 export default function AdminGuess() {
   const charts = useApiResource(queryKeys.guess.adminCharts, api.adminCharts);
@@ -24,6 +44,21 @@ export default function AdminGuess() {
   const [deleting, setDeleting] = useState(false);
   const [summary, setSummary] = useState("");
   const [error, setError] = useState("");
+  const [savingBuckets, setSavingBuckets] = useState<Set<number>>(new Set());
+  async function saveBucket(chart: GuessChartRead, override: LoveVoteBucket | null) {
+    if ((chart.love_vote_bucket_override ?? null) === override) return;
+    setSavingBuckets((current) => new Set(current).add(chart.id));
+    setError("");
+    try {
+      const updated = await api.updateChart(chart.id, chartWritePayload(chart, override));
+      charts.updateData((items) => items.map((item) => item.id === updated.id ? updated : item));
+      setSummary(`已更新《${updated.title}》${updated.level} 的真爱票分类`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存真爱票分类失败");
+    } finally {
+      setSavingBuckets((current) => { const next = new Set(current); next.delete(chart.id); return next; });
+    }
+  }
   async function importArchive(file?: File) { if (!file) return; try { const result = await api.importCharts(file); setSummary(`已新增 ${result.charts.length} 张谱面`); setSelected(new Set()); await Promise.all([charts.reload(), issues.reload()]); } catch (err) { setError(err instanceof Error ? err.message : "导入失败"); } }
   async function parseAll() { try { const result = await api.parseSubmissions(); setSummary(`扫描 ${result.scanned}，新增 ${result.created}，更新 ${result.updated}，删除 ${result.deleted}，问题 ${result.issues}`); setSelected(new Set()); await Promise.all([charts.reload(), issues.reload()]); } catch (err) { setError(err instanceof Error ? err.message : "解析失败"); } }
   async function remove(chart: GuessChartRead) { const result = await confirm({ title: "删除谱面", description: `确认删除《${chart.title}》${chart.level}？此操作不可撤销。`, confirmationButtonProps: { color: "error" } }); if (!result.confirmed) return; try { await api.deleteChart(chart.id); setSelected((current) => { const next = new Set(current); next.delete(chart.id); return next; }); charts.updateData((items) => items.filter((item) => item.id !== chart.id)); } catch (err) { setError(err instanceof Error ? err.message : "删除失败"); } }
@@ -33,13 +68,15 @@ export default function AdminGuess() {
     { field: "author", headerName: "曲师", minWidth: 130, flex: 0.7 },
     { field: "designer", headerName: "谱师", minWidth: 130, flex: 0.7, valueGetter: (value) => value || "-" },
     { field: "level", headerName: "等级", width: 90 },
+    { field: "love_vote_bucket", headerName: "真爱票分类", width: 230, sortable: false, filterable: false, renderCell: ({ row }) => <LoveVoteBucketSelect chart={row} disabled={savingBuckets.has(row.id)} onChange={(chart, override) => void saveBucket(chart, override)} /> },
     { field: "lane", headerName: "赛道", width: 90, valueFormatter: (value) => value === "j" ? "J" : value === "exhibition" ? "场外" : "普通" },
     { field: "source_submission_type", headerName: "来源", width: 110 },
     { field: "actions", headerName: "操作", width: 110, sortable: false, filterable: false, renderCell: ({ row }) => <><Tooltip title="编辑"><IconButton size="small" aria-label={`编辑谱面 ${row.title} ${row.level}`} onClick={() => setEditing(row)}><Pencil size={16} /></IconButton></Tooltip><Tooltip title="删除"><IconButton size="small" color="error" aria-label={`删除谱面 ${row.title} ${row.level}`} onClick={() => void remove(row)}><Trash2 size={16} /></IconButton></Tooltip></> },
-  ], []);
+  ], [savingBuckets]);
   const selectionModel: GridRowSelectionModel = { type: "include", ids: new Set(selected) };
   return <Stack spacing={3}>
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}><Button component="label" variant="contained" startIcon={<FileArchive size={17} />}>新增谱面<input hidden type="file" accept=".zip,.7z,.rar" onChange={(event) => { void importArchive(event.target.files?.[0]); event.currentTarget.value = ""; }} /></Button><Button variant="outlined" startIcon={<RefreshCw size={17} />} onClick={() => void parseAll()}>重新解析全部来源</Button><Button variant="outlined" startIcon={<Check size={17} />} disabled={!charts.data?.length} onClick={() => setSelected(new Set(charts.data?.map((chart) => chart.id) || []))}>全选</Button><Button color="error" variant="outlined" startIcon={<Trash2 size={17} />} disabled={!selected.size} onClick={() => setDeleteOpen(true)}>删除 {selected.size} 项</Button></Stack>
+    <Typography variant="body2" color="text.secondary">真爱票分类默认按等级自动划分。可以在表格里把单张谱面改成 14 以下或 14 及以上；重新解析谱面不会清除手动分类。</Typography>
     {summary ? <Alert severity="success">{summary}</Alert> : null}{error ? <Alert severity="error">{error}</Alert> : null}<ResourceState loading={charts.loading} error={charts.error} empty={!charts.data?.length ? "暂无谱面" : undefined} />
     {charts.data?.length ? <Paper variant="outlined" sx={{ height: Math.min(700, 112 + charts.data.length * 52), minHeight: 320 }}><DataGrid rows={charts.data} columns={columns} getRowId={(row) => row.id} checkboxSelection disableRowSelectionOnClick rowSelectionModel={selectionModel} onRowSelectionModelChange={(model) => setSelected(new Set([...model.ids].map(Number)))} initialState={{ pagination: { paginationModel: { page: 0, pageSize: 25 } } }} pageSizeOptions={[25, 50, 100]} localeText={dataGridZhCN} sx={{ border: 0 }} /></Paper> : null}
     <AuthorCandidatesEditor resource={candidates} setError={setError} />
@@ -58,9 +95,10 @@ function AuthorCandidatesEditor({ resource, setError }: { resource: ApiResource<
 
 function ChartEditDialog({ chart, onClose, onSaved }: { chart: GuessChartRead | null; onClose: () => void; onSaved: (chart: GuessChartRead) => void }) {
   const [error, setError] = useState("");
-  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<ChartFormValues>({ resolver: zodResolver(chartSchema), defaultValues: { title: "", author: "", designer: "", level: "", lane: "normal", guess_group_key: "", is_self_selected: false } });
-  useEffect(() => { if (chart) reset({ title: chart.title, author: chart.author, designer: chart.designer, level: chart.level, lane: chart.lane as ChartFormValues["lane"], guess_group_key: chart.guess_group_key, is_self_selected: chart.is_self_selected }); }, [chart, reset]);
+  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<ChartFormValues>({ resolver: zodResolver(chartSchema), defaultValues: { title: "", author: "", designer: "", level: "", lane: "normal", guess_group_key: "", is_self_selected: false, love_vote_bucket_override: null } });
+  useEffect(() => { if (chart) reset({ title: chart.title, author: chart.author, designer: chart.designer, level: chart.level, lane: chart.lane as ChartFormValues["lane"], guess_group_key: chart.guess_group_key, is_self_selected: chart.is_self_selected, love_vote_bucket_override: chart.love_vote_bucket_override ?? null }); }, [chart, reset]);
   if (!chart) return null;
-  const save = handleSubmit(async (form) => { setError(""); try { onSaved(await api.updateChart(chart.id, form)); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); } });
-  return <Dialog open onClose={isSubmitting ? undefined : onClose} fullWidth maxWidth="sm"><DialogTitle>编辑谱面</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField label="标题" {...register("title")} error={Boolean(errors.title)} helperText={errors.title?.message} /><TextField label="曲师" {...register("author")} error={Boolean(errors.author)} helperText={errors.author?.message} /><TextField label="谱师" {...register("designer")} error={Boolean(errors.designer)} helperText={errors.designer?.message} /><TextField label="等级" {...register("level")} error={Boolean(errors.level)} helperText={errors.level?.message} /><Controller name="lane" control={control} render={({ field, fieldState }) => <FormControl error={Boolean(fieldState.error)}><InputLabel>赛道</InputLabel><Select {...field} label="赛道"><MenuItem value="normal">普通</MenuItem><MenuItem value="j">J</MenuItem><MenuItem value="exhibition">场外</MenuItem></Select>{fieldState.error ? <FormHelperText>{fieldState.error.message}</FormHelperText> : null}</FormControl>} /><TextField label="猜测分组" {...register("guess_group_key")} error={Boolean(errors.guess_group_key)} helperText={errors.guess_group_key?.message} /><Controller name="is_self_selected" control={control} render={({ field }) => <FormControlLabel control={<Switch checked={field.value} onChange={field.onChange} />} label="自选谱面" />} />{error ? <Alert severity="error">{error}</Alert> : null}</Stack></DialogContent><DialogActions><Button disabled={isSubmitting} onClick={onClose}>取消</Button><Button variant="contained" disabled={isSubmitting} startIcon={<SaveIcon size={16} />} onClick={() => void save()}>保存</Button></DialogActions></Dialog>;
+  const autoLabel = BUCKET_LABEL[chart.love_vote_bucket_auto ?? chart.love_vote_bucket];
+  const save = handleSubmit(async (form) => { setError(""); try { onSaved(await api.updateChart(chart.id, { ...form, love_vote_bucket_override: form.love_vote_bucket_override ?? null })); } catch (err) { setError(err instanceof Error ? err.message : "保存失败"); } });
+  return <Dialog open onClose={isSubmitting ? undefined : onClose} fullWidth maxWidth="sm"><DialogTitle>编辑谱面</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField label="标题" {...register("title")} error={Boolean(errors.title)} helperText={errors.title?.message} /><TextField label="曲师" {...register("author")} error={Boolean(errors.author)} helperText={errors.author?.message} /><TextField label="谱师" {...register("designer")} error={Boolean(errors.designer)} helperText={errors.designer?.message} /><TextField label="等级" {...register("level")} error={Boolean(errors.level)} helperText={errors.level?.message} /><Controller name="love_vote_bucket_override" control={control} render={({ field, fieldState }) => <FormControl error={Boolean(fieldState.error)}><InputLabel>真爱票分类</InputLabel><Select {...field} value={field.value ?? "auto"} label="真爱票分类" onChange={(event) => field.onChange(event.target.value === "auto" ? null : event.target.value)}><MenuItem value="auto">跟随等级（{autoLabel}）</MenuItem><MenuItem value="below_14">14 以下</MenuItem><MenuItem value="at_least_14">14 及以上</MenuItem></Select><FormHelperText>{fieldState.error?.message || "跟随等级时按谱面等级自动划分；手动指定后不受等级变化影响。"}</FormHelperText></FormControl>} /><Controller name="lane" control={control} render={({ field, fieldState }) => <FormControl error={Boolean(fieldState.error)}><InputLabel>赛道</InputLabel><Select {...field} label="赛道"><MenuItem value="normal">普通</MenuItem><MenuItem value="j">J</MenuItem><MenuItem value="exhibition">场外</MenuItem></Select>{fieldState.error ? <FormHelperText>{fieldState.error.message}</FormHelperText> : null}</FormControl>} /><TextField label="猜测分组" {...register("guess_group_key")} error={Boolean(errors.guess_group_key)} helperText={errors.guess_group_key?.message} /><Controller name="is_self_selected" control={control} render={({ field }) => <FormControlLabel control={<Switch checked={field.value} onChange={field.onChange} />} label="自选谱面" />} />{error ? <Alert severity="error">{error}</Alert> : null}</Stack></DialogContent><DialogActions><Button disabled={isSubmitting} onClick={onClose}>取消</Button><Button variant="contained" disabled={isSubmitting} startIcon={<SaveIcon size={16} />} onClick={() => void save()}>保存</Button></DialogActions></Dialog>;
 }

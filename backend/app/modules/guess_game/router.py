@@ -638,7 +638,10 @@ def admin_update_chart(chart_id: int, payload: GuessChartCreate, _: User = Depen
     chart = db.scalar(select(GuessChart).where(GuessChart.id == chart_id, GuessChart.event_id == event.id))
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
-    for key, value in payload.model_dump().items():
+    updates = payload.model_dump(exclude={"love_vote_bucket_override"})
+    if "love_vote_bucket_override" in payload.model_fields_set:
+        updates["love_vote_bucket_override"] = payload.love_vote_bucket_override
+    for key, value in updates.items():
         setattr(chart, key, value)
     db.commit()
     db.refresh(chart)

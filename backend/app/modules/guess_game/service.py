@@ -4,13 +4,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import GuessAuthorCandidate, GuessChart, GuessComment, GuessVote, User
 from app.modules.events.service import get_current_event
-from app.modules.guess_game.vote_quota import love_vote_bucket, love_vote_quota
+from app.modules.guess_game.vote_quota import love_vote_quota, resolve_love_vote_bucket
 
 
-def vote_limit_for(db: Session, vote_type: str, level: str = "") -> int:
+def vote_limit_for(db: Session, vote_type: str, level: str = "", override: str | None = None) -> int:
     settings = get_current_event(db).settings
     if vote_type == "love":
-        bucket = love_vote_bucket(level)
+        bucket = resolve_love_vote_bucket(level, override)
         return (
             settings.true_love_vote_limit_below_14
             if bucket == "below_14"
@@ -41,9 +41,9 @@ def put_vote(db: Session, user_id: int, chart_id: int, vote_type: str) -> None:
     ):
         return
     if vote_type == "love":
-        bucket = love_vote_bucket(chart.level)
+        bucket = resolve_love_vote_bucket(chart.level, chart.love_vote_bucket_override)
         quota = love_vote_quota(db, user_id, event)
-        limit = vote_limit_for(db, vote_type, chart.level)
+        limit = vote_limit_for(db, vote_type, chart.level, chart.love_vote_bucket_override)
         used = quota[bucket]["used"]
     elif vote_type == "funny":
         limit = vote_limit_for(db, vote_type)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import user_payload
 from app.models import GuessChart, GuessVote, PreviewBundle, Song, Submission
-from app.modules.guess_game.vote_quota import love_vote_bucket
+from app.modules.guess_game.vote_quota import love_vote_bucket, resolve_love_vote_bucket
 
 
 def serialize_song(song: Song) -> dict:
@@ -109,7 +109,7 @@ def _chart_payload(
         "love_votes": love_votes,
         "funny_votes": funny_votes,
         "my_votes": my_votes or [],
-        "love_vote_bucket": love_vote_bucket(chart.level),
+        "love_vote_bucket": resolve_love_vote_bucket(chart.level, chart.love_vote_bucket_override),
     }
     if include_designer or include_private:
         payload["designer"] = chart.designer
@@ -118,6 +118,12 @@ def _chart_payload(
             "source_submission_id": chart.source_submission_id,
             "storage_path": chart.storage_path,
             "cover_path": chart.cover_path,
+            "love_vote_bucket_override": (
+                chart.love_vote_bucket_override
+                if chart.love_vote_bucket_override in ("below_14", "at_least_14")
+                else None
+            ),
+            "love_vote_bucket_auto": love_vote_bucket(chart.level),
         })
         payload.pop("cover_thumb_path", None)
     return payload
