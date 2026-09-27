@@ -442,7 +442,7 @@ elif install_unit_file "$worker_unit_candidate" "$worker_service_file" 2>/dev/nu
   worker_unit_created=1
   worker_service_mode="separate"
 else
-  echo "::warning::No passwordless permission to create $worker_service_file; running the single Worker inside the Web service cgroup." >&2
+  echo "::warning::No passwordless permission to create $worker_service_file; running both submission Workers inside the Web service cgroup." >&2
 fi
 rm -f -- "$worker_unit_candidate"
 
@@ -546,10 +546,17 @@ if [ "$worker_service_mode" = "separate" ]; then
     journalctl -u "$WORKER_SERVICE_NAME" --no-pager -n 160 >&2 || true
     exit 1
   fi
-elif ! pgrep -u "$RUN_USER" -f "$venv_dir/bin/python -m app.worker" >/dev/null; then
-  echo "The submission Worker did not stay active inside $SERVICE_NAME." >&2
+fi
+# Anchor at the command end so app.worker_supervisor is not counted.
+submission_workers="$(pgrep -u "$RUN_USER" -fc -- '-m app\.worker$' || true)"
+if [ "${submission_workers:-0}" -ne 2 ]; then
+  echo "Expected 2 submission workers, found ${submission_workers:-0}." >&2
   systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
   journalctl -u "$SERVICE_NAME" --no-pager -n 160 >&2 || true
+  if [ "$worker_service_mode" = "separate" ]; then
+    systemctl --no-pager --full status "$WORKER_SERVICE_NAME" >&2 || true
+    journalctl -u "$WORKER_SERVICE_NAME" --no-pager -n 160 >&2 || true
+  fi
   exit 1
 fi
 if ! pgrep -u "$RUN_USER" -f "$venv_dir/bin/python -m app.webhook_worker" >/dev/null; then

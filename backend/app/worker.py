@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import time
 
@@ -20,14 +21,19 @@ def _stop(_signum, _frame) -> None:
     _stopping = True
 
 
+def _cleanup_enabled() -> bool:
+    return os.getenv("SUBMISSION_WORKER_CLEANUP", "1") != "0"
+
+
 def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    logger.info("submission worker started")
+    cleanup_enabled = _cleanup_enabled()
+    logger.info("submission worker started (cleanup %s)", "enabled" if cleanup_enabled else "disabled")
     next_cleanup = 0.0
     while not _stopping:
         now = time.monotonic()
-        if now >= next_cleanup:
+        if cleanup_enabled and now >= next_cleanup:
             cleanup_expired_upload_intents()
             next_cleanup = now + 60
         if not process_next_job():

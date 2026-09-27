@@ -6,6 +6,7 @@ set -Eeuo pipefail
 : "${ZPPZ_WEB_CONCURRENCY:?ZPPZ_WEB_CONCURRENCY is required}"
 
 worker_pid=""
+worker_pid_2=""
 webhook_worker_pid=""
 web_pid=""
 
@@ -17,6 +18,9 @@ stop_children() {
   if [ -n "$worker_pid" ]; then
     kill -TERM "$worker_pid" >/dev/null 2>&1 || true
   fi
+  if [ -n "$worker_pid_2" ]; then
+    kill -TERM "$worker_pid_2" >/dev/null 2>&1 || true
+  fi
   if [ -n "$webhook_worker_pid" ]; then
     kill -TERM "$webhook_worker_pid" >/dev/null 2>&1 || true
   fi
@@ -26,19 +30,28 @@ stop_children() {
   if [ -n "$worker_pid" ]; then
     wait "$worker_pid" >/dev/null 2>&1 || true
   fi
+  if [ -n "$worker_pid_2" ]; then
+    wait "$worker_pid_2" >/dev/null 2>&1 || true
+  fi
   if [ -n "$webhook_worker_pid" ]; then
     wait "$webhook_worker_pid" >/dev/null 2>&1 || true
   fi
 }
 
+start_submission_worker() {
+  if command -v ionice >/dev/null 2>&1; then
+    nice -n 10 ionice -c 2 -n 7 "$ZPPZ_PYTHON_BIN" -m app.worker &
+  else
+    nice -n 10 "$ZPPZ_PYTHON_BIN" -m app.worker &
+  fi
+}
+
 trap 'stop_children; exit 143' TERM INT
 
-if command -v ionice >/dev/null 2>&1; then
-  nice -n 10 ionice -c 2 -n 7 "$ZPPZ_PYTHON_BIN" -m app.worker &
-else
-  nice -n 10 "$ZPPZ_PYTHON_BIN" -m app.worker &
-fi
+SUBMISSION_WORKER_CLEANUP=1 start_submission_worker
 worker_pid=$!
+SUBMISSION_WORKER_CLEANUP=0 start_submission_worker
+worker_pid_2=$!
 
 "$ZPPZ_PYTHON_BIN" -m app.webhook_worker &
 webhook_worker_pid=$!
@@ -52,7 +65,7 @@ web_pid=$!
 # Any process exiting is unhealthy. Stop its siblings and let systemd restart
 # the complete cgroup so a dead Worker can never go unnoticed.
 set +e
-wait -n "$worker_pid" "$webhook_worker_pid" "$web_pid"
+wait -n "$worker_pid" "$worker_pid_2" "$webhook_worker_pid" "$web_pid"
 status=$?
 set -e
 stop_children

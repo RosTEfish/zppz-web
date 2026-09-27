@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
 import time
 
 
+SUBMISSION_WORKER_COUNT = 2
 children: list[subprocess.Popen] = []
+
+
+def _submission_worker_env(index: int) -> dict[str, str]:
+    env = os.environ.copy()
+    # Only the first process expires upload intents, so two workers cannot
+    # insert the same storage-deletion row.
+    env["SUBMISSION_WORKER_CLEANUP"] = "1" if index == 0 else "0"
+    return env
 
 
 def _stop(_signum, _frame) -> None:
@@ -19,11 +29,13 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     children.extend(
-        [
-            subprocess.Popen([sys.executable, "-m", "app.worker"]),
-            subprocess.Popen([sys.executable, "-m", "app.webhook_worker"]),
-        ]
+        subprocess.Popen(
+            [sys.executable, "-m", "app.worker"],
+            env=_submission_worker_env(index),
+        )
+        for index in range(SUBMISSION_WORKER_COUNT)
     )
+    children.append(subprocess.Popen([sys.executable, "-m", "app.webhook_worker"]))
     while True:
         for child in children:
             status = child.poll()

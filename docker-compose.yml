@@ -62,6 +62,35 @@ services:
       ADMIN_SEED_CODE: admin
       ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-zppz-local-admin}
       OBJECT_STORAGE_BACKEND: local
+      SUBMISSION_WORKER_CLEANUP: "1"
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "1"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
+    volumes:
+      - zppz-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://zppz:zppz@postgres:5432/zppz
+      DATA_DIR: /data
+      SECRET_KEY: ${SECRET_KEY:-zppz-local-dev-key-change-me}
+      WEBHOOK_SIGNING_MASTER_KEY: ${WEBHOOK_SIGNING_MASTER_KEY:-zppz-local-dev-webhook-key-change-me}
+      PUBLIC_BASE_URL: http://localhost:8080
+      ADMIN_SEED_CODE: admin
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-zppz-local-admin}
+      OBJECT_STORAGE_BACKEND: local
+      SUBMISSION_WORKER_CLEANUP: "0"
       DB_POOL_SIZE: "2"
       DB_MAX_OVERFLOW: "1"
       DB_POOL_TIMEOUT: "30"
