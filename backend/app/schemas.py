@@ -468,6 +468,7 @@ class GuessChartCreate(BaseModel):
     lane: str = "normal"
     guess_group_key: str = ""
     is_self_selected: bool = False
+    love_vote_bucket_override: Literal["below_14", "at_least_14"] | None = None
 
 
 class GuessChartRead(BaseModel):
@@ -528,6 +529,8 @@ class PublicGuessChartRead(BaseModel):
 class AdminGuessChartRead(GuessChartRead):
     track_duration_seconds: float | None = None
     is_long_track: bool = False
+    love_vote_bucket_override: Literal["below_14", "at_least_14"] | None = None
+    love_vote_bucket_auto: Literal["below_14", "at_least_14"]
 
 
 class PreviewLevelRead(BaseModel):

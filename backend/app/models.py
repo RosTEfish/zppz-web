@@ -559,6 +559,7 @@ class GuessChart(Base, TimestampMixin):
     storage_path: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     is_self_selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     plays: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    love_vote_bucket_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class WebhookIntegration(Base, TimestampMixin):

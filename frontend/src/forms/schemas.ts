@@ -32,6 +32,7 @@ export const chartSchema = z.object({
   lane: z.enum(["normal", "j", "exhibition"]),
   guess_group_key: z.string(),
   is_self_selected: z.boolean(),
+  love_vote_bucket_override: z.enum(["below_14", "at_least_14"]).nullable(),
 });
 
 export type ChartFormValues = z.infer<typeof chartSchema>;

@@ -2052,6 +2052,13 @@ export interface components {
              */
             love_vote_bucket: "below_14" | "at_least_14";
             /**
+             * Love Vote Bucket Auto
+             * @enum {string}
+             */
+            love_vote_bucket_auto: "below_14" | "at_least_14";
+            /** Love Vote Bucket Override */
+            love_vote_bucket_override?: ("below_14" | "at_least_14") | null;
+            /**
              * Love Votes
              * @default 0
              */
@@ -2614,6 +2621,8 @@ export interface components {
             lane: string;
             /** Level */
             level: string;
+            /** Love Vote Bucket Override */
+            love_vote_bucket_override?: ("below_14" | "at_least_14") | null;
             /** Title */
             title: string;
         };
