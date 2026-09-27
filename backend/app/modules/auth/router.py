@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -16,11 +16,29 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.models import User, UserSession
+from app.modules.auth.rate_limit import clear_login_failures, login_retry_after, record_login_failure
 from app.modules.events.phase_policy import get_phase_status, registration_window_closed
 from app.schemas import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest, UpdateProfileRequest
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _reject_if_login_limited(client_ip: str, user_code: str) -> None:
+    retry_after = login_retry_after(client_ip, user_code)
+    if retry_after is None:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="尝试次数过多，请稍后再试",
+        headers={"Retry-After": str(retry_after)},
+    )
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -47,12 +65,16 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict:
+def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
+    client_ip = _client_ip(request)
+    _reject_if_login_limited(client_ip, payload.user_code)
     user = db.scalar(select(User).where(User.user_code == payload.user_code))
     if not user or not verify_password(payload.password, user.password_hash):
+        record_login_failure(client_ip, payload.user_code)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号或密码不正确")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已停用")
+    clear_login_failures(client_ip, payload.user_code)
     issue_session(response, db, user)
     return {"user": user_payload(user)}
 

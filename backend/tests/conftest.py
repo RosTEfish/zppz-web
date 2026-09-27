@@ -13,6 +13,15 @@ os.environ["DATA_DIR"] = str(TEST_DATA_DIR)
 os.environ["ADMIN_SEED_PASSWORD"] = "change-me-please"
 
 
+@pytest.fixture(autouse=True)
+def reset_login_rate_limit() -> None:
+    from app.modules.auth.rate_limit import reset_login_attempts
+
+    reset_login_attempts()
+    yield
+    reset_login_attempts()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def prepare_bundled_assets() -> None:
     # Production deployment runs this via ``python -m app.prepare`` before
