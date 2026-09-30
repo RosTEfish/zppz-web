@@ -691,6 +691,8 @@ def _prepare_archive_with_timeout(
 ) -> tuple[PreparedArchive, int]:
     """Download and parse the archive, failing cleanly if validation hangs."""
     limit = VALIDATION_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+    # Outer thread timeout covers download hangs and the Python RAR fallback.
+    # zip/7z extraction itself runs in a killable Rust subprocess when available.
     pool = ThreadPoolExecutor(max_workers=1)
     try:
         future = pool.submit(_download_and_prepare_archive, source_path, suffix, assets_dir)

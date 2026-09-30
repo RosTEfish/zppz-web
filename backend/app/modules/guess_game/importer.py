@@ -405,9 +405,14 @@ def build_public_package_from_files(target: Path, files: dict[str, Path]) -> Non
         temporary.unlink(missing_ok=True)
 
 
-def _copy_stream(source, destination) -> None:
+def _copy_stream(source, destination, *, max_bytes: int | None = None, label: str = "成员") -> int:
+    written = 0
     while chunk := source.read(1024 * 1024):
+        written += len(chunk)
+        if max_bytes is not None and written > max_bytes:
+            raise ArchiveParseError(f"{PurePosixPath(label).name} 大小超出限制")
         destination.write(chunk)
+    return written
 
 
 def _copy_public_files(parsed: ParsedArchive, destination: ZipFile) -> None:
@@ -535,11 +540,29 @@ def _normalized_selection(names: list[str]) -> tuple[str, str, str, str | None]:
     return maidata_name, track_name, cover_name, _select_video_member(names)
 
 
+def _selected_member_limit(kind: str) -> int:
+    if kind == "maidata":
+        return MAX_MAIDATA_BYTES
+    if kind == "bg":
+        return MAX_COVER_BYTES
+    return MAX_MEMBER_BYTES
+
+
 def prepare_archive(path: Path, destination: Path) -> PreparedArchive:
     """Validate and extract every selected member exactly once for an upload attempt."""
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_ARCHIVE_SUFFIXES:
         raise ArchiveParseError("仅支持 zip、7z、rar 压缩包")
+    # Prefer the killable Rust sandbox for zip/7z when the binary is available.
+    # RAR stays on the Python path because the validator intentionally omits it.
+    if suffix in {".zip", ".7z"}:
+        from app.modules.guess_game.chart_validate import (
+            prepare_archive_with_rust,
+            rust_prepare_available,
+        )
+
+        if rust_prepare_available(path):
+            return prepare_archive_with_rust(path, destination)
     destination.mkdir(parents=True, exist_ok=True)
     files: dict[str, Path] = {}
 
@@ -577,7 +600,12 @@ def prepare_archive(path: Path, destination: Path) -> PreparedArchive:
                         target_name = output_name(kind, name)
                         target = destination / target_name
                         with archive.open(by_name[name], "r") as source, target.open("wb") as output:
-                            _copy_stream(source, output)
+                            _copy_stream(
+                                source,
+                                output,
+                                max_bytes=_selected_member_limit(kind),
+                                label=name,
+                            )
                         files[target_name] = target
             except BadZipFile as exc:
                 raise ArchiveParseError("ZIP 压缩包已损坏") from exc
@@ -614,6 +642,8 @@ def prepare_archive(path: Path, destination: Path) -> PreparedArchive:
                     extracted = raw / Path(*PurePosixPath(_normalized_member_name(str(by_name[name].filename))).parts)
                     if not extracted.is_file():
                         raise ArchiveParseError(f"7z 压缩包无法读取 {PurePosixPath(name).name}")
+                    if extracted.stat().st_size > _selected_member_limit(kind):
+                        raise ArchiveParseError(f"{PurePosixPath(name).name} 大小超出限制")
                     target_name = output_name(kind, name)
                     target = destination / target_name
                     shutil.move(str(extracted), target)
@@ -640,7 +670,12 @@ def prepare_archive(path: Path, destination: Path) -> PreparedArchive:
                     target_name = output_name(kind, name)
                     target = destination / target_name
                     with archive.open(by_name[name], "r") as source, target.open("wb") as output:
-                        _copy_stream(source, output)
+                        _copy_stream(
+                            source,
+                            output,
+                            max_bytes=_selected_member_limit(kind),
+                            label=name,
+                        )
                     files[target_name] = target
         return _prepared_result(path, files)
     except ArchiveParseError:

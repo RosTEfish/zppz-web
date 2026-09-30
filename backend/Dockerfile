@@ -1,9 +1,15 @@
+FROM rust:1-bookworm AS chart-validate
+WORKDIR /src
+COPY tools/zppz-chart-validate /src
+RUN cargo build --release
+
 FROM python:3.12-slim
 
 ARG PIP_INDEX_URL=https://pypi.org/simple
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    ZPPZ_CHART_VALIDATE_BIN=/usr/local/bin/zppz-chart-validate
 
 WORKDIR /app
 RUN apt-get update \
@@ -12,6 +18,7 @@ RUN apt-get update \
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" -r /app/requirements.txt
 
+COPY --from=chart-validate /src/target/release/zppz-chart-validate /usr/local/bin/zppz-chart-validate
 COPY backend /app/backend
 COPY bg /app/bg
 COPY banlist /app/banlist
