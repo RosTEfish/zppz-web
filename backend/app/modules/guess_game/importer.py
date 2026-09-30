@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import AdminGuessArchive, GuessChart, ImportIssue, JTrackSubmission, Submission
+from app.modules.simai.maidata_format import format_maidata_bytes
 
 try:
     import py7zr
@@ -386,6 +387,15 @@ def build_public_package(target: Path, parsed: ParsedArchive) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _read_public_maidata_bytes(path: Path) -> bytes:
+    """Return maidata bytes with chart bodies normalized for public packages."""
+    raw = path.read_bytes()
+    try:
+        return format_maidata_bytes(raw)
+    except Exception:
+        return raw
+
+
 def build_public_package_from_files(target: Path, files: dict[str, Path]) -> None:
     """Build the anonymous package without recompressing already-compressed media."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -399,7 +409,10 @@ def build_public_package_from_files(target: Path, files: dict[str, Path]) -> Non
         with ZipFile(temporary, "w", allowZip64=True) as archive:
             for name in ordered:
                 compression = ZIP_DEFLATED if name == "maidata.txt" else ZIP_STORED
-                archive.write(files[name], arcname=name, compress_type=compression)
+                if name == "maidata.txt":
+                    archive.writestr(name, _read_public_maidata_bytes(files[name]), compress_type=compression)
+                else:
+                    archive.write(files[name], arcname=name, compress_type=compression)
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
@@ -408,6 +421,15 @@ def build_public_package_from_files(target: Path, files: dict[str, Path]) -> Non
 def _copy_stream(source, destination) -> None:
     while chunk := source.read(1024 * 1024):
         destination.write(chunk)
+
+
+def _write_formatted_maidata(destination: ZipFile, payload: bytes) -> None:
+    try:
+        payload = format_maidata_bytes(payload)
+    except Exception:
+        pass
+    with destination.open("maidata.txt", "w") as output_file:
+        output_file.write(payload)
 
 
 def _copy_public_files(parsed: ParsedArchive, destination: ZipFile) -> None:
@@ -424,16 +446,24 @@ def _copy_public_files(parsed: ParsedArchive, destination: ZipFile) -> None:
                 source_info = by_original_name.get(member.member_name)
                 if source_info is None:
                     raise ArchiveParseError(f"公共包源文件缺少 {PurePosixPath(member.member_name).name}")
-                with source.open(source_info, "r") as input_file, destination.open(member.output_name, "w") as output_file:
-                    _copy_stream(input_file, output_file)
+                with source.open(source_info, "r") as input_file:
+                    if member.output_name == "maidata.txt":
+                        _write_formatted_maidata(destination, input_file.read())
+                    else:
+                        with destination.open(member.output_name, "w") as output_file:
+                            _copy_stream(input_file, output_file)
         return
     if suffix == ".rar":
         if rarfile is None:
             raise ArchiveParseError("服务器未安装 rarfile，无法解析 RAR 文件")
         with rarfile.RarFile(parsed.archive_path, mode="r") as source:
             for member in parsed.public_files:
-                with source.open(member.member_name, "r") as input_file, destination.open(member.output_name, "w") as output_file:
-                    _copy_stream(input_file, output_file)
+                with source.open(member.member_name, "r") as input_file:
+                    if member.output_name == "maidata.txt":
+                        _write_formatted_maidata(destination, input_file.read())
+                    else:
+                        with destination.open(member.output_name, "w") as output_file:
+                            _copy_stream(input_file, output_file)
         return
     if suffix == ".7z":
         if py7zr is None:
@@ -444,8 +474,11 @@ def _copy_public_files(parsed: ParsedArchive, destination: ZipFile) -> None:
                 source.extract(path=root, targets=[member.member_name for member in parsed.public_files])
             for member in parsed.public_files:
                 extracted = root / Path(*PurePosixPath(member.member_name).parts)
-                with extracted.open("rb") as input_file, destination.open(member.output_name, "w") as output_file:
-                    _copy_stream(input_file, output_file)
+                if member.output_name == "maidata.txt":
+                    _write_formatted_maidata(destination, extracted.read_bytes())
+                else:
+                    with extracted.open("rb") as input_file, destination.open(member.output_name, "w") as output_file:
+                        _copy_stream(input_file, output_file)
         return
     raise ArchiveParseError("仅支持 zip、7z、rar 压缩包")
 
