@@ -480,7 +480,7 @@ def test_guess_history_stays_visible_and_comments_stay_open_after_guess_deadline
     charts = client.get("/api/v1/guess-game/charts")
     assert charts.status_code == 200
     normal = next(row for row in charts.json() if row["id"] == normal_id)
-    assert normal["love_votes"] == 1
+    assert normal["love_votes"] == 0
     assert normal["my_votes"] == ["love"]
     assert normal["can_vote"] is False
     assert normal["can_comment"] is True

@@ -544,12 +544,12 @@ describe("Material application shell", () => {
 
     fireEvent.click(screen.getByText("低难度谱面"));
     let dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: "真爱票 0" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "真爱票" })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", { name: "关闭谱面详情" }));
 
     fireEvent.click(screen.getByText("高难度谱面"));
     dialog = await screen.findByRole("dialog");
-    const removeVote = within(dialog).getByRole("button", { name: "真爱票 1" });
+    const removeVote = within(dialog).getByRole("button", { name: "真爱票" });
     expect(removeVote).toBeEnabled();
     fireEvent.click(removeVote);
     await waitFor(() => expect(voteCalls).toBe(1));

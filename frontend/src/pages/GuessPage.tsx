@@ -132,7 +132,7 @@ const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected
           <Typography variant="h3" noWrap title={chart.title}>{chart.title}</Typography>
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}><Chip size="small" label={chart.level} /><Chip size="small" color={isJ ? "secondary" : isExhibition ? "info" : "default"} variant={isJ || isExhibition ? "filled" : "outlined"} label={isJ ? "J 谱" : isExhibition ? "场外" : "普通谱"} /><Chip size="small" color={chart.is_self_selected ? "warning" : "default"} variant={chart.is_self_selected ? "filled" : "outlined"} label={chart.is_self_selected ? "自选" : "非自选"} /></Stack>
           <Stack spacing={0.5} sx={{ mt: 1.25, minHeight: 62 }}><Typography variant="body2" color="text.secondary" noWrap title={chart.author}><Box component="span" sx={{ fontWeight: 700 }}>曲师</Box>　{chart.author}</Typography><Typography variant="body2" color="text.secondary" noWrap title={chart.designer || "请填写做谱人"}><Box component="span" sx={{ fontWeight: 700 }}>谱师</Box>　{chart.designer || "请填写做谱人"}</Typography><Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}><Typography variant="caption" color="text.secondary" aria-label={`音频时长 ${formatDuration(chart.track_duration_seconds)}`} sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}><Clock3 size={13} aria-hidden="true" />{formatDuration(chart.track_duration_seconds)}</Typography>{chart.is_long_track || (chart.track_duration_seconds ?? 0) > 240 ? <Chip size="small" color="warning" variant="outlined" label="Long Track" aria-label="Long Track，音频超过 4 分钟" /> : null}</Stack></Stack>
-          <Stack direction="row" spacing={2} sx={{ mt: "auto", pt: 1.5 }}>{!isExhibition ? <><Typography variant="caption"><Heart size={13} /> {chart.love_votes}</Typography><Typography variant="caption"><Sparkles size={13} /> {chart.funny_votes}</Typography></> : null}<Typography variant="caption">查看 {chart.plays}</Typography></Stack>
+          <Stack direction="row" spacing={2} sx={{ mt: "auto", pt: 1.5 }}><Typography variant="caption">查看 {chart.plays}</Typography></Stack>
         </CardContent>
       </CardActionArea>
       {!isExhibition ? <Box sx={{ p: 1.5, borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
@@ -289,8 +289,6 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
     const myVotes = result.my_votes ?? (selected ? chart.my_votes.filter((item) => item !== type) : [...chart.my_votes, type]);
     onChanged({
       ...chart,
-      love_votes: result.vote_counts?.love ?? chart.love_votes + (type === "love" ? selected ? -1 : 1 : 0),
-      funny_votes: result.vote_counts?.funny ?? chart.funny_votes + (type === "funny" ? selected ? -1 : 1 : 0),
       my_votes: myVotes,
     });
   }
@@ -399,10 +397,10 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
                     color="error"
                     startIcon={<Heart size={16} />}
                     disabled={!isLoggedIn || !canVote || chart.can_vote === false || loveQuotaExhausted}
-                    aria-label={`真爱票 ${chart.love_votes}`}
+                    aria-label="真爱票"
                     onClick={() => void toggleVote("love").catch((err) => setError(err.message))}
                   >
-                    {chart.love_votes}
+                    真爱票
                   </Button>
                   <Button
                     fullWidth
@@ -410,10 +408,10 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
                     color="secondary"
                     startIcon={<Sparkles size={16} />}
                     disabled={!isLoggedIn || !canVote || chart.can_vote === false}
-                    aria-label={`欢乐票 ${chart.funny_votes}`}
+                    aria-label="欢乐票"
                     onClick={() => void toggleVote("funny").catch((err) => setError(err.message))}
                   >
-                    {chart.funny_votes}
+                    欢乐票
                   </Button>
                 </Stack>
               </Paper>

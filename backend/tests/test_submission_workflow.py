@@ -713,7 +713,7 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
     first_chart = public_chart_for_submission(client, first.json()["id"])
     voted = client.post("/api/v1/guess-game/vote", json={"chart_id": first_chart["id"], "vote_type": "love"})
     assert voted.status_code == 200
-    assert voted.json()["vote_counts"] == {"love": 1, "funny": 0}
+    assert voted.json()["vote_counts"] == {"love": 0, "funny": 0}
     assert voted.json()["my_votes"] == ["love"]
     detail = client.get(f"/api/v1/guess-game/charts/{first_chart['id']}")
     assert detail.status_code == 200
@@ -750,7 +750,8 @@ def test_targets_phase_gate_and_j_limit(client: TestClient):
     old_chart = next(row for row in client.get("/api/v1/guess-game/charts").json() if row["id"] == first_chart["id"])
     assert old_chart["lane"] == "j"
     assert old_chart["source_submission_type"] == "j"
-    assert old_chart["love_votes"] == 1
+    assert old_chart["love_votes"] == 0
+    assert old_chart["my_votes"] == ["love"]
     comments = client.get(f"/api/v1/guess-game/charts/{first_chart['id']}/comments").json()
     assert [row["content"] for row in comments] == ["保留这条评论"]
 
@@ -825,7 +826,8 @@ def test_track_switch_without_upload_and_j_replace_does_not_duplicate_charts(cli
     assert final_own[0]["id"] == own_chart["id"]
     assert final_own[0]["title"] == "test1-new"
     assert final_own[0]["lane"] == "normal"
-    assert final_own[0]["love_votes"] == 1
+    assert final_own[0]["love_votes"] == 0
+    assert final_own[0]["my_votes"] == ["love"]
     assert final_assigned[0]["lane"] == "j"
 
 

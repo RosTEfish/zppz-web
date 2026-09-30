@@ -128,7 +128,7 @@ def test_vote_buckets_are_independent_and_mutations_return_quota(client: TestCli
     )
     assert below_vote.status_code == 200, below_vote.text
     assert set(below_vote.json()) == {"message", "vote_counts", "my_votes", "love_vote_quota"}
-    assert below_vote.json()["vote_counts"] == {"love": 1, "funny": 0}
+    assert below_vote.json()["vote_counts"] == {"love": 0, "funny": 0}
     assert below_vote.json()["my_votes"] == ["love"]
     assert below_vote.json()["love_vote_quota"] == {
         "below_14": {"used": 1, "limit": 1, "remaining": 0},
@@ -140,7 +140,7 @@ def test_vote_buckets_are_independent_and_mutations_return_quota(client: TestCli
         json={"chart_id": charts["Below A"], "vote_type": "love"},
     )
     assert duplicate.status_code == 200, duplicate.text
-    assert duplicate.json()["vote_counts"] == {"love": 1, "funny": 0}
+    assert duplicate.json()["vote_counts"] == {"love": 0, "funny": 0}
     assert duplicate.json()["love_vote_quota"] == below_vote.json()["love_vote_quota"]
 
     below_over_limit = client.post(

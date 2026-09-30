@@ -134,6 +134,9 @@ def _public_chart_payloads(
     for payload, chart in zip(payloads, rows):
         payload.update(
             {
+                # Vote totals stay admin-only during the guess phase.
+                "love_votes": 0,
+                "funny_votes": 0,
                 "can_download": (
                     chart.source_submission_type == "admin"
                     or (
@@ -360,7 +363,10 @@ def vote(payload: VoteRequest, user: User = Depends(get_current_user), db: Sessi
     chart = _visible_chart(db, event, payload.chart_id)
     _require_quality_voteable_chart(chart)
     put_vote(db, user.id, payload.chart_id, payload.vote_type)
-    return {"message": "已投票", **vote_state(db, user.id, payload.chart_id)}
+    state = vote_state(db, user.id, payload.chart_id)
+    # Hide totals from participants; my_votes / quota remain for UI state.
+    state["vote_counts"] = {"love": 0, "funny": 0}
+    return {"message": "已投票", **state}
 
 
 @router.delete("/vote")
@@ -370,7 +376,9 @@ def unvote(payload: VoteRequest, user: User = Depends(get_current_user), db: Ses
     chart = _visible_chart(db, event, payload.chart_id)
     _require_quality_voteable_chart(chart)
     remove_vote(db, user.id, payload.chart_id, payload.vote_type)
-    return {"message": "已取消投票", **vote_state(db, user.id, payload.chart_id)}
+    state = vote_state(db, user.id, payload.chart_id)
+    state["vote_counts"] = {"love": 0, "funny": 0}
+    return {"message": "已取消投票", **state}
 
 
 @router.get("/charts/{chart_id}/comments", response_model=list[GuessCommentRead])
