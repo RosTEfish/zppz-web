@@ -70,3 +70,9 @@ Thumbs.db
 *.cache
 .temp/
 .test-data/
+
+# Rust / chart validator build artifacts
+tools/zppz-chart-validate/target/
+backend/bin/*
+!backend/bin/.gitkeep
+

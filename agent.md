@@ -27,6 +27,7 @@
 - Local run command from `backend/`:
   - `uvicorn app.main:app --reload --port 8000`
 - Permission bootstrap/sync logic is in `backend/app/db/bootstrap.py`.
+- Chart archive sandbox: `tools/zppz-chart-validate` (Rust). Build with `bash scripts/build_chart_validate.sh`. When `backend/bin/zppz-chart-validate` exists, upload validation uses that killable subprocess for `.zip`/`.7z`; `.rar` stays on the Python path.
 
 ## Deployment Notes
 
