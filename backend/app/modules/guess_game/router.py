@@ -137,6 +137,7 @@ def _public_chart_payloads(
                 # Vote totals stay admin-only during the guess phase.
                 "love_votes": 0,
                 "funny_votes": 0,
+                "designer_guess_group": _chart_group_identity(chart),
                 "can_download": (
                     chart.source_submission_type == "admin"
                     or (
