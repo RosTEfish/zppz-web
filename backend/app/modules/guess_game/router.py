@@ -45,7 +45,15 @@ from app.modules.guess_game.importer import (
     rebuild_event_charts,
     sync_parsed_source,
 )
-from app.modules.guess_game.service import list_comments, put_vote, remove_vote, set_author_candidates, vote_state
+from app.modules.guess_game.service import (
+    chart_group_identity,
+    group_chart_ids,
+    list_comments,
+    put_vote,
+    remove_vote,
+    set_author_candidates,
+    vote_state,
+)
 from app.modules.guess_game.stats import build_guess_details, build_guess_stats
 from app.modules.guess_game.vote_quota import love_vote_quota
 from app.modules.object_storage import get_object_store
@@ -137,7 +145,7 @@ def _public_chart_payloads(
                 # Vote totals stay admin-only during the guess phase.
                 "love_votes": 0,
                 "funny_votes": 0,
-                "designer_guess_group": _chart_group_identity(chart),
+                "designer_guess_group": chart_group_identity(chart),
                 "can_download": (
                     chart.source_submission_type == "admin"
                     or (
@@ -440,14 +448,14 @@ def designer_guess_overview(
         for row in rows:
             chart = charts_by_id.get(row.chart_id)
             if chart:
-                guessed_by_group[_chart_group_identity(chart)] = row.guessed_user_id
+                guessed_by_group[chart_group_identity(chart)] = row.guessed_user_id
     return {
         "can_guess": can_guess,
         "candidates": [{"user_id": row[0], "display_id": row[1]} for row in candidates],
         "states": [
             {
                 "chart_id": chart.id,
-                "guessed_user_id": guessed_by_group.get(_chart_group_identity(chart)),
+                "guessed_user_id": guessed_by_group.get(chart_group_identity(chart)),
             }
             for chart in charts
         ],
@@ -473,7 +481,7 @@ def author_guess_state(
     )
     can_guess = bool(can_view and phase_status.can("author_guess"))
     candidates = _selected_author_candidates(db, event.id) if can_view else []
-    group_ids = _group_chart_ids(db, chart)
+    group_ids = group_chart_ids(db, chart)
     current = None
     if user:
         current = db.scalar(
@@ -499,7 +507,7 @@ def put_author_guess(chart_id: int, payload: AuthorGuessRequest, user: User = De
     candidate_ids = {row[0] for row in _selected_author_candidates(db, event.id)}
     if payload.guessed_user_id not in candidate_ids:
         raise HTTPException(status_code=400, detail="目标账号不在可猜作者名单中")
-    group_ids = _group_chart_ids(db, chart)
+    group_ids = group_chart_ids(db, chart)
     anchor_id = min(group_ids)
     rows = list(
         db.scalars(
@@ -527,7 +535,7 @@ def delete_author_guess(chart_id: int, user: User = Depends(get_current_user), d
     _require_author_guess(db, event, chart)
     if not chart:
         raise HTTPException(status_code=404, detail="谱面不存在")
-    group_ids = _group_chart_ids(db, chart)
+    group_ids = group_chart_ids(db, chart)
     db.execute(
         delete(GuessAuthorGuess).where(
             GuessAuthorGuess.chart_id.in_(group_ids),
@@ -827,26 +835,6 @@ def admin_stats_details(
     db: Session = Depends(get_db),
 ) -> dict:
     return build_guess_details(db, scope, limit=limit, offset=offset)
-
-
-def _group_chart_ids(db: Session, chart: GuessChart) -> list[int]:
-    if chart.source_submission_id is None:
-        return [chart.id]
-    return list(
-        db.scalars(
-            select(GuessChart.id).where(
-                GuessChart.event_id == chart.event_id,
-                GuessChart.source_submission_type == chart.source_submission_type,
-                GuessChart.source_submission_id == chart.source_submission_id,
-            )
-        ).all()
-    ) or [chart.id]
-
-
-def _chart_group_identity(chart: GuessChart) -> str:
-    if chart.source_submission_id is not None:
-        return f"submission:{chart.source_submission_type}:{chart.source_submission_id}"
-    return f"chart:{chart.id}"
 
 
 def _eligible_author_users(db: Session, event_id: int) -> list[tuple[User, int]]:
