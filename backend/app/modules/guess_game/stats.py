@@ -39,14 +39,19 @@ def build_guess_stats(db: Session, scope: str, *, include_details: bool = False)
     votable_chart_ids = [
         chart.id for chart in charts if chart.source_submission_type != "exhibition"
     ]
+    owner_by_chart = _owner_by_chart(db, charts)
     vote_counts: dict[int, Counter[str]] = defaultdict(Counter)
     if votable_chart_ids:
-        for chart_id, vote_type, count in db.execute(
-            select(GuessVote.chart_id, GuessVote.vote_type, func.count(GuessVote.id))
-            .where(GuessVote.chart_id.in_(votable_chart_ids))
-            .group_by(GuessVote.chart_id, GuessVote.vote_type)
+        # Exclude chart owners voting on their own charts — same rule as author guesses.
+        for chart_id, user_id, vote_type in db.execute(
+            select(GuessVote.chart_id, GuessVote.user_id, GuessVote.vote_type).where(
+                GuessVote.chart_id.in_(votable_chart_ids)
+            )
         ):
-            vote_counts[int(chart_id)][str(vote_type)] = int(count)
+            owner_id = owner_by_chart.get(int(chart_id))
+            if owner_id is not None and owner_id == int(user_id):
+                continue
+            vote_counts[int(chart_id)][str(vote_type)] += 1
 
     guesses = []
     if chart_ids:
@@ -62,8 +67,6 @@ def build_guess_stats(db: Session, scope: str, *, include_details: bool = False)
                 .order_by(GuessAuthorGuess.id.asc())
             ).all()
         )
-
-    owner_by_chart = _owner_by_chart(db, charts)
     candidate_rows = list(
         db.scalars(
             select(GuessAuthorCandidate).where(GuessAuthorCandidate.event_id == event.id)
