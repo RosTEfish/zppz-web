@@ -2801,6 +2801,8 @@ export interface components {
             created_at: string;
             /** Designer */
             designer: string;
+            /** Designer Guess Group */
+            designer_guess_group: string;
             /**
              * Funny Votes
              * @default 0

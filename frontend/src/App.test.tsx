@@ -464,7 +464,7 @@ describe("Material application shell", () => {
       is_pool_editor: false,
       is_active: true,
     };
-    const chart = (id: number, level: string, slot: string) => ({ id, title: "同曲", author: "曲师", designer: "", level, lane: "normal", guess_group_key: "same-song", source_submission_type: "normal", source_submission_id: 1, source_level_slot: slot, cover_path: "", storage_path: "", is_self_selected: true, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [] });
+    const chart = (id: number, level: string, slot: string) => ({ id, title: "同曲", author: "曲师", designer: "", level, lane: "normal", guess_group_key: "same-song", designer_guess_group: "submission:normal:1", source_submission_type: "normal", source_level_slot: slot, cover_path: "", storage_path: "", is_self_selected: true, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [] });
     const savedBodies: Array<{ guessed_user_id: number }> = [];
     let overviewCalls = 0;
     mockApi(async (path, init) => {
@@ -491,6 +491,93 @@ describe("Material application shell", () => {
     await waitFor(() => expect(savedBodies).toEqual([{ guessed_user_id: 5 }]));
     await waitFor(() => expect(screen.getAllByRole("combobox", { name: "谱师猜测 同曲" }).every((control) => control.textContent?.includes("P01"))).toBe(true));
     expect(overviewCalls).toBe(1);
+  });
+
+  it("does not sync designer guesses across same-title charts from different submissions", async () => {
+    window.history.pushState({}, "", "/guess");
+    const participant = {
+      id: 9,
+      user_code: "player",
+      qq_id: "9",
+      identity: "participant",
+      display_name: "参赛者",
+      roles: ["participant"],
+      is_admin: false,
+      is_pool_editor: false,
+      is_active: true,
+    };
+    const chart = (id: number, group: string, designer: string) => ({
+      id,
+      title: "同名曲",
+      author: "同一曲师",
+      designer,
+      level: "13",
+      lane: "normal",
+      guess_group_key: "同名曲||同一曲师",
+      designer_guess_group: group,
+      source_submission_type: "normal",
+      source_level_slot: "4",
+      cover_path: "",
+      is_self_selected: false,
+      plays: 0,
+      created_at: "2026-07-04T00:00:00",
+      love_votes: 0,
+      funny_votes: 0,
+      my_votes: [],
+      love_vote_bucket: "below_14" as const,
+      can_vote: true,
+      can_author_guess: true,
+    });
+    const first = chart(41, "submission:normal:11", "谱师甲");
+    const second = chart(42, "submission:normal:12", "谱师乙");
+    const savedBodies: Array<{ guessed_user_id: number }> = [];
+    mockApi(async (path, init) => {
+      if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
+      if (path.endsWith("/event/phases")) {
+        return json({
+          ...phasesPayload,
+          phase_mode: "manual",
+          manual_phase: "guess",
+          active_phase: "guess",
+          capabilities: {
+            song_pool_edit: false,
+            submission: false,
+            swap: false,
+            normal_submission_public: true,
+            author_guess: true,
+            quality_vote: true,
+          },
+        });
+      }
+      if (path.endsWith("/guess-game/charts")) return json([first, second]);
+      if (path.endsWith("/guess-game/designer-guesses")) {
+        return json({
+          can_guess: true,
+          candidates: [{ user_id: 5, display_id: "P01" }],
+          states: [
+            { chart_id: 41, guessed_user_id: null },
+            { chart_id: 42, guessed_user_id: null },
+          ],
+        });
+      }
+      if (path.endsWith("/guess-game/vote-quota")) {
+        return json({ below_14: { used: 0, limit: 3, remaining: 3 }, at_least_14: { used: 0, limit: 2, remaining: 2 } });
+      }
+      if (path.endsWith("/guess-game/charts/41/designer-guess") && init?.method === "PUT") {
+        savedBodies.push(JSON.parse(String(init.body)) as { guessed_user_id: number });
+        return json({ message: "已保存谱师猜测" });
+      }
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    const controls = await screen.findAllByRole("combobox", { name: "谱师猜测 同名曲" });
+    expect(controls).toHaveLength(2);
+    fireEvent.mouseDown(controls[0]);
+    fireEvent.click(await screen.findByRole("option", { name: "P01" }));
+    await waitFor(() => expect(savedBodies).toEqual([{ guessed_user_id: 5 }]));
+    await waitFor(() => expect(controls[0].textContent).toContain("P01"));
+    expect(controls[1].textContent).not.toContain("P01");
   });
 
   it("does not request love vote quota for anonymous guess viewers", async () => {

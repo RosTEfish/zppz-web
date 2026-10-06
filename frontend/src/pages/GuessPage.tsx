@@ -44,7 +44,14 @@ function getChartLevelSlot(sourceLevelSlot?: string): string {
 }
 
 function chartGroupIdentity(chart: GuessChartRead): string {
-  return chart.guess_group_key || `chart:${chart.id}`;
+  // Prefer the server-provided submission-scoped group. Never fall back to
+  // guess_group_key (title||author): same-name charts by different people must
+  // keep independent designer-guess / vote UI state.
+  if (chart.designer_guess_group) return chart.designer_guess_group;
+  if (chart.source_submission_id != null) {
+    return `submission:${chart.source_submission_type}:${chart.source_submission_id}`;
+  }
+  return `chart:${chart.id}`;
 }
 
 function GuessFilterPanel({ levels, level, lane, selfSelected, disabled, onLevelChange, onLaneChange, onSelfChange, onReset }: { levels: string[]; level: string; lane: GuessLaneFilter; selfSelected: GuessSelfFilter; disabled: boolean; onLevelChange: (value: string) => void; onLaneChange: (value: GuessLaneFilter) => void; onSelfChange: (value: GuessSelfFilter) => void; onReset: () => void }) {

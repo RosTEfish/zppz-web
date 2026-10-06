@@ -327,6 +327,7 @@ def test_hidden_normal_chart_cannot_be_enumerated_or_accessed_anonymously(client
         "storage_path",
     }.isdisjoint(public_j.json())
     assert public_j.json()["designer"] == "J designer"
+    assert public_j.json()["designer_guess_group"] == "submission:j:102"
 
 
 def test_logged_in_user_can_comment_on_any_public_chart_before_guess_phase(client: TestClient):
@@ -649,3 +650,79 @@ def test_rejected_swap_request_does_not_block_redraw_or_login(client: TestClient
     with SessionLocal() as db:
         old_assignment = db.get(DrawAssignment, assignment_id)
         assert old_assignment and old_assignment.status == "returned"
+
+
+def test_same_title_charts_from_different_submissions_keep_independent_votes_and_guesses(client: TestClient):
+    register(client, "owner-a")
+    register(client, "owner-b")
+    register(client, "voter")
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.is_current.is_(True)))
+        owner_a = db.scalar(select(User).where(User.user_code == "owner-a"))
+        owner_b = db.scalar(select(User).where(User.user_code == "owner-b"))
+        assert event and event.settings and owner_a and owner_b
+        event.settings.phase_mode = "manual"
+        event.settings.manual_phase = "guess"
+        event.settings.true_love_vote_limit_below_14 = 3
+        event.settings.true_love_vote_limit_at_least_14 = 3
+        chart_a = GuessChart(
+            event_id=event.id,
+            title="Same Title",
+            author="Same Artist",
+            designer="Designer A",
+            level="13",
+            lane="normal",
+            guess_group_key="same title||same artist",
+            source_submission_type="normal",
+            source_submission_id=201,
+            source_level_slot="4",
+            cover_path="",
+            storage_path="",
+            is_self_selected=False,
+        )
+        chart_b = GuessChart(
+            event_id=event.id,
+            title="Same Title",
+            author="Same Artist",
+            designer="Designer B",
+            level="13",
+            lane="normal",
+            guess_group_key="same title||same artist",
+            source_submission_type="normal",
+            source_submission_id=202,
+            source_level_slot="4",
+            cover_path="",
+            storage_path="",
+            is_self_selected=False,
+        )
+        db.add_all([chart_a, chart_b, GuessAuthorCandidate(event_id=event.id, user_id=owner_a.id, display_id="A01")])
+        db.commit()
+        chart_a_id = chart_a.id
+        chart_b_id = chart_b.id
+        owner_a_id = owner_a.id
+
+    login(client, "voter")
+    listed = client.get("/api/v1/guess-game/charts")
+    assert listed.status_code == 200, listed.text
+    by_id = {row["id"]: row for row in listed.json()}
+    assert by_id[chart_a_id]["designer_guess_group"] == "submission:normal:201"
+    assert by_id[chart_b_id]["designer_guess_group"] == "submission:normal:202"
+    assert by_id[chart_a_id]["guess_group_key"] == by_id[chart_b_id]["guess_group_key"]
+    assert "source_submission_id" not in by_id[chart_a_id]
+
+    vote = client.post("/api/v1/guess-game/vote", json={"chart_id": chart_a_id, "vote_type": "love"})
+    assert vote.status_code == 200, vote.text
+    assert vote.json()["my_votes"] == ["love"]
+    listed_after_vote = {row["id"]: row for row in client.get("/api/v1/guess-game/charts").json()}
+    assert listed_after_vote[chart_a_id]["my_votes"] == ["love"]
+    assert listed_after_vote[chart_b_id]["my_votes"] == []
+
+    saved = client.put(
+        f"/api/v1/guess-game/charts/{chart_a_id}/designer-guess",
+        json={"guessed_user_id": owner_a_id},
+    )
+    assert saved.status_code == 200, saved.text
+    overview = client.get("/api/v1/guess-game/designer-guesses").json()
+    states = {row["chart_id"]: row["guessed_user_id"] for row in overview["states"]}
+    assert states[chart_a_id] == owner_a_id
+    assert states[chart_b_id] is None

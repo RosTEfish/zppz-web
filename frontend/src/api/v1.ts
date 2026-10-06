@@ -201,6 +201,7 @@ export interface GuessChartRead {
   level: string;
   lane: Track | string;
   guess_group_key: string;
+  designer_guess_group?: string;
   source_submission_type: string;
   source_submission_id?: number | null;
   source_level_slot?: string;

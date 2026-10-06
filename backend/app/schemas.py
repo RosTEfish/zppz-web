@@ -504,6 +504,9 @@ class PublicGuessChartRead(BaseModel):
     level: str
     lane: str
     guess_group_key: str
+    # Opaque sync key for designer-guess UI: same submission package shares one
+    # guess across levels, but same-title charts from different people stay separate.
+    designer_guess_group: str
     source_submission_type: str
     source_level_slot: str
     cover_path: str
