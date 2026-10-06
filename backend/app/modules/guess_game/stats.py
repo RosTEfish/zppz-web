@@ -16,6 +16,7 @@ from app.models import (
     User,
 )
 from app.modules.events.service import get_current_event
+from app.modules.guess_game.service import chart_group_identity
 
 
 def build_guess_stats(db: Session, scope: str, *, include_details: bool = False) -> dict:
@@ -347,7 +348,9 @@ def _owner_by_chart(db: Session, charts: list[GuessChart]) -> dict[int, int]:
 
 
 def _group_key(chart: GuessChart) -> str:
-    return chart.guess_group_key or f"chart:{chart.id}"
+    # Keep designer-guess stats aligned with save/overview grouping: submission
+    # package only. Same-title charts by different people must not share counts.
+    return chart_group_identity(chart)
 
 
 def _accuracy(correct: int, counted: int) -> float | None:

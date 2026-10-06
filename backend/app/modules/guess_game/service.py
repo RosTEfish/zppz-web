@@ -7,6 +7,31 @@ from app.modules.events.service import get_current_event
 from app.modules.guess_game.vote_quota import love_vote_quota, resolve_love_vote_bucket
 
 
+def chart_group_identity(chart: GuessChart) -> str:
+    """Group charts that share one designer-guess / package identity.
+
+    Same submission package (multi-level) shares one group. Same-title charts
+    from different people must stay separate — never key only by title/author.
+    """
+    if chart.source_submission_id is not None:
+        return f"submission:{chart.source_submission_type}:{chart.source_submission_id}"
+    return f"chart:{chart.id}"
+
+
+def group_chart_ids(db: Session, chart: GuessChart) -> list[int]:
+    if chart.source_submission_id is None:
+        return [chart.id]
+    return list(
+        db.scalars(
+            select(GuessChart.id).where(
+                GuessChart.event_id == chart.event_id,
+                GuessChart.source_submission_type == chart.source_submission_type,
+                GuessChart.source_submission_id == chart.source_submission_id,
+            )
+        ).all()
+    ) or [chart.id]
+
+
 def vote_limit_for(db: Session, vote_type: str, level: str = "", override: str | None = None) -> int:
     settings = get_current_event(db).settings
     if vote_type == "love":

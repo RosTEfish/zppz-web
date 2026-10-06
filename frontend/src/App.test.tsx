@@ -467,15 +467,24 @@ describe("Material application shell", () => {
     const chart = (id: number, level: string, slot: string) => ({ id, title: "同曲", author: "曲师", designer: "", level, lane: "normal", guess_group_key: "same-song", designer_guess_group: "submission:normal:1", source_submission_type: "normal", source_level_slot: slot, cover_path: "", storage_path: "", is_self_selected: true, plays: 0, created_at: "2026-07-04T00:00:00", love_votes: 0, funny_votes: 0, my_votes: [] });
     const savedBodies: Array<{ guessed_user_id: number }> = [];
     let overviewCalls = 0;
+    let guessedUserId: number | null = null;
     mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/guess-game/charts")) return json([chart(21, "13", "4"), chart(22, "14", "5")]);
       if (path.endsWith("/guess-game/designer-guesses")) {
         overviewCalls += 1;
-        return json({ can_guess: true, candidates: [{ user_id: 5, display_id: "P01" }], states: [{ chart_id: 21, guessed_user_id: null }, { chart_id: 22, guessed_user_id: null }] });
+        return json({
+          can_guess: true,
+          candidates: [{ user_id: 5, display_id: "P01" }],
+          states: [
+            { chart_id: 21, guessed_user_id: guessedUserId },
+            { chart_id: 22, guessed_user_id: guessedUserId },
+          ],
+        });
       }
       if (path.endsWith("/guess-game/charts/21/designer-guess") && init?.method === "PUT") {
         savedBodies.push(JSON.parse(String(init.body)) as { guessed_user_id: number });
+        guessedUserId = savedBodies[savedBodies.length - 1].guessed_user_id;
         return json({ message: "已保存谱师猜测" });
       }
       return json({ detail: "not found" }, 404);
@@ -490,7 +499,7 @@ describe("Material application shell", () => {
     fireEvent.click(await screen.findByRole("option", { name: "P01" }));
     await waitFor(() => expect(savedBodies).toEqual([{ guessed_user_id: 5 }]));
     await waitFor(() => expect(screen.getAllByRole("combobox", { name: "谱师猜测 同曲" }).every((control) => control.textContent?.includes("P01"))).toBe(true));
-    expect(overviewCalls).toBe(1);
+    expect(overviewCalls).toBe(2);
   });
 
   it("does not sync designer guesses across same-title charts from different submissions", async () => {
@@ -531,6 +540,7 @@ describe("Material application shell", () => {
     const first = chart(41, "submission:normal:11", "谱师甲");
     const second = chart(42, "submission:normal:12", "谱师乙");
     const savedBodies: Array<{ guessed_user_id: number }> = [];
+    let guessedByChart: Record<number, number | null> = { 41: null, 42: null };
     mockApi(async (path, init) => {
       if (path.endsWith("/bootstrap")) return json(bootstrapPayload(eventPayload, participant));
       if (path.endsWith("/event/phases")) {
@@ -555,8 +565,8 @@ describe("Material application shell", () => {
           can_guess: true,
           candidates: [{ user_id: 5, display_id: "P01" }],
           states: [
-            { chart_id: 41, guessed_user_id: null },
-            { chart_id: 42, guessed_user_id: null },
+            { chart_id: 41, guessed_user_id: guessedByChart[41] },
+            { chart_id: 42, guessed_user_id: guessedByChart[42] },
           ],
         });
       }
@@ -565,6 +575,7 @@ describe("Material application shell", () => {
       }
       if (path.endsWith("/guess-game/charts/41/designer-guess") && init?.method === "PUT") {
         savedBodies.push(JSON.parse(String(init.body)) as { guessed_user_id: number });
+        guessedByChart = { ...guessedByChart, 41: savedBodies[savedBodies.length - 1].guessed_user_id };
         return json({ message: "已保存谱师猜测" });
       }
       return json({ detail: "not found" }, 404);

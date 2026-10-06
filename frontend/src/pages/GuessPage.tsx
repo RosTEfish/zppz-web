@@ -212,8 +212,12 @@ export default function GuessPage() {
     try {
       if (userId === null) await api.clearDesignerGuess(chart.id);
       else await api.saveDesignerGuess(chart.id, userId);
+      // Optimistically sync only the submission-scoped package, then reconcile
+      // with the server so same-title charts from other people never stay linked.
       const groupedChartIds = new Set(allCharts.filter((item) => chartGroupIdentity(item) === groupIdentity).map((item) => item.id));
       setDesignerGuessData((current) => current ? { ...current, states: current.states.map((state) => groupedChartIds.has(state.chart_id) ? { ...state, guessed_user_id: userId } : state) } : current);
+      const overview = await api.designerGuesses();
+      setDesignerGuessData(overview);
     } catch (err) {
       setError(err instanceof Error ? err.message : "谱师猜测保存失败");
     } finally {

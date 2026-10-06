@@ -14,7 +14,7 @@ def reset_database():
         seed_defaults(db)
 
 
-def test_chart_stats_preserve_per_owner_results_when_group_keys_collide():
+def test_chart_stats_keep_same_title_submissions_independent_when_group_keys_collide():
     with SessionLocal() as db:
         event = db.query(Event).filter(Event.is_current.is_(True)).one()
         owner_a = User(
@@ -129,7 +129,9 @@ def test_chart_stats_preserve_per_owner_results_when_group_keys_collide():
     assert rows[chart_a.id]["counted_guesses"] == 1
     assert rows[chart_a.id]["correct_guesses"] == 1
     assert rows[chart_a.id]["accuracy"] == 100.0
-    assert rows[chart_b.id]["guess_count"] == 2
-    assert rows[chart_b.id]["counted_guesses"] == 2
-    assert rows[chart_b.id]["correct_guesses"] == 1
-    assert rows[chart_b.id]["accuracy"] == 50.0
+    # Different submission packages must not inherit each other's designer guesses,
+    # even when title/author (guess_group_key) collide.
+    assert rows[chart_b.id]["guess_count"] == 0
+    assert rows[chart_b.id]["counted_guesses"] == 0
+    assert rows[chart_b.id]["correct_guesses"] == 0
+    assert rows[chart_b.id]["accuracy"] is None
