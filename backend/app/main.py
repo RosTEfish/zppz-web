@@ -21,6 +21,7 @@ from app.modules.draw.router import admin_router as admin_draw_router
 from app.modules.draw.router import router as draw_router
 from app.modules.events.router import admin_router as admin_events_router
 from app.modules.events.router import router as events_router
+from app.modules.guess_archive.router import router as guess_archive_router
 from app.modules.guess_game.router import admin_router as admin_guess_game_router
 from app.modules.guess_game.router import router as guess_game_router
 from app.modules.song_pool.router import admin_router as admin_song_pool_router
@@ -117,6 +118,7 @@ for router in (
     submissions_router,
     swap_router,
     guess_game_router,
+    guess_archive_router,
     preview_router,
     webhooks_router,
     admin_router,
