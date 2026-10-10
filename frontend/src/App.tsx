@@ -1,6 +1,6 @@
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
-import { Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
+import { Archive, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { SWRConfig } from "swr";
 import { LoadingBlock } from "./components/PagePrimitives";
@@ -20,6 +20,7 @@ const loadSongPoolPage = () => import("./pages/SongPoolPage");
 const loadDrawPage = () => import("./pages/DrawPage");
 const loadSubmissionPage = () => import("./pages/SubmissionPage");
 const loadGuessPage = () => import("./pages/GuessPage");
+const loadArchivePage = () => import("./pages/ArchivePage");
 const loadAccountPage = () => import("./pages/AccountPage");
 const preloadAdminPage = (pathname: string) => Promise.all([
   import("./pages/AdminPage"),
@@ -37,6 +38,7 @@ const SongPoolPage = lazy(loadSongPoolPage);
 const DrawPage = lazy(loadDrawPage);
 const SubmissionPage = lazy(loadSubmissionPage);
 const GuessPage = lazy(loadGuessPage);
+const ArchivePage = lazy(loadArchivePage);
 const AccountPage = lazy(loadAccountPage);
 const AdminPage = lazy(loadAdminPage);
 const AnnouncementDialog = lazy(loadAnnouncementDialog);
@@ -110,6 +112,7 @@ function AppShell() {
     { label: "曲目分配", to: "/draw", icon: Sparkles, preload: loadDrawPage },
     { label: "投稿", to: "/submissions", icon: Upload, preload: loadSubmissionPage },
     { label: "猜谱", to: "/guess", icon: Vote, preload: loadGuessPage },
+    { label: "往届乐曲", to: "/archive", icon: Archive, preload: loadArchivePage },
   ].filter(({ to }) => to !== "/guess" || showGuessEntry);
 
   const drawer = (
@@ -220,6 +223,7 @@ function AppShell() {
               <Route path="/draw" element={<RequireLogin><DrawPage /></RequireLogin>} />
               <Route path="/submissions" element={<RequireLogin><SubmissionPage /></RequireLogin>} />
               <Route path="/guess" element={<GuessPage />} />
+              <Route path="/archive" element={<ArchivePage />} />
               <Route path="/account" element={<RequireLogin><AccountPage /></RequireLogin>} />
               <Route path="/admin/:tab" element={<RequireManager><AdminPage /></RequireManager>} />
               <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />

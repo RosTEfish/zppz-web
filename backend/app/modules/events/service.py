@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import logging
+import re
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -11,11 +13,19 @@ from app.models import (
     EventPhaseSnapshot,
     EventSetting,
     Song,
+    Submission,
     SwapRound,
     User,
 )
 from app.modules.events.phase_policy import PHASES, SWAP_PHASES, get_phase_status, phase_status_payload
-from app.schemas import EventPhasesUpdate, EventUpdate
+from app.modules.object_storage import get_object_store
+from app.modules.submissions.service import enqueue_storage_deletion
+from app.schemas import EventPhasesUpdate, EventRotateRequest, EventUpdate
+
+logger = logging.getLogger(__name__)
+
+ROTATE_CONFIRMATION = "归档并开启新届"
+_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def get_current_event(db: Session) -> Event:
@@ -62,6 +72,67 @@ def update_current_event(db: Session, payload: EventUpdate) -> Event:
     db.commit()
     db.refresh(event)
     return event
+
+
+def purge_event_public_packages(db: Session, event_id: int) -> int:
+    """Delete public download packages for an event; keep original uploads."""
+    rows = list(
+        db.scalars(
+            select(Submission).where(
+                Submission.event_id == event_id,
+                Submission.public_storage_path.is_not(None),
+            )
+        ).all()
+    )
+    store = get_object_store()
+    purged = 0
+    for row in rows:
+        key = row.public_storage_path
+        if not key:
+            continue
+        try:
+            store.delete(key)
+        except Exception:
+            logger.warning("Immediate public package delete failed for %s; enqueueing", key, exc_info=True)
+            enqueue_storage_deletion(db, key)
+        row.public_storage_path = None
+        row.public_file_size = None
+        row.public_package_status = "purged"
+        row.public_package_message = "届已归档，公开包已删除"
+        purged += 1
+    return purged
+
+
+def rotate_current_event(db: Session, payload: EventRotateRequest) -> tuple[Event, Event, int]:
+    if payload.confirmation != ROTATE_CONFIRMATION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"请输入准确的确认词：{ROTATE_CONFIRMATION}",
+        )
+    slug = payload.slug.strip().lower()
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请输入新届名称")
+    if not _SLUG_PATTERN.fullmatch(slug):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="slug 只能包含小写字母、数字与连字符",
+        )
+    if db.scalar(select(Event.id).where(Event.slug == slug)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该 slug 已被使用")
+
+    archived = get_current_event(db)
+    purged = purge_event_public_packages(db, archived.id)
+    archived.is_current = False
+
+    current = Event(name=name, slug=slug, is_current=True)
+    current.settings = EventSetting()
+    db.add(current)
+    db.commit()
+    db.refresh(archived)
+    db.refresh(current)
+    db.info.pop("current_event", None)
+    return archived, current, purged
 
 
 def _utc_naive(value: datetime) -> datetime:

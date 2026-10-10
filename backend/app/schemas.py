@@ -104,6 +104,54 @@ class EventUpdate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class EventRotateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    slug: str = Field(min_length=1, max_length=120)
+    confirmation: str = Field(min_length=1, max_length=100)
+    model_config = {"extra": "forbid"}
+
+
+class EventRotateResponse(BaseModel):
+    message: str
+    archived_event: EventRead
+    current_event: EventRead
+    purged_public_packages: int
+
+
+class ArchiveEditionRead(BaseModel):
+    id: int
+    name: str
+    slug: str
+    chart_count: int
+
+
+class ArchiveGuessChartRead(BaseModel):
+    id: int
+    event_id: int
+    event_name: str
+    title: str
+    author: str
+    designer: str
+    level: str
+    lane: str
+    guess_group_key: str
+    source_submission_type: str
+    source_level_slot: str
+    cover_path: str
+    cover_thumb_path: str = ""
+    is_self_selected: bool
+    plays: int
+    created_at: datetime
+    track_duration_seconds: float | None = None
+    is_long_track: bool = False
+    can_download: bool = True
+    can_preview: bool = False
+    love_votes: int = 0
+    funny_votes: int = 0
+    my_votes: list[str] = Field(default_factory=list)
+    love_vote_bucket: Literal["below_14", "at_least_14"]
+
+
 class GuessAvailabilityRead(BaseModel):
     available: bool
 

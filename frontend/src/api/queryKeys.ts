@@ -29,6 +29,10 @@ export const queryKeys = {
     stats: (scope: string) => ["guess", "stats", scope] as const,
     details: (scope: string, offset: number) => ["guess", "details", scope, offset] as const,
   },
+  archive: {
+    editions: ["archive", "editions"] as const,
+    charts: ["archive", "charts"] as const,
+  },
   admin: {
     users: ["admin", "users"] as const,
     overview: ["admin", "overview"] as const,
