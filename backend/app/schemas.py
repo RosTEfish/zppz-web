@@ -132,6 +132,9 @@ class ArchiveGuessChartRead(BaseModel):
     title: str
     author: str
     designer: str
+    # Archive “按谱师” groups by the contest submitter account, not maidata designer text.
+    submitter_user_id: int | None = None
+    submitter_label: str = "未知提交者"
     level: str
     lane: str
     guess_group_key: str
