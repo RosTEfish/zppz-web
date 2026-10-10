@@ -93,9 +93,9 @@ export default function AuthPage() {
               position: "absolute",
               inset: 0,
               backgroundImage: [
-                `linear-gradient(115deg, rgba(247,247,244,0.92) 0%, rgba(247,247,244,0.78) 42%, rgba(247,247,244,0.34) 70%, rgba(247,247,244,0.18) 100%)`,
-                `radial-gradient(720px 420px at 12% 20%, ${palette.washA}, transparent 60%)`,
-                `radial-gradient(640px 380px at 88% 80%, ${palette.accentSoft}, transparent 58%)`,
+                `linear-gradient(115deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.52) 38%, rgba(255,255,255,0.16) 68%, rgba(255,255,255,0.05) 100%)`,
+                `radial-gradient(820px 480px at 18% 30%, ${palette.washA}, transparent 62%)`,
+                `radial-gradient(700px 420px at 92% 78%, ${palette.accentSoft}, transparent 58%)`,
               ].join(", "),
             }}
           />
@@ -127,12 +127,12 @@ export default function AuthPage() {
           p: { xs: 2.5, sm: 4 },
           borderRadius: "16px",
           border: "1px solid",
-          borderColor: "divider",
-          bgcolor: "rgba(255,255,255,0.86)",
-          backdropFilter: "blur(14px) saturate(1.25)",
-          WebkitBackdropFilter: "blur(14px) saturate(1.25)",
+          borderColor: "rgba(255,255,255,0.55)",
+          bgcolor: "rgba(255,255,255,0.72)",
+          backdropFilter: "blur(18px) saturate(1.35)",
+          WebkitBackdropFilter: "blur(18px) saturate(1.35)",
           boxShadow: (theme) => theme.shadows[3],
-          backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.88)), radial-gradient(120% 80% at 100% 0%, ${palette.washA}, transparent 55%)`,
+          backgroundImage: `linear-gradient(165deg, rgba(255,255,255,0.88), rgba(255,255,255,0.66)), radial-gradient(120% 90% at 100% 0%, ${palette.washA}, transparent 55%)`,
           "@keyframes authFormIn": {
             from: { opacity: 0, transform: "translateY(12px)" },
             to: { opacity: 1, transform: "translateY(0)" },

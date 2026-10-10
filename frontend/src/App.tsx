@@ -1,5 +1,7 @@
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { AppBar, Box, Button, Chip, Container, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { AppBar, Box, Button, Chip, Container, CssBaseline, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { ThemeProvider } from "@mui/material/styles";
+import { theme as fallbackTheme } from "./theme";
 import { Archive, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { SWRConfig } from "swr";
@@ -47,21 +49,24 @@ const InteractionProviders = lazy(() => import("./components/InteractionProvider
 
 function App() {
   return (
-    <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, revalidateOnFocus: false }}>
-      <Suspense fallback={null}>
-        <InteractionProviders>
-          <BrowserRouter>
-            <AuthProvider>
-              <ConfigProvider>
-                <EventThemeProvider>
-                  <AppShell />
-                </EventThemeProvider>
-              </ConfigProvider>
-            </AuthProvider>
-          </BrowserRouter>
-        </InteractionProviders>
-      </Suspense>
-    </SWRConfig>
+    <ThemeProvider theme={fallbackTheme}>
+      <CssBaseline />
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, revalidateOnFocus: false }}>
+        <Suspense fallback={null}>
+          <InteractionProviders>
+            <BrowserRouter>
+              <AuthProvider>
+                <ConfigProvider>
+                  <EventThemeProvider>
+                    <AppShell />
+                  </EventThemeProvider>
+                </ConfigProvider>
+              </AuthProvider>
+            </BrowserRouter>
+          </InteractionProviders>
+        </Suspense>
+      </SWRConfig>
+    </ThemeProvider>
   );
 }
 

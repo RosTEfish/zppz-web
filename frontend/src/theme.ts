@@ -69,7 +69,8 @@ export function createAppTheme(palette: EventPalette = defaultEventPalette) {
   });
 
   return createTheme({
-    cssVariables: true,
+    // Avoid cssVariables: nested ThemeProviders would otherwise keep the
+    // outer --mui-palette-* values and ignore event-art primary updates.
     palette: {
       mode: "light",
       primary: { main: palette.main, dark: palette.dark, light: palette.tint, contrastText: "#FFFFFF" },
