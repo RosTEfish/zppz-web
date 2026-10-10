@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Card, CardActionArea, Paper, Stack, Typography } from "@mui/material";
-import { BookOpenText, ChevronRight, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
+import { Archive, BookOpenText, ChevronRight, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { Link } from "react-router-dom";
 import { isGuessEnded, phaseStatusLabel, PhaseHeadline, PhaseTimeline } from "../components/EventPhaseStatus";
 import HomePageSkeleton from "../components/HomePageSkeleton";
@@ -26,6 +26,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
     { label: "曲目分配", value: `每人 ${event?.settings.draw_songs_per_participant ?? "-"} 首`, icon: Sparkles, to: "/draw" },
     { label: "投稿", value: phases?.capabilities.submission ? "开放中" : "当前未开放", icon: Upload, to: "/submissions" },
     { label: "猜谱", value: phases ? phaseStatusLabel(phases) : "查看与投票", icon: Vote, to: "/guess" },
+    { label: "往届乐曲", value: "按届 / 按谱师浏览", icon: Archive, to: "/archive" },
   ].filter(({ to }) => to !== "/guess" || isAdmin || isPoolEditor || guessGameAvailable);
   const nextAction = !isLoggedIn
     ? "登录或注册后选择参赛者、观众或访客身份"

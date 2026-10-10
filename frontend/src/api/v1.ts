@@ -226,6 +226,25 @@ export interface GuessChartRead {
   can_preview?: boolean;
 }
 
+export interface ArchiveEditionRead {
+  id: number;
+  name: string;
+  slug: string;
+  chart_count: number;
+}
+
+export interface ArchiveChartRead extends GuessChartRead {
+  event_id: number;
+  event_name: string;
+}
+
+export interface EventRotateResponse {
+  message: string;
+  archived_event: EventRead;
+  current_event: EventRead;
+  purged_public_packages: number;
+}
+
 export type PreviewStatus = "ready" | "processing" | "unsupported" | "failed";
 
 export interface PreviewManifest {
@@ -360,7 +379,14 @@ export const api = {
   changePassword: (old_password: string, new_password: string) => apiRequest<{ message: string }>("/auth/change-password", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
   currentEvent: (options?: RequestInit) => apiRequest<EventRead>("/events/current", options),
   updateEvent: (payload: EventUpdatePayload) => apiRequest<EventRead>("/admin/events/current", { method: "PUT", body: JSON.stringify(payload) }),
+  rotateEvent: (payload: { name: string; slug: string; confirmation: string }) =>
+    apiRequest<EventRotateResponse>("/admin/events/rotate", { method: "POST", body: JSON.stringify(payload) }),
   resetAllData: (confirmation: string) => apiRequest<AdminResetResponse>("/admin/reset", { method: "POST", body: JSON.stringify({ confirmation }) }),
+  archiveEditions: (signal?: AbortSignal) => apiRequest<ArchiveEditionRead[]>("/guess-archive/editions", { signal }),
+  archiveCharts: (signal?: AbortSignal) => apiRequest<ArchiveChartRead[]>("/guess-archive/charts", { signal }),
+  archiveChart: (id: number) => apiRequest<ArchiveChartRead>(`/guess-archive/charts/${id}`),
+  downloadArchiveChart: (id: number) => downloadPrepared(`/guess-archive/charts/${id}/download-metadata`),
+  archivePreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/guess-archive/charts/${id}/preview-manifest`, { signal }),
   eventPhases: (options?: RequestInit) => apiRequest<EventPhasesRead>("/event/phases", options),
   updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),
   guessAvailability: (options?: RequestInit) => apiRequest<GuessAvailabilityRead>("/guess-game/availability", options),

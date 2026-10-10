@@ -22,7 +22,7 @@ import {
 import { Download, Music2, Play, RefreshCw, Square, Wifi } from "lucide-react";
 import { api, type PreviewManifest } from "../api/v1";
 
-export type PreviewSource = "submission" | "guess";
+export type PreviewSource = "submission" | "guess" | "archive";
 
 type PreviewPhase =
   | "idle"
@@ -152,7 +152,9 @@ export function ChartPreviewStage({
       try {
         const next = source === "submission"
           ? await api.submissionPreviewManifest(sourceId, controller.signal)
-          : await api.guessPreviewManifest(sourceId, controller.signal);
+          : source === "archive"
+            ? await api.archivePreviewManifest(sourceId, controller.signal)
+            : await api.guessPreviewManifest(sourceId, controller.signal);
         if (controller.signal.aborted) return;
         setManifest(next);
         setSelectedSlot((current) => current ?? next.selected_level_slot ?? next.levels[0]?.slot ?? null);

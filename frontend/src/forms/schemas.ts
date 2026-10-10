@@ -51,3 +51,20 @@ export const eventSettingsSchema = z.object({
 export const resetConfirmationSchema = z.object({
   confirmation: z.string().refine((value) => value === "清除全部数据", "请输入完整确认词"),
 });
+
+export const eventRotateSchema = z.object({
+  name: z.string().trim().min(1, "请输入新届名称").max(200, "赛事名称不能超过 200 个字符"),
+  slug: z
+    .string()
+    .trim()
+    .min(1, "请输入 slug")
+    .max(120, "slug 不能超过 120 个字符")
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug 只能包含小写字母、数字与连字符"),
+  confirmation: z.string().min(1, "请输入确认词"),
+}).superRefine((value, context) => {
+  if (value.confirmation !== "归档并开启新届") {
+    context.addIssue({ code: "custom", path: ["confirmation"], message: "请输入完整确认词" });
+  }
+});
+
+export type EventRotateFormValues = z.infer<typeof eventRotateSchema>;
