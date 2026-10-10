@@ -72,6 +72,11 @@ export type PaginatedStoredFilesRead = components["schemas"]["PaginatedStoredFil
 export type GuessAvailabilityRead = components["schemas"]["GuessAvailabilityRead"];
 export type DownloadPreparation = components["schemas"]["DownloadPreparation"];
 
+export interface BackgroundAssetRead {
+  file_name: string;
+  url: string;
+}
+
 export type SubmissionUploadIntent = components["schemas"]["SubmissionUploadIntentRead"];
 export type SubmissionProcessingJob = components["schemas"]["SubmissionProcessingJobRead"];
 
@@ -376,6 +381,7 @@ export interface LoveVoteQuotaRead {
 
 export const api = {
   bootstrap: (options?: RequestInit) => apiRequest<BootstrapRead>("/bootstrap", options),
+  backgrounds: (options?: RequestInit) => apiRequest<BackgroundAssetRead[]>("/assets/backgrounds", options),
   login: (user_code: string, password: string) => apiRequest<{ user: UserRead }>("/auth/login", { method: "POST", body: JSON.stringify({ user_code, password }) }),
   register: (user_code: string, qq_id: string, password: string, identity = "audience") => apiRequest<{ user: UserRead }>("/auth/register", { method: "POST", body: JSON.stringify({ user_code, qq_id, password, identity }) }),
   logout: () => apiRequest<{ message: string }>("/auth/logout", { method: "POST" }),

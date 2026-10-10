@@ -66,6 +66,7 @@ describe("Auth registration page", () => {
           guess_availability: { available: false },
         });
       }
+      if (path.endsWith("/assets/backgrounds")) return json([]);
       if (path.endsWith("/auth/register")) {
         const body = JSON.parse(String(init.body));
         registerBodies.push(body);
@@ -115,6 +116,7 @@ describe("Auth registration page", () => {
           guess_availability: { available: false },
         });
       }
+      if (path.endsWith("/assets/backgrounds")) return json([]);
       if (path.endsWith("/auth/register")) {
         const body = JSON.parse(String(init.body));
         registerBodies.push(body);
