@@ -1,4 +1,4 @@
-import { type ComponentProps, memo, type ReactNode, useMemo, useState } from "react";
+import { type ComponentProps, memo, type ReactNode, useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -7,6 +7,7 @@ import {
   CardActionArea,
   CardContent,
   CardMedia,
+  Checkbox,
   Chip,
   Dialog,
   DialogContent,
@@ -20,10 +21,12 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import { Archive, Clock3, Download, Library, Music2, Users, X } from "lucide-react";
+import { Archive, CheckCheck, ClipboardList, Clock3, Download, Library, Music2, Users, X } from "lucide-react";
+import { useSnackbar } from "notistack";
 import { api, formatDuration, type ArchiveChartRead } from "../api/v1";
 import { queryKeys } from "../api/queryKeys";
 import { ChartPreviewStage } from "../components/ChartPreviewDialog";
+import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
 import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
 
 const EMPTY_CHARTS: ArchiveChartRead[] = [];
@@ -59,10 +62,16 @@ function submitterLabel(chart: ArchiveChartRead): string {
 const ArchiveChartCard = memo(function ArchiveChartCard({
   chart,
   showEdition,
+  selecting,
+  selected,
+  selectionDisabled,
   onOpen,
 }: {
   chart: ArchiveChartRead;
   showEdition: boolean;
+  selecting: boolean;
+  selected: boolean;
+  selectionDisabled: boolean;
   onOpen: (chart: ArchiveChartRead) => void;
 }) {
   const isJ = chart.lane === "j";
@@ -70,20 +79,29 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
   const levelSlot = getChartLevelSlot(chart.source_level_slot);
   const levelSurface = LEVEL_SURFACES[levelSlot] ?? "background.paper";
   const coverUrl = chart.cover_thumb_path || chart.cover_path;
+  const canSelect = chart.can_download !== false;
   return (
     <Card
       variant="outlined"
       sx={{
+        position: "relative",
         height: "100%",
         display: "flex",
         flexDirection: "column",
         borderWidth: isJ ? 2 : 1,
-        borderColor: isJ ? "secondary.main" : "divider",
+        borderColor: selected ? "primary.main" : isJ ? "secondary.main" : "divider",
+        outline: selected ? "2px solid" : "none",
+        outlineColor: "primary.main",
         contentVisibility: "auto",
         containIntrinsicSize: "380px",
+        opacity: selecting && !canSelect ? 0.55 : 1,
       }}
     >
-      <CardActionArea onClick={() => onOpen(chart)} sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
+      <CardActionArea
+        onClick={() => onOpen(chart)}
+        disabled={selecting && (!canSelect || selectionDisabled)}
+        sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}
+      >
         {coverUrl ? (
           <CardMedia component="img" height="164" image={coverUrl} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "#E4EAE6" }} />
         ) : (
@@ -97,6 +115,7 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
             <Chip size="small" label={chart.level} />
             <Chip size="small" color={isJ ? "secondary" : isExhibition ? "info" : "default"} variant={isJ || isExhibition ? "filled" : "outlined"} label={isJ ? "J 谱" : isExhibition ? "场外" : "普通谱"} />
             {showEdition ? <Chip size="small" variant="outlined" label={chart.event_name} /> : null}
+            {selecting && !canSelect ? <Chip size="small" color="warning" variant="outlined" label="无原始包" /> : null}
           </Stack>
           <Stack spacing={0.5} sx={{ mt: 1.25, minHeight: 48 }}>
             <Typography variant="body2" color="text.secondary" noWrap title={chart.author}>
@@ -112,6 +131,15 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
           </Stack>
         </CardContent>
       </CardActionArea>
+      {selecting ? (
+        <Checkbox
+          checked={selected}
+          disabled={selectionDisabled || !canSelect}
+          slotProps={{ input: { "aria-label": `选择 ${chart.title}` } }}
+          sx={{ position: "absolute", top: 6, right: 6, bgcolor: "rgba(255,255,255,.9)", "&:hover": { bgcolor: "white" } }}
+          onChange={() => onOpen(chart)}
+        />
+      ) : null}
     </Card>
   );
 });
@@ -201,12 +229,19 @@ function ArchiveDetailDialog({
 }
 
 export default function ArchivePage() {
+  const { enqueueSnackbar } = useSnackbar();
   const editions = useApiResource(queryKeys.archive.editions, api.archiveEditions);
   const charts = useApiResource(queryKeys.archive.charts, api.archiveCharts);
   const [mode, setMode] = useState<GroupMode>("edition");
   const [active, setActive] = useState<ArchiveChartRead | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selecting, setSelecting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [batchError, setBatchError] = useState("");
   const allCharts = charts.data ?? EMPTY_CHARTS;
   const editionMeta = editions.data ?? [];
+  const downloadableCharts = useMemo(() => allCharts.filter((chart) => chart.can_download !== false), [allCharts]);
+  const allDownloadableSelected = downloadableCharts.length > 0 && downloadableCharts.every((chart) => selected.has(chart.id));
 
   const editionSections = useMemo(() => {
     const order = editionMeta.length
@@ -249,13 +284,104 @@ export default function ArchivePage() {
   const loading = editions.loading || charts.loading;
   const error = editions.error || charts.error;
 
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  function toggleAllDownloadable() {
+    if (downloading || !downloadableCharts.length) return;
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allDownloadableSelected) downloadableCharts.forEach((chart) => next.delete(chart.id));
+      else downloadableCharts.forEach((chart) => next.add(chart.id));
+      return next;
+    });
+  }
+
+  function toggleSection(sectionCharts: ArchiveChartRead[]) {
+    if (downloading) return;
+    const selectable = sectionCharts.filter((chart) => chart.can_download !== false);
+    if (!selectable.length) return;
+    const allSelected = selectable.every((chart) => selected.has(chart.id));
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allSelected) selectable.forEach((chart) => next.delete(chart.id));
+      else selectable.forEach((chart) => next.add(chart.id));
+      return next;
+    });
+  }
+
+  const open = useCallback((chart: ArchiveChartRead) => {
+    if (selecting) {
+      if (downloading || chart.can_download === false) return;
+      setSelected((current) => {
+        const next = new Set(current);
+        if (next.has(chart.id)) next.delete(chart.id);
+        else next.add(chart.id);
+        return next;
+      });
+      return;
+    }
+    setActive(chart);
+  }, [downloading, selecting]);
+
+  async function downloadSelected() {
+    if (!selected.size || downloading) return;
+    setDownloading(true);
+    setBatchError("");
+    try {
+      await api.downloadArchiveCharts([...selected]);
+      enqueueSnackbar("下载请求已开始，请查看浏览器下载列表", { variant: "success" });
+    } catch (err) {
+      setBatchError(err instanceof Error ? err.message : "下载失败");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <Stack spacing={3}>
       <PageHeader
         icon={Archive}
         title="往届乐曲一览"
         meta={allCharts.length ? `共 ${allCharts.length} 张谱面 · ${editionMeta.length || editionSections.length} 届` : undefined}
+        actions={(
+          <>
+            <Button
+              variant={selecting ? "contained" : "outlined"}
+              startIcon={<ClipboardList size={17} />}
+              disabled={downloading || !downloadableCharts.length}
+              onClick={() => {
+                setSelecting(!selecting);
+                if (selecting) clearSelection();
+              }}
+            >
+              {selecting ? "结束选择" : "批量选择"}
+            </Button>
+            {selecting ? (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<CheckCheck size={17} />}
+                  disabled={downloading || !downloadableCharts.length}
+                  onClick={toggleAllDownloadable}
+                >
+                  {allDownloadableSelected ? "取消全选" : "全选可下载"}
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<Download size={17} />}
+                  disabled={!selected.size || downloading}
+                  onClick={() => void downloadSelected()}
+                >
+                  {downloading ? "正在准备…" : `下载 ${selected.size} 项`}
+                </Button>
+              </>
+            ) : null}
+          </>
+        )}
       />
+      {batchError ? <Alert severity="error">{batchError}</Alert> : null}
       <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -267,31 +393,55 @@ export default function ArchivePage() {
             exclusive
             value={mode}
             aria-label="往届分类方式"
-            onChange={(_, value: GroupMode | null) => { if (value) setMode(value); }}
+            onChange={(_, value: GroupMode | null) => {
+              if (!value) return;
+              setMode(value);
+              clearSelection();
+            }}
           >
             <ToggleButton value="edition"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Archive size={15} /><span>按届</span></Stack></ToggleButton>
             <ToggleButton value="submitter"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Users size={15} /><span>按谱师</span></Stack></ToggleButton>
           </ToggleButtonGroup>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
-          浏览已归档届次的谱面；「按谱师」按投稿提交者归类。试听与下载使用届末保留的原始包。
+          浏览已归档届次的谱面；「按谱师」按投稿提交者归类。可用批量选择打包下载原始包。
         </Typography>
       </Paper>
       <ResourceState loading={loading} error={error} empty={!allCharts.length ? "暂无往届谱面。管理员在届末「归档并开启新届」后会出现在这里。" : undefined} emptyIcon={Archive} loadingVariant="cards" />
-      {sections.map((section) => (
-        <Stack key={section.key} spacing={1.5}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: "baseline", justifyContent: "space-between" }}>
-            <Typography variant="h3">{section.title}</Typography>
-            <Typography variant="caption" color="text.secondary">{section.meta}</Typography>
+      {sections.map((section) => {
+        const sectionSelectable = section.charts.filter((chart) => chart.can_download !== false);
+        const sectionAllSelected = sectionSelectable.length > 0 && sectionSelectable.every((chart) => selected.has(chart.id));
+        return (
+          <Stack key={section.key} spacing={1.5}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "baseline" }, justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "baseline", minWidth: 0 }}>
+                <Typography variant="h3">{section.title}</Typography>
+                <Typography variant="caption" color="text.secondary">{section.meta}</Typography>
+              </Stack>
+              {selecting && sectionSelectable.length ? (
+                <Button size="small" variant="text" disabled={downloading} onClick={() => toggleSection(section.charts)}>
+                  {sectionAllSelected ? "取消本节" : "全选本节"}
+                </Button>
+              ) : null}
+            </Stack>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
+              {section.charts.map((chart) => (
+                <ArchiveChartCard
+                  key={chart.id}
+                  chart={chart}
+                  showEdition={mode === "submitter"}
+                  selecting={selecting}
+                  selected={selected.has(chart.id)}
+                  selectionDisabled={downloading}
+                  onOpen={open}
+                />
+              ))}
+            </Box>
           </Stack>
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
-            {section.charts.map((chart) => (
-              <ArchiveChartCard key={chart.id} chart={chart} showEdition={mode === "submitter"} onOpen={setActive} />
-            ))}
-          </Box>
-        </Stack>
-      ))}
+        );
+      })}
       <ArchiveDetailDialog chart={active} onClose={() => setActive(null)} />
+      <DownloadPreparationDialog open={downloading} count={selected.size} unit="项" />
     </Stack>
   );
 }
