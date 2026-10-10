@@ -136,7 +136,8 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
           checked={selected}
           disabled={selectionDisabled || !canSelect}
           slotProps={{ input: { "aria-label": `选择 ${chart.title}` } }}
-          sx={{ position: "absolute", top: 6, right: 6, bgcolor: "rgba(255,255,255,.9)", "&:hover": { bgcolor: "white" } }}
+          sx={{ position: "absolute", top: 6, right: 6, zIndex: 1, bgcolor: "rgba(255,255,255,.9)", "&:hover": { bgcolor: "white" } }}
+          onClick={(event) => event.stopPropagation()}
           onChange={() => onOpen(chart)}
         />
       ) : null}
