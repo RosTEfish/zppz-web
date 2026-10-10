@@ -10,8 +10,8 @@
 
 - **氛围**：明亮、精密、"舞台灯光下的仪器"。深度感来自 **多层染色阴影 + 表面亮度分层**，而不是边框。
 - **签名材质**：绿墨染色阴影（远层大模糊染色 + 近层小模糊中性，Stripe 公式）；关键卡片用「双壳嵌套」(outer shell + inner core)。
-- **色彩故事**：松墨绿 ink 做标题（不是纯黑）→ 常青绿 primary 唯一强调色 → 暖纸白画布 → 琥珀金仅做装饰性点缀（时间轴辉光、渐变高光），不参与交互色。
-- **记忆点**：首页 Hero 的赛事视觉平面（动态读取 `bg/` → `/api/v1/assets/backgrounds`）+ 常青绿可读性叠层；无素材时回退「聚光灯」渐变与超大号细描边音符水印；阶段时间轴的琥珀辉光活动节点。
+- **色彩故事**：松墨绿 ink 做标题（不是纯黑）→ **赛事动态 primary**（从 `bg/` 素材取色，对比度钳制后作为唯一交互强调色；无素材时回退常青绿）→ 暖纸白画布 → 取色 accent 仅做装饰性点缀（时间轴辉光、渐变高光、eyebrow 下划线），不参与交互色。
+- **记忆点**：首页 Hero 的赛事视觉平面（动态读取 `bg/` → `/api/v1/assets/backgrounds`）+ 取色叠层；登录页全幅沉浸背景 + 玻璃表单；无素材时回退「聚光灯」渐变与超大号细描边音符水印；阶段时间轴的 accent 辉光活动节点。
 
 ## 2. Color
 
@@ -25,13 +25,13 @@
 | `ink.primary` | `#17211C` | 标题/正文主色（深松墨绿，非纯黑） |
 | `ink.secondary` | `#57645D` | 次级文字 |
 | `ink.disabled` | `#93A09A` | 占位符、禁用文字 |
-| `brand.main` | `#176B52` | primary 主色（保留品牌锚点） |
-| `brand.dark` | `#0E523E` | primary hover / 强调深色 |
-| `brand.darker` | `#0A3B2D` | 渐变端点、Hero 深色 |
-| `brand.tint` | `#DCEEE5` | primary.light：图标底、选中底、soft 按钮 |
-| `brand.wash` | `rgba(23,107,82,0.06)` | 极浅绿洗（背景光晕、选中导航底） |
-| `gold.decorative` | `#C9973B` | 装饰性点缀（渐变、辉光、eyebrow 下划线）。**禁止用作按钮/链接色** |
-| `gold.tint` | `#F5EBD7` | 金色浅底（装饰容器） |
+| `brand.main` | 默认 `#176B52`；运行时可被素材取色覆盖 | primary 主色（对白字对比 ≥ 4.5） |
+| `brand.dark` | 默认 `#0E523E` | primary hover / 强调深色 |
+| `brand.darker` | 默认 `#0A3B2D` | 渐变端点、Hero 深色 |
+| `brand.tint` | 默认 `#DCEEE5` | primary.light：图标底、选中底、soft 按钮 |
+| `brand.wash` | 默认 `rgba(23,107,82,0.06)` | 极浅色洗（背景光晕、选中导航底） |
+| `accent` / `gold.decorative` | 默认 `#C9973B`；随素材 accent 变化 | 装饰性点缀（渐变、辉光、eyebrow 下划线）。**禁止用作按钮/链接色** |
+| `gold.tint` | `#F5EBD7` | 金色浅底（装饰容器；无动态覆盖时保留） |
 | `state.warning` | `main #B4740A / light #FBF0DA` | 警告（唯一允许的暖色语义色） |
 | `state.info` | `main #1F6E80 / light #DDF0F3` | 提示信息（teal，与绿系同族） |
 | `state.success` | `main #218650 / light #DEF2E4` | 成功 |
@@ -41,11 +41,12 @@
 
 ### Rules
 
-1. 全站只有一个交互强调色系：evergreen。info 用 teal 同族化，不再出现突兀的默认蓝。
-2. 金色 `gold.*` 只出现在：装饰渐变、时间轴活动节点辉光、Hero eyebrow 装饰。任何可点击元素不得使用金色。
-3. 描边一律半透明墨绿灰 `border.default`，不再用不透明灰蓝 `#DCE3DF`。
-4. 阴影颜色必须是染色阴影（见 §7），禁止中性纯黑阴影。
-5. 文字对比度：正文对画布 ≥ 4.5:1；`ink.secondary` 只用于 ≥14px 文字。
+1. 全站只有一个交互强调色系：`brand.*`（默认 evergreen，可按当前 `bg/` 素材动态取色）。info 用 teal 同族化，不再出现突兀的默认蓝。
+2. `accent` / `gold.*` 只出现在：装饰渐变、时间轴活动节点辉光、Hero/Auth eyebrow 装饰。任何可点击元素不得使用 accent。
+3. 动态取色实现：`extractImagePalette` 采样 hero/brand 图 → 派生 accessible `brand.*` + 装饰 `accent` → `EventThemeProvider` 重建 MUI theme，并写入 CSS 变量 `--zppz-*`（画布光晕、selection）。
+4. 描边一律半透明墨绿灰 `border.default`，不再用不透明灰蓝 `#DCE3DF`。
+5. 阴影颜色必须是染色阴影（见 §7，随 brand 墨色染色），禁止中性纯黑阴影。
+6. 文字对比度：正文对画布 ≥ 4.5:1；`ink.secondary` 只用于 ≥14px 文字；动态 `brand.main` 对白字 ≥ 4.5:1。
 
 ## 3. Typography
 
@@ -192,13 +193,9 @@ background-image:
 **Hero 赛事视觉（首页 Hero）**：
 1. 运行时拉取 `GET /api/v1/assets/backgrounds`（仓库 `bg/` 由 prepare 同步）。按文件名角色解析：`banner` / `post` / `square`；支持届次前缀（如 `zppz4_post.png`）。优先匹配当前赛事 slug / `#N` → `zppzN`，否则用无前缀 canonical 文件。
 2. Hero 选用顺序：`banner` → `post` → `square`。图片 `object-fit: cover` 铺满 Hero，上方叠暖纸白可读性渐变 + 既有金/绿聚光灯 wash；文案区 `z-index: 1`，桌面侧限制 `maxWidth` 以免压住画面。
-3. 登录页品牌位选用：`square` → `post` → `banner`（仅 `md+` 展示，不影响表单逻辑）。
-4. **无素材回退**：沿用聚光灯配方 + lucide Music2 水印（`strokeWidth={1}`，`color rgba(10,59,45,0.08)`，约 200px+）。
-```
-radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.14), transparent 62%),
-radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.12), transparent 58%)
-```
-5. 动效：Hero 图 420ms scale(1.04→1)+fade；品牌图 360ms fade-up；均尊重 `prefers-reduced-motion`。
+3. 登录页：全幅沉浸（`post` → `brand` → `hero`）+ 玻璃表单居中；禁止并排「素材卡 + 表单卡」。可读性靠暖纸白斜向 veil + 动态 wash/accent 光晕。
+4. **无素材回退**：沿用聚光灯配方 + lucide Music2 水印（`strokeWidth={1}`，约 200px+）；登录页仅保留动态/默认 wash。
+5. 动效：Hero 图 420ms scale+fade；Auth 舞台 480ms + 表单 360ms fade-up；均尊重 `prefers-reduced-motion`。
 
 ## 8. Accessibility Constraints & Accepted Debt
 

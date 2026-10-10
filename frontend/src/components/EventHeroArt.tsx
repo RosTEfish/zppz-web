@@ -1,8 +1,10 @@
 import { Box } from "@mui/material";
+import { useEventTheme } from "../contexts/EventThemeProvider";
 import type { BackgroundAsset } from "../utils/backgroundAssets";
 
-/** Full-bleed event art for the home hero. Readability overlays stay evergreen. */
+/** Full-bleed event art for the home hero; washes follow dynamic event palette. */
 export default function EventHeroArt({ asset }: { asset: BackgroundAsset }) {
+  const { palette } = useEventTheme();
   return (
     <Box
       aria-hidden="true"
@@ -43,13 +45,13 @@ export default function EventHeroArt({ asset }: { asset: BackgroundAsset }) {
           backgroundImage: {
             xs: [
               "linear-gradient(180deg, rgba(247,247,244,0.94) 0%, rgba(247,247,244,0.88) 42%, rgba(247,247,244,0.72) 100%)",
-              "radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.12), transparent 62%)",
-              "radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.10), transparent 58%)",
+              `radial-gradient(520px 260px at 78% 0%, ${palette.accentSoft}, transparent 62%)`,
+              `radial-gradient(680px 320px at 96% 100%, ${palette.washA}, transparent 58%)`,
             ].join(", "),
             md: [
               "linear-gradient(105deg, rgba(247,247,244,0.97) 0%, rgba(247,247,244,0.92) 38%, rgba(247,247,244,0.55) 62%, rgba(247,247,244,0.22) 100%)",
-              "radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.14), transparent 62%)",
-              "radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.12), transparent 58%)",
+              `radial-gradient(520px 260px at 78% 0%, ${palette.accentSoft}, transparent 62%)`,
+              `radial-gradient(680px 320px at 96% 100%, ${palette.washA}, transparent 58%)`,
             ].join(", "),
           },
         }}

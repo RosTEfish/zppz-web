@@ -6,6 +6,7 @@ import EventHeroArt from "../components/EventHeroArt";
 import HomePageSkeleton from "../components/HomePageSkeleton";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
+import { useEventTheme } from "../contexts/EventThemeProvider";
 import { useEventBackgrounds } from "../hooks/useEventBackgrounds";
 
 function announcementPreview(markdown: string) {
@@ -21,6 +22,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
   const { event, phases, guessGameAvailable, loading } = useConfig();
   const { user, isLoggedIn, isAdmin, isPoolEditor } = useAuth();
   const backgrounds = useEventBackgrounds();
+  const { palette } = useEventTheme();
   if (loading || !event) return <HomePageSkeleton />;
 
   const heroArt = backgrounds.hero;
@@ -68,7 +70,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
         {heroArt ? <EventHeroArt asset={heroArt} /> : null}
         <Box sx={{ position: "relative", zIndex: 1, maxWidth: { md: heroArt ? 560 : "100%" } }}>
           <Typography variant="overline" color="primary.dark" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
-          <Box aria-hidden="true" sx={{ width: 26, height: 2.5, borderRadius: 1, bgcolor: "#C9973B", mt: 0.5, mb: 0.75 }} />
+          <Box aria-hidden="true" sx={{ width: 26, height: 2.5, borderRadius: 1, bgcolor: palette.accent, mt: 0.5, mb: 0.75 }} />
           <Typography variant="h1" component="p" sx={{ m: 0 }}>{event.name}</Typography>
           {phases ? <Box sx={{ mt: 2 }}><PhaseHeadline phases={phases} /></Box> : null}
           {event.settings.announcement_text ? (
@@ -93,7 +95,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
       {phases ? <PhaseTimeline phases={phases} /> : null}
       <Alert severity="info" icon={false}><Typography variant="caption" sx={{ fontWeight: 800, display: "block" }}>下一步</Typography>{nextAction}</Alert>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: `repeat(${stages.length}, minmax(0, 1fr))` }, gap: 2 }}>
-        {stages.map(({ label, value, icon: Icon, to }) => <Card key={label} variant="outlined"><CardActionArea component={Link} to={to} sx={{ p: 2.5, minHeight: 132 }}><Stack direction="row" sx={{ justifyContent: "space-between" }}><Icon size={24} color="#176B52" /><ChevronRight size={18} /></Stack><Typography variant="h3" sx={{ mt: 2 }}>{label}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{value}</Typography></CardActionArea></Card>)}
+        {stages.map(({ label, value, icon: Icon, to }) => <Card key={label} variant="outlined"><CardActionArea component={Link} to={to} sx={{ p: 2.5, minHeight: 132 }}><Stack direction="row" sx={{ justifyContent: "space-between" }}><Icon size={24} color={palette.main} /><ChevronRight size={18} /></Stack><Typography variant="h3" sx={{ mt: 2 }}>{label}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{value}</Typography></CardActionArea></Card>)}
       </Box>
     </Stack>
   );

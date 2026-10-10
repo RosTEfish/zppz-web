@@ -49,7 +49,8 @@
 - Use one interaction accent family: evergreen `#176B52` / `#0E523E`; gold `#C9973B` is decorative only and must never color interactive elements.
 - Keep admin pages dense and operational; keep participant pages clearer and more event-facing.
 - Keep homepage copy concise and avoid long marketing text.
-- Event art in `bg/` is served via `GET /api/v1/assets/backgrounds`. Frontend resolves `banner` / `post` / `square` (optional `{edition}_` prefix) in `frontend/src/utils/backgroundAssets.ts` for Home hero and Auth brand art.
+- Event art in `bg/` is served via `GET /api/v1/assets/backgrounds`. Frontend resolves `banner` / `post` / `square` (optional `{edition}_` prefix) in `frontend/src/utils/backgroundAssets.ts` for Home hero and Auth stage art.
+- `EventThemeProvider` extracts a palette from the hero/brand image (`extractImagePalette`) and rebuilds the MUI theme + `--zppz-*` CSS variables so chrome matches the event art while keeping accessible contrast.
 
 ## Performance Notes
 
