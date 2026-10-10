@@ -191,6 +191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/events/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Rotate Current Event */
+        post: operations["admin_rotate_current_event_api_v1_admin_events_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/guess-game/author-candidates": {
         parameters: {
             query?: never;
@@ -1270,6 +1287,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/guess-archive/charts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Charts */
+        get: operations["list_charts_api_v1_guess_archive_charts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/charts/{chart_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chart Detail */
+        get: operations["chart_detail_api_v1_guess_archive_charts__chart_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/charts/{chart_id}/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chart Cover */
+        get: operations["chart_cover_api_v1_guess_archive_charts__chart_id__cover_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/charts/{chart_id}/cover-thumb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chart Cover Thumb */
+        get: operations["chart_cover_thumb_api_v1_guess_archive_charts__chart_id__cover_thumb_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/charts/{chart_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Chart */
+        get: operations["download_chart_api_v1_guess_archive_charts__chart_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/charts/{chart_id}/download-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Chart Metadata */
+        get: operations["download_chart_metadata_api_v1_guess_archive_charts__chart_id__download_metadata_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/charts/{chart_id}/preview-manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chart Preview Manifest */
+        get: operations["chart_preview_manifest_api_v1_guess_archive_charts__chart_id__preview_manifest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guess-archive/editions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Editions */
+        get: operations["list_editions_api_v1_guess_archive_editions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/guess-game/availability": {
         parameters: {
             query?: never;
@@ -2136,6 +2289,92 @@ export interface components {
             /** Roles */
             roles: string[];
         };
+        /** ArchiveEditionRead */
+        ArchiveEditionRead: {
+            /** Chart Count */
+            chart_count: number;
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /** ArchiveGuessChartRead */
+        ArchiveGuessChartRead: {
+            /** Author */
+            author: string;
+            /**
+             * Can Download
+             * @default true
+             */
+            can_download: boolean;
+            /**
+             * Can Preview
+             * @default false
+             */
+            can_preview: boolean;
+            /** Cover Path */
+            cover_path: string;
+            /**
+             * Cover Thumb Path
+             * @default
+             */
+            cover_thumb_path: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Designer */
+            designer: string;
+            /** Event Id */
+            event_id: number;
+            /** Event Name */
+            event_name: string;
+            /**
+             * Funny Votes
+             * @default 0
+             */
+            funny_votes: number;
+            /** Guess Group Key */
+            guess_group_key: string;
+            /** Id */
+            id: number;
+            /**
+             * Is Long Track
+             * @default false
+             */
+            is_long_track: boolean;
+            /** Is Self Selected */
+            is_self_selected: boolean;
+            /** Lane */
+            lane: string;
+            /** Level */
+            level: string;
+            /**
+             * Love Vote Bucket
+             * @enum {string}
+             */
+            love_vote_bucket: "below_14" | "at_least_14";
+            /**
+             * Love Votes
+             * @default 0
+             */
+            love_votes: number;
+            /** My Votes */
+            my_votes?: string[];
+            /** Plays */
+            plays: number;
+            /** Source Level Slot */
+            source_level_slot: string;
+            /** Source Submission Type */
+            source_submission_type: string;
+            /** Title */
+            title: string;
+            /** Track Duration Seconds */
+            track_duration_seconds?: number | null;
+        };
         /** AuthResponse */
         AuthResponse: {
             user: components["schemas"]["UserRead"];
@@ -2542,6 +2781,24 @@ export interface components {
             settings: components["schemas"]["EventSettingsRead"];
             /** Slug */
             slug: string;
+        };
+        /** EventRotateRequest */
+        EventRotateRequest: {
+            /** Confirmation */
+            confirmation: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /** EventRotateResponse */
+        EventRotateResponse: {
+            archived_event: components["schemas"]["EventRead"];
+            current_event: components["schemas"]["EventRead"];
+            /** Message */
+            message: string;
+            /** Purged Public Packages */
+            purged_public_packages: number;
         };
         /** EventSettingsRead */
         EventSettingsRead: {
@@ -3553,6 +3810,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_rotate_current_event_api_v1_admin_events_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventRotateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventRotateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5440,6 +5730,244 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventRead"];
+                };
+            };
+        };
+    };
+    list_charts_api_v1_guess_archive_charts_get: {
+        parameters: {
+            query?: {
+                event_id?: number | null;
+                designer?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveGuessChartRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chart_detail_api_v1_guess_archive_charts__chart_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveGuessChartRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chart_cover_api_v1_guess_archive_charts__chart_id__cover_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chart_cover_thumb_api_v1_guess_archive_charts__chart_id__cover_thumb_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_chart_api_v1_guess_archive_charts__chart_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_chart_metadata_api_v1_guess_archive_charts__chart_id__download_metadata_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadPreparation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chart_preview_manifest_api_v1_guess_archive_charts__chart_id__preview_manifest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chart_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewManifestRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_editions_api_v1_guess_archive_editions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveEditionRead"][];
                 };
             };
         };
