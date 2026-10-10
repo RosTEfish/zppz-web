@@ -390,6 +390,7 @@ export const api = {
   archiveCharts: (signal?: AbortSignal) => apiRequest<ArchiveChartRead[]>("/guess-archive/charts", { signal }),
   archiveChart: (id: number) => apiRequest<ArchiveChartRead>(`/guess-archive/charts/${id}`),
   downloadArchiveChart: (id: number) => downloadPrepared(`/guess-archive/charts/${id}/download-metadata`),
+  downloadArchiveCharts: (ids: number[]) => downloadRemoteFiles(`/guess-archive/charts/download-metadata?ids=${ids.join(",")}`),
   archivePreviewManifest: (id: number, signal?: AbortSignal) => apiRequest<PreviewManifest>(`/guess-archive/charts/${id}/preview-manifest`, { signal }),
   eventPhases: (options?: RequestInit) => apiRequest<EventPhasesRead>("/event/phases", options),
   updateEventPhases: (payload: EventPhasesUpdate) => apiRequest<EventPhasesRead>("/admin/event/phases", { method: "PUT", body: JSON.stringify(payload) }),

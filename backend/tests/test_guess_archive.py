@@ -1,5 +1,7 @@
+from io import BytesIO
 from pathlib import Path
 import shutil
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 import pytest
@@ -206,6 +208,80 @@ def test_archive_lists_cover_and_original_download(client: TestClient):
 
     vote = client.post("/api/v1/guess-game/vote", json={"chart_id": seeded["chart_id"], "vote_type": "love"})
     assert vote.status_code in {403, 404, 409}
+
+
+def test_archive_batch_download_zip(client: TestClient):
+    first = _seed_current_chart_with_packages(designer="甲")
+    with SessionLocal() as db:
+        event = db.get(Event, first["event_id"])
+        user = db.scalar(select(User).where(User.user_code == "admin"))
+        assert event and user
+        original_rel = f"events/{event.id}/submissions/{user.id}/second-original.zip"
+        _write_file(original_rel, b"second-original-package")
+        submission = Submission(
+            event_id=event.id,
+            user_id=user.id,
+            source_song_id=None,
+            source_kind="exhibition",
+            track="exhibition",
+            file_name="second.zip",
+            storage_path=original_rel,
+            public_storage_path=None,
+            public_file_size=0,
+            public_package_status="none",
+            public_package_message="",
+            file_size=len(b"second-original-package"),
+            review_status="approved",
+        )
+        db.add(submission)
+        db.flush()
+        chart = GuessChart(
+            event_id=event.id,
+            title="第二首",
+            author="曲师",
+            designer="乙",
+            level="14",
+            lane="exhibition",
+            guess_group_key="archive-song-2",
+            source_submission_type="exhibition",
+            source_submission_id=submission.id,
+            source_level_slot="5",
+            cover_path="",
+            storage_path="",
+            is_self_selected=False,
+            plays=0,
+        )
+        db.add(chart)
+        db.commit()
+        second_chart_id = chart.id
+
+    login_admin(client)
+    rotate = client.post(
+        "/api/v1/admin/events/rotate",
+        json={"name": "这谱谱这 #6", "slug": "zppz-6", "confirmation": ROTATE_CONFIRMATION},
+    )
+    assert rotate.status_code == 200, rotate.text
+
+    ids = f"{first['chart_id']},{second_chart_id}"
+    metadata = client.get(f"/api/v1/guess-archive/charts/download-metadata?ids={ids}")
+    assert metadata.status_code == 200, metadata.text
+    body = metadata.json()
+    assert body["file_name"] == "archive-charts.zip"
+    assert body["file_size"] > 0
+    assert "download.zip" in body["download_url"]
+    assert str(first["chart_id"]) in body["download_url"]
+
+    download_token = "0123456789abcdef0123456789abcdef"
+    response = client.get(f"{body['download_url']}&download_token={download_token}")
+    assert response.status_code == 200
+    assert response.headers["content-encoding"] == "identity"
+    assert f"zppz_download_{download_token}=1" in response.headers["set-cookie"]
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = archive.namelist()
+        zips = [name for name in names if name.endswith(".zip")]
+        assert len(zips) == 2
+        assert any("归档曲" in name for name in zips)
+        assert any("第二首" in name for name in zips)
 
 
 def test_rotate_rejects_bad_confirmation_and_duplicate_slug(client: TestClient):
