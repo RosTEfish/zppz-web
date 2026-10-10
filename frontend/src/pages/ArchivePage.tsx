@@ -27,7 +27,7 @@ import { ChartPreviewStage } from "../components/ChartPreviewDialog";
 import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
 
 const EMPTY_CHARTS: ArchiveChartRead[] = [];
-type GroupMode = "edition" | "designer";
+type GroupMode = "edition" | "submitter";
 
 const LEVEL_SURFACES: Record<string, string> = {
   "1": "#E8F2FF",
@@ -47,8 +47,13 @@ function getChartLevelSlot(sourceLevelSlot?: string): string {
   return /(?:lv_)?([1-7])$/i.exec(sourceLevelSlot?.trim() ?? "")?.[1] ?? "";
 }
 
-function designerKey(designer: string): string {
-  return designer.trim() || "未标注谱师";
+function submitterGroupKey(chart: ArchiveChartRead): string {
+  if (chart.submitter_user_id != null) return `user:${chart.submitter_user_id}`;
+  return `label:${chart.submitter_label || "未知提交者"}`;
+}
+
+function submitterLabel(chart: ArchiveChartRead): string {
+  return chart.submitter_label?.trim() || "未知提交者";
 }
 
 const ArchiveChartCard = memo(function ArchiveChartCard({
@@ -97,8 +102,8 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
             <Typography variant="body2" color="text.secondary" noWrap title={chart.author}>
               <Box component="span" sx={{ fontWeight: 700 }}>曲师</Box>　{chart.author}
             </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap title={chart.designer || "未标注谱师"}>
-              <Box component="span" sx={{ fontWeight: 700 }}>谱师</Box>　{chart.designer || "未标注谱师"}
+            <Typography variant="body2" color="text.secondary" noWrap title={submitterLabel(chart)}>
+              <Box component="span" sx={{ fontWeight: 700 }}>谱师</Box>　{submitterLabel(chart)}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
               <Clock3 size={13} aria-hidden="true" />
@@ -174,7 +179,7 @@ function ArchiveDetailDialog({
               <Stack spacing={0.75}>
                 <Typography variant="body2"><Box component="span" sx={{ fontWeight: 700 }}>届次</Box>　{chart.event_name}</Typography>
                 <Typography variant="body2"><Box component="span" sx={{ fontWeight: 700 }}>曲师</Box>　{chart.author}</Typography>
-                <Typography variant="body2"><Box component="span" sx={{ fontWeight: 700 }}>谱师</Box>　{chart.designer || "未标注谱师"}</Typography>
+                <Typography variant="body2"><Box component="span" sx={{ fontWeight: 700 }}>谱师</Box>　{submitterLabel(chart)}</Typography>
                 <Typography variant="body2"><Box component="span" sx={{ fontWeight: 700 }}>难度</Box>　{chart.level}</Typography>
               </Stack>
             </Paper>
@@ -222,25 +227,25 @@ export default function ArchivePage() {
       .filter((section): section is NonNullable<typeof section> => Boolean(section));
   }, [allCharts, editionMeta]);
 
-  const designerSections = useMemo(() => {
-    const groups = new Map<string, ArchiveChartRead[]>();
+  const submitterSections = useMemo(() => {
+    const groups = new Map<string, { title: string; charts: ArchiveChartRead[] }>();
     for (const chart of allCharts) {
-      const key = designerKey(chart.designer);
+      const key = submitterGroupKey(chart);
       const bucket = groups.get(key);
-      if (bucket) bucket.push(chart);
-      else groups.set(key, [chart]);
+      if (bucket) bucket.charts.push(chart);
+      else groups.set(key, { title: submitterLabel(chart), charts: [chart] });
     }
     return [...groups.entries()]
-      .sort(([left], [right]) => left.localeCompare(right, "zh-CN"))
-      .map(([title, items]) => ({
-        key: `designer-${title}`,
-        title,
-        meta: `${items.length} 张谱面 · ${new Set(items.map((item) => item.event_id)).size} 届`,
-        charts: items,
+      .sort(([, left], [, right]) => left.title.localeCompare(right.title, "zh-CN"))
+      .map(([key, section]) => ({
+        key: `submitter-${key}`,
+        title: section.title,
+        meta: `${section.charts.length} 张谱面 · ${new Set(section.charts.map((item) => item.event_id)).size} 届`,
+        charts: section.charts,
       }));
   }, [allCharts]);
 
-  const sections = mode === "edition" ? editionSections : designerSections;
+  const sections = mode === "edition" ? editionSections : submitterSections;
   const loading = editions.loading || charts.loading;
   const error = editions.error || charts.error;
 
@@ -265,11 +270,11 @@ export default function ArchivePage() {
             onChange={(_, value: GroupMode | null) => { if (value) setMode(value); }}
           >
             <ToggleButton value="edition"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Archive size={15} /><span>按届</span></Stack></ToggleButton>
-            <ToggleButton value="designer"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Users size={15} /><span>按谱师</span></Stack></ToggleButton>
+            <ToggleButton value="submitter"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Users size={15} /><span>按谱师</span></Stack></ToggleButton>
           </ToggleButtonGroup>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
-          浏览已归档届次的谱面；试听与下载使用届末保留的原始包，不包含当届猜谱公开包。
+          浏览已归档届次的谱面；「按谱师」按投稿提交者归类。试听与下载使用届末保留的原始包。
         </Typography>
       </Paper>
       <ResourceState loading={loading} error={error} empty={!allCharts.length ? "暂无往届谱面。管理员在届末「归档并开启新届」后会出现在这里。" : undefined} emptyIcon={Archive} loadingVariant="cards" />
@@ -281,7 +286,7 @@ export default function ArchivePage() {
           </Stack>
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
             {section.charts.map((chart) => (
-              <ArchiveChartCard key={chart.id} chart={chart} showEdition={mode === "designer"} onOpen={setActive} />
+              <ArchiveChartCard key={chart.id} chart={chart} showEdition={mode === "submitter"} onOpen={setActive} />
             ))}
           </Box>
         </Stack>

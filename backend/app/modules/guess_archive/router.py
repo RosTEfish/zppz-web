@@ -59,10 +59,50 @@ def _event_name_map(db: Session, event_ids: set[int]) -> dict[int, str]:
     }
 
 
+def _submitter_label(user: User | None) -> str:
+    if user is None:
+        return "未知提交者"
+    label = (user.display_name or "").strip() or user.user_code.strip()
+    return label or "未知提交者"
+
+
+def _submitter_map(
+    db: Session,
+    charts: list[GuessChart],
+) -> dict[tuple[str, int], tuple[int | None, str]]:
+    """Map (source_type, source_id) -> (submitter_user_id, submitter_label)."""
+    submission_ids = {
+        int(chart.source_submission_id)
+        for chart in charts
+        if chart.source_submission_id is not None
+        and chart.source_submission_type in {"normal", "j", "exhibition"}
+    }
+    admin_ids = {
+        int(chart.source_submission_id)
+        for chart in charts
+        if chart.source_submission_id is not None and chart.source_submission_type == "admin"
+    }
+    mapping: dict[tuple[str, int], tuple[int | None, str]] = {}
+    if submission_ids:
+        rows = db.execute(
+            select(Submission.id, Submission.user_id, User)
+            .join(User, User.id == Submission.user_id)
+            .where(Submission.id.in_(submission_ids))
+        ).all()
+        for submission_id, user_id, user in rows:
+            mapping[("submission", int(submission_id))] = (int(user_id), _submitter_label(user))
+    if admin_ids:
+        # Admin zip imports are not participant submissions; keep them in one bucket.
+        for admin_id in admin_ids:
+            mapping[("admin", int(admin_id))] = (None, "管理端导入")
+    return mapping
+
+
 def _archive_payloads(db: Session, charts: list[GuessChart]) -> list[dict]:
     if not charts:
         return []
     names = _event_name_map(db, {chart.event_id for chart in charts})
+    submitters = _submitter_map(db, charts)
     submission_ids = {
         int(chart.source_submission_id)
         for chart in charts
@@ -93,12 +133,23 @@ def _archive_payloads(db: Session, charts: list[GuessChart]) -> list[dict]:
         can_download = False
         if chart.source_submission_type == "admin":
             can_download = chart.source_submission_id is not None and int(chart.source_submission_id) in downloadable_admin_ids
+            submitter_key = ("admin", int(chart.source_submission_id)) if chart.source_submission_id is not None else None
         elif chart.source_submission_id is not None:
             can_download = int(chart.source_submission_id) in downloadable_submission_ids
+            submitter_key = ("submission", int(chart.source_submission_id))
+        else:
+            submitter_key = None
+        submitter_user_id, submitter_label = (
+            submitters.get(submitter_key, (None, "未知提交者"))
+            if submitter_key is not None
+            else (None, "未知提交者")
+        )
         payload.update(
             {
                 "event_id": chart.event_id,
                 "event_name": names.get(chart.event_id, ""),
+                "submitter_user_id": submitter_user_id,
+                "submitter_label": submitter_label,
                 "cover_path": (
                     f"/api/v1/guess-archive/charts/{chart.id}/cover?v={stem}" if chart.cover_path else ""
                 ),
@@ -186,7 +237,7 @@ def list_editions(response: Response, db: Session = Depends(get_db)) -> list[dic
 def list_charts(
     response: Response,
     event_id: int | None = Query(None),
-    designer: str | None = Query(None),
+    submitter_user_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     set_public_api_cache(response)
@@ -198,10 +249,11 @@ def list_charts(
     )
     if event_id is not None:
         stmt = stmt.where(GuessChart.event_id == event_id)
-    if designer is not None:
-        stmt = stmt.where(GuessChart.designer == designer)
     charts = list(db.scalars(stmt).all())
-    return _archive_payloads(db, charts)
+    payloads = _archive_payloads(db, charts)
+    if submitter_user_id is not None:
+        payloads = [row for row in payloads if row.get("submitter_user_id") == submitter_user_id]
+    return payloads
 
 
 @router.get("/charts/{chart_id}", response_model=ArchiveGuessChartRead)

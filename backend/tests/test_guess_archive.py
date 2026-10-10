@@ -145,7 +145,13 @@ def test_rotate_archives_event_and_purges_public_packages(client: TestClient):
 
 
 def test_archive_lists_cover_and_original_download(client: TestClient):
-    seeded = _seed_current_chart_with_packages(designer="谱师乙")
+    with SessionLocal() as db:
+        admin = db.scalar(select(User).where(User.user_code == "admin"))
+        assert admin
+        admin.display_name = "管理员谱师"
+        db.commit()
+        admin_id = admin.id
+    seeded = _seed_current_chart_with_packages(designer="谱面内自填谱师")
     login_admin(client)
     rotate = client.post(
         "/api/v1/admin/events/rotate",
@@ -170,9 +176,18 @@ def test_archive_lists_cover_and_original_download(client: TestClient):
     assert len(payload) == 1
     assert payload[0]["id"] == seeded["chart_id"]
     assert payload[0]["event_id"] == seeded["event_id"]
-    assert payload[0]["designer"] == "谱师乙"
+    assert payload[0]["designer"] == "谱面内自填谱师"
+    assert payload[0]["submitter_user_id"] == admin_id
+    assert payload[0]["submitter_label"] == "管理员谱师"
     assert payload[0]["can_download"] is True
     assert payload[0]["cover_path"].startswith(f"/api/v1/guess-archive/charts/{seeded['chart_id']}/cover")
+
+    filtered = client.get(f"/api/v1/guess-archive/charts?submitter_user_id={admin_id}")
+    assert filtered.status_code == 200
+    assert [row["id"] for row in filtered.json()] == [seeded["chart_id"]]
+    empty = client.get("/api/v1/guess-archive/charts?submitter_user_id=999999")
+    assert empty.status_code == 200
+    assert empty.json() == []
 
     cover = client.get(payload[0]["cover_path"])
     assert cover.status_code == 200

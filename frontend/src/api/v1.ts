@@ -236,6 +236,10 @@ export interface ArchiveEditionRead {
 export interface ArchiveChartRead extends GuessChartRead {
   event_id: number;
   event_name: string;
+  /** Contest submitter account id; null for admin imports / unknown sources. */
+  submitter_user_id: number | null;
+  /** Display label for “按谱师” grouping (submitter, not maidata designer text). */
+  submitter_label: string;
 }
 
 export interface EventRotateResponse {

@@ -2370,6 +2370,13 @@ export interface components {
             source_level_slot: string;
             /** Source Submission Type */
             source_submission_type: string;
+            /**
+             * Submitter Label
+             * @default 未知提交者
+             */
+            submitter_label: string;
+            /** Submitter User Id */
+            submitter_user_id?: number | null;
             /** Title */
             title: string;
             /** Track Duration Seconds */
@@ -5738,7 +5745,7 @@ export interface operations {
         parameters: {
             query?: {
                 event_id?: number | null;
-                designer?: string | null;
+                submitter_user_id?: number | null;
             };
             header?: never;
             path?: never;
