@@ -51,6 +51,7 @@ describe("Material application shell", () => {
     window.localStorage.clear();
     mockApi(async (path) => {
       if (path.endsWith("/bootstrap")) return json(bootstrapPayload());
+      if (path.endsWith("/assets/backgrounds")) return json([]);
       if (path.endsWith("/auth/me")) return json({ detail: "未登录" }, 401);
       if (path.endsWith("/events/current")) return json(eventPayload);
       if (path.endsWith("/guess-game/availability")) return json({ available: true });

@@ -11,7 +11,7 @@
 - **氛围**：明亮、精密、"舞台灯光下的仪器"。深度感来自 **多层染色阴影 + 表面亮度分层**，而不是边框。
 - **签名材质**：绿墨染色阴影（远层大模糊染色 + 近层小模糊中性，Stripe 公式）；关键卡片用「双壳嵌套」(outer shell + inner core)。
 - **色彩故事**：松墨绿 ink 做标题（不是纯黑）→ 常青绿 primary 唯一强调色 → 暖纸白画布 → 琥珀金仅做装饰性点缀（时间轴辉光、渐变高光），不参与交互色。
-- **记忆点**：首页 Hero 的「聚光灯」渐变 + 超大号细描边音符水印；阶段时间轴的琥珀辉光活动节点。
+- **记忆点**：首页 Hero 的赛事视觉平面（动态读取 `bg/` → `/api/v1/assets/backgrounds`）+ 常青绿可读性叠层；无素材时回退「聚光灯」渐变与超大号细描边音符水印；阶段时间轴的琥珀辉光活动节点。
 
 ## 2. Color
 
@@ -189,12 +189,16 @@ background-image:
   url("noise-svg opacity 0.035");
 ```
 
-**Hero 聚光灯配方（首页 Hero 内部叠加层，absolute inset-0 pointer-events-none）**：
+**Hero 赛事视觉（首页 Hero）**：
+1. 运行时拉取 `GET /api/v1/assets/backgrounds`（仓库 `bg/` 由 prepare 同步）。按文件名角色解析：`banner` / `post` / `square`；支持届次前缀（如 `zppz4_post.png`）。优先匹配当前赛事 slug / `#N` → `zppzN`，否则用无前缀 canonical 文件。
+2. Hero 选用顺序：`banner` → `post` → `square`。图片 `object-fit: cover` 铺满 Hero，上方叠暖纸白可读性渐变 + 既有金/绿聚光灯 wash；文案区 `z-index: 1`，桌面侧限制 `maxWidth` 以免压住画面。
+3. 登录页品牌位选用：`square` → `post` → `banner`（仅 `md+` 展示，不影响表单逻辑）。
+4. **无素材回退**：沿用聚光灯配方 + lucide Music2 水印（`strokeWidth={1}`，`color rgba(10,59,45,0.08)`，约 200px+）。
 ```
 radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.14), transparent 62%),
 radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.12), transparent 58%)
 ```
-水印音符：`color: transparent; -webkit-text-stroke` 不适用 SVG——用 lucide Music2 `strokeWidth={1}` + `opacity 0.10` + 渐变 mask 或直接 `color rgba(10,59,45,0.08)`，尺寸 200px+。
+5. 动效：Hero 图 420ms scale(1.04→1)+fade；品牌图 360ms fade-up；均尊重 `prefers-reduced-motion`。
 
 ## 8. Accessibility Constraints & Accepted Debt
 
