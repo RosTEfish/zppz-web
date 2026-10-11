@@ -1,6 +1,16 @@
 const VERSION = 2;
-const PRODUCTION_PARENT = "https://przppz.club";
-const LOCAL_PARENTS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+/** Canonical site is www; apex may still appear briefly before redirect. */
+const PRODUCTION_PARENTS = new Set([
+  "https://www.przppz.club",
+  "https://przppz.club",
+]);
+const LOCAL_PARENTS = new Set([
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:8080",
+  "http://127.0.0.1:8080",
+]);
+const DEFAULT_PARENT = "https://www.przppz.club";
 
 export function createReadinessGate(onReady) {
   let instance = null;
@@ -59,17 +69,29 @@ export function isTrustedLoadMessage(event, parentWindow, parentOrigin, sessionI
 }
 
 function parentAllowed(origin) {
-  return origin === PRODUCTION_PARENT || LOCAL_PARENTS.has(origin);
+  return PRODUCTION_PARENTS.has(origin) || LOCAL_PARENTS.has(origin);
 }
 
-function resolveParentOrigin() {
+export function resolveParentOrigin({
+  referrer = typeof document !== "undefined" ? document.referrer : "",
+  ancestorOrigins = typeof window !== "undefined" ? window.location.ancestorOrigins : undefined,
+} = {}) {
+  const candidates = [];
   try {
-    const referrerOrigin = new URL(document.referrer).origin;
-    if (parentAllowed(referrerOrigin)) return referrerOrigin;
+    if (referrer) candidates.push(new URL(referrer).origin);
   } catch {
-    // Production remains the only fallback when referrer is absent.
+    // Ignore malformed referrers.
   }
-  return PRODUCTION_PARENT;
+  try {
+    const ancestor = ancestorOrigins?.[0];
+    if (ancestor) candidates.push(ancestor);
+  } catch {
+    // ancestorOrigins is not available in every browser.
+  }
+  for (const origin of candidates) {
+    if (parentAllowed(origin)) return origin;
+  }
+  return DEFAULT_PARENT;
 }
 
 function validateAssetUrl(value, optional = false) {

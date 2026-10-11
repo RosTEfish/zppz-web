@@ -4,6 +4,7 @@ import {
   createReadinessGate,
   createRequestGate,
   isTrustedLoadMessage,
+  resolveParentOrigin,
 } from "./player-bridge.js";
 
 
@@ -47,7 +48,7 @@ test("request gate ignores duplicate ids and invalidates older work", () => {
 test("load messages require matching parent, origin, protocol, and session", () => {
   const parent = {};
   const base = {
-    origin: "https://przppz.club",
+    origin: "https://www.przppz.club",
     source: parent,
     data: {
       type: "zppz.preview.load",
@@ -61,4 +62,28 @@ test("load messages require matching parent, origin, protocol, and session", () 
   assert.equal(isTrustedLoadMessage({ ...base, source: {} }, parent, base.origin, "session-1"), false);
   assert.equal(isTrustedLoadMessage({ ...base, data: { ...base.data, version: 1 } }, parent, base.origin, "session-1"), false);
   assert.equal(isTrustedLoadMessage(base, parent, base.origin, "session-2"), false);
+});
+
+
+test("parent origin prefers www referrer and allows apex / local docker", () => {
+  assert.equal(
+    resolveParentOrigin({ referrer: "https://www.przppz.club/guess" }),
+    "https://www.przppz.club",
+  );
+  assert.equal(
+    resolveParentOrigin({ referrer: "https://przppz.club/" }),
+    "https://przppz.club",
+  );
+  assert.equal(
+    resolveParentOrigin({ referrer: "", ancestorOrigins: ["https://www.przppz.club"] }),
+    "https://www.przppz.club",
+  );
+  assert.equal(
+    resolveParentOrigin({ referrer: "http://localhost:8080/songs" }),
+    "http://localhost:8080",
+  );
+  assert.equal(
+    resolveParentOrigin({ referrer: "https://evil.example/" }),
+    "https://www.przppz.club",
+  );
 });
