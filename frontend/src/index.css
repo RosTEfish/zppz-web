@@ -61,41 +61,129 @@ svg {
   background: var(--zppz-selection);
 }
 
-/* Auth shell ↔ app shell crossfade (View Transitions API) */
-@keyframes zppz-vt-out {
+/* Auth shell ↔ app shell (View Transitions API)
+   Directional, blur-free, with shared `event-art` morph. */
+@keyframes zppz-to-app-out {
   to {
     opacity: 0;
-    transform: scale(0.985);
-    filter: blur(6px);
+    transform: scale(0.992) translateY(-8px);
   }
 }
 
-@keyframes zppz-vt-in {
+@keyframes zppz-to-app-in {
   from {
     opacity: 0;
-    transform: scale(1.015);
-    filter: blur(6px);
+    transform: scale(0.994) translateY(16px);
+  }
+}
+
+@keyframes zppz-to-auth-out {
+  to {
+    opacity: 0;
+    transform: scale(0.994) translateY(10px);
+  }
+}
+
+@keyframes zppz-to-auth-in {
+  from {
+    opacity: 0;
+    transform: scale(1.008) translateY(-12px);
+  }
+}
+
+@keyframes zppz-form-out {
+  to {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.97);
+  }
+}
+
+@keyframes zppz-form-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
   }
 }
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 340ms;
+  animation-duration: 360ms;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   animation-fill-mode: both;
 }
 
+/* Default (unknown direction): gentle opacity crossfade */
 ::view-transition-old(root) {
-  animation-name: zppz-vt-out;
+  animation-name: zppz-to-app-out;
+  animation-duration: 280ms;
 }
 
 ::view-transition-new(root) {
-  animation-name: zppz-vt-in;
+  animation-name: zppz-to-app-in;
+  animation-duration: 400ms;
+}
+
+html[data-vt="to-app"]::view-transition-old(root) {
+  animation-name: zppz-to-app-out;
+  animation-duration: 280ms;
+}
+
+html[data-vt="to-app"]::view-transition-new(root) {
+  animation-name: zppz-to-app-in;
+  animation-duration: 420ms;
+}
+
+html[data-vt="to-auth"]::view-transition-old(root) {
+  animation-name: zppz-to-auth-out;
+  animation-duration: 260ms;
+}
+
+html[data-vt="to-auth"]::view-transition-new(root) {
+  animation-name: zppz-to-auth-in;
+  animation-duration: 400ms;
+}
+
+/* Login poster ↔ home hero: geometry morph + soft image crossfade */
+::view-transition-group(event-art) {
+  animation-duration: 480ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+::view-transition-image-pair(event-art) {
+  isolation: isolate;
+}
+
+::view-transition-old(event-art),
+::view-transition-new(event-art) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  mix-blend-mode: plus-lighter;
+  object-fit: cover;
+}
+
+/* Auth form dissolves / arrives independently of the art morph */
+::view-transition-group(auth-form) {
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html[data-vt="to-app"]::view-transition-old(auth-form) {
+  animation: zppz-form-out 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+html[data-vt="to-auth"]::view-transition-new(auth-form) {
+  animation: zppz-form-in 380ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
-  ::view-transition-new(root) {
+  ::view-transition-new(root),
+  ::view-transition-group(event-art),
+  ::view-transition-old(event-art),
+  ::view-transition-new(event-art),
+  ::view-transition-group(auth-form),
+  ::view-transition-old(auth-form),
+  ::view-transition-new(auth-form) {
     animation: none !important;
   }
 }

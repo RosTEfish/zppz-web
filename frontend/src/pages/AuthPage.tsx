@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, CircularProgress, FormControl, FormHelperText, InputLabel, MenuItem, Paper, Select, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { LogIn } from "lucide-react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isRegistrationClosed } from "../components/EventPhaseStatus";
@@ -14,11 +14,15 @@ import { navigateWithViewTransition } from "../navigation/viewTransition";
 
 export default function AuthPage() {
   const [error, setError] = useState("");
+  const holdRedirect = useRef(false);
   const { login, register: registerAccount, isLoggedIn } = useAuth();
   const { event, phases } = useConfig();
   const backgrounds = useEventBackgrounds();
   const { palette } = useEventTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Skip local enter keyframes when arriving via View Transition (avoids double-motion).
+  const skipEnter = Boolean((location.state as { zppzVt?: string } | null)?.zppzVt);
   const { register, control, handleSubmit, setValue, clearErrors, watch, formState: { errors, isSubmitting } } = useForm<AuthFormValues>({
     resolver: zodResolver(authSchema),
     defaultValues: { mode: "login", user_code: "", qq_id: "", password: "", identity: "participant" },
@@ -28,15 +32,18 @@ export default function AuthPage() {
   useEffect(() => {
     if (registrationClosed) setValue("identity", "guest");
   }, [registrationClosed, setValue]);
-  if (isLoggedIn) return <Navigate to="/" replace />;
+  // Keep the auth shell mounted until View Transition navigation runs after login/register.
+  if (isLoggedIn && !holdRedirect.current) return <Navigate to="/" replace />;
 
   const submit = handleSubmit(async (form) => {
     setError("");
+    holdRedirect.current = true;
     try {
       if (form.mode === "login") await login(form.user_code, form.password);
       else await registerAccount(form.user_code, form.qq_id, form.password, registrationClosed ? "guest" : form.identity);
-      navigateWithViewTransition(navigate, "/");
+      navigateWithViewTransition(navigate, "/", { replace: true });
     } catch (err) {
+      holdRedirect.current = false;
       setError(err instanceof Error ? err.message : "操作失败");
     }
   });
@@ -60,6 +67,7 @@ export default function AuthPage() {
           overflow: "hidden",
           bgcolor: palette.tint,
           display: { xs: stageArt ? "block" : "none", md: "block" },
+          viewTransitionName: "event-art",
           "@keyframes authArtIn": {
             from: { opacity: 0, transform: "scale(1.03)" },
             to: { opacity: 1, transform: "scale(1)" },
@@ -83,7 +91,7 @@ export default function AuthPage() {
               height: "100%",
               objectFit: "cover",
               objectPosition: "center",
-              animation: "authArtIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both",
+              animation: skipEnter ? "none" : "authArtIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both",
             }}
           />
         ) : null}
@@ -149,11 +157,12 @@ export default function AuthPage() {
             borderColor: "divider",
             bgcolor: "background.paper",
             boxShadow: (theme) => theme.shadows[3],
+            viewTransitionName: "auth-form",
             "@keyframes authFormIn": {
               from: { opacity: 0, transform: "translateY(10px)" },
               to: { opacity: 1, transform: "translateY(0)" },
             },
-            animation: "authFormIn 360ms cubic-bezier(0.32, 0.72, 0, 1) both",
+            animation: skipEnter ? "none" : "authFormIn 360ms cubic-bezier(0.32, 0.72, 0, 1) both",
             "@media (prefers-reduced-motion: reduce)": { animation: "none" },
           }}
         >

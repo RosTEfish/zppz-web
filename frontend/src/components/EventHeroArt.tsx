@@ -3,7 +3,7 @@ import { useEventTheme } from "../contexts/EventThemeProvider";
 import type { BackgroundAsset } from "../utils/backgroundAssets";
 
 /** Full-bleed event art for the home hero; washes follow dynamic event palette. */
-export default function EventHeroArt({ asset }: { asset: BackgroundAsset }) {
+export default function EventHeroArt({ asset, animate = true }: { asset: BackgroundAsset; animate?: boolean }) {
   const { palette } = useEventTheme();
   return (
     <Box
@@ -35,7 +35,7 @@ export default function EventHeroArt({ asset }: { asset: BackgroundAsset }) {
           height: "100%",
           objectFit: "cover",
           objectPosition: { xs: "center 35%", md: "78% center" },
-          animation: "heroArtIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both",
+          animation: animate ? "heroArtIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both" : "none",
         }}
       />
       <Box

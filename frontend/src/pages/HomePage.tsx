@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Card, CardActionArea, Paper, Stack, Typography } from "@mui/material";
 import { Archive, BookOpenText, ChevronRight, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { isGuessEnded, phaseStatusLabel, PhaseHeadline, PhaseTimeline } from "../components/EventPhaseStatus";
 import EventHeroArt from "../components/EventHeroArt";
 import HomePageSkeleton from "../components/HomePageSkeleton";
@@ -25,6 +25,8 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
   const backgrounds = useEventBackgrounds();
   const { palette } = useEventTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const skipEnter = Boolean((location.state as { zppzVt?: string } | null)?.zppzVt);
   if (loading || !event) return <HomePageSkeleton />;
 
   const heroArt = backgrounds.hero;
@@ -64,12 +66,13 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
           position: "relative",
           overflow: "hidden",
           borderRadius: "16px",
+          viewTransitionName: "event-art",
           backgroundImage: heroArt
             ? "none"
             : "radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.13), transparent 62%), radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.11), transparent 58%)",
         }}
       >
-        {heroArt ? <EventHeroArt asset={heroArt} /> : null}
+        {heroArt ? <EventHeroArt asset={heroArt} animate={!skipEnter} /> : null}
         <Box sx={{ position: "relative", zIndex: 1, maxWidth: { md: heroArt ? 560 : "100%" } }}>
           <Typography variant="overline" color="primary.dark" sx={{ fontWeight: 800 }}>CURRENT EVENT</Typography>
           <Box aria-hidden="true" sx={{ width: 26, height: 2.5, borderRadius: 1, bgcolor: palette.accent, mt: 0.5, mb: 0.75 }} />
