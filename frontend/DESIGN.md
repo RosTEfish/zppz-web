@@ -195,7 +195,7 @@ background-image:
 2. Hero 选用顺序：`banner` → `post` → `square`。图片 `object-fit: cover` 铺满 Hero，上方叠暖纸白可读性渐变 + 既有金/绿聚光灯 wash；文案区 `z-index: 1`，桌面侧限制 `maxWidth` 以免压住画面。
 3. 登录页（Draft A · 分栏海报）：独立全屏壳（**无 AppBar / Drawer**）。`md+` 左栏整幅 `post`（→ brand → hero），右栏暖纸画布 + **实体纸卡表单**（不透明、无玻璃雾）。移动端顶条海报（约 220px）+ 下方表单。
 4. **无素材回退**：Hero 沿用聚光灯 + Music2 水印；登录左栏用 tint/wash 渐变占位。
-5. 动效：Hero/Auth 图 420ms scale+fade（经 View Transition 抵达时跳过，避免叠动）；Auth 表单 360ms fade-up。登录壳 ↔ 主壳用 View Transitions：`to-app` / `to-auth` 方向性淡入淡出（无 blur），登录海报与首页 Hero 共享 `event-art` 几何变形，表单用 `auth-form` 独立消融/升起（`navigateWithViewTransition`）；`prefers-reduced-motion` 时跳过。
+5. 动效：Hero/Auth 图 420ms scale+fade（经 View Transition 抵达时跳过，避免叠动）；Auth 表单 360ms fade-up。登录壳 ↔ 主壳用 View Transitions 整页水平滑动（`navigateWithViewTransition`）：切到登录时新页从左滑入、旧页右出；登录后旧页左出、主壳从右滑入；`prefers-reduced-motion` 时跳过。
 
 ## 8. Accessibility Constraints & Accepted Debt
 

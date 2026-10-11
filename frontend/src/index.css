@@ -61,129 +61,70 @@ svg {
   background: var(--zppz-selection);
 }
 
-/* Auth shell ↔ app shell (View Transitions API)
-   Directional, blur-free, with shared `event-art` morph. */
-@keyframes zppz-to-app-out {
-  to {
-    opacity: 0;
-    transform: scale(0.992) translateY(-8px);
-  }
-}
-
-@keyframes zppz-to-app-in {
+/* Auth shell ↔ app shell (View Transitions API): full-page horizontal slides.
+   to-auth: login slides in from the left; app exits to the right.
+   to-app: login slides out to the left; app enters from the right. */
+@keyframes zppz-slide-from-left {
   from {
-    opacity: 0;
-    transform: scale(0.994) translateY(16px);
+    transform: translateX(-100%);
   }
 }
 
-@keyframes zppz-to-auth-out {
+@keyframes zppz-slide-to-right {
   to {
-    opacity: 0;
-    transform: scale(0.994) translateY(10px);
+    transform: translateX(100%);
   }
 }
 
-@keyframes zppz-to-auth-in {
+@keyframes zppz-slide-from-right {
   from {
-    opacity: 0;
-    transform: scale(1.008) translateY(-12px);
+    transform: translateX(100%);
   }
 }
 
-@keyframes zppz-form-out {
+@keyframes zppz-slide-to-left {
   to {
-    opacity: 0;
-    transform: translateY(-14px) scale(0.97);
+    transform: translateX(-100%);
   }
 }
 
-@keyframes zppz-form-in {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.98);
-  }
+html:active-view-transition {
+  overflow-x: clip;
 }
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 360ms;
+  animation-duration: 400ms;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   animation-fill-mode: both;
 }
 
-/* Default (unknown direction): gentle opacity crossfade */
-::view-transition-old(root) {
-  animation-name: zppz-to-app-out;
-  animation-duration: 280ms;
-}
-
-::view-transition-new(root) {
-  animation-name: zppz-to-app-in;
-  animation-duration: 400ms;
-}
-
+/* Default / to-app: login exits left, app enters from right */
+::view-transition-old(root),
 html[data-vt="to-app"]::view-transition-old(root) {
-  animation-name: zppz-to-app-out;
-  animation-duration: 280ms;
+  animation-name: zppz-slide-to-left;
+  z-index: 1;
 }
 
+::view-transition-new(root),
 html[data-vt="to-app"]::view-transition-new(root) {
-  animation-name: zppz-to-app-in;
-  animation-duration: 420ms;
+  animation-name: zppz-slide-from-right;
 }
 
+/* to-auth: login enters from left, app exits right */
 html[data-vt="to-auth"]::view-transition-old(root) {
-  animation-name: zppz-to-auth-out;
-  animation-duration: 260ms;
+  animation-name: zppz-slide-to-right;
+  z-index: 0;
 }
 
 html[data-vt="to-auth"]::view-transition-new(root) {
-  animation-name: zppz-to-auth-in;
-  animation-duration: 400ms;
-}
-
-/* Login poster ↔ home hero: geometry morph + soft image crossfade */
-::view-transition-group(event-art) {
-  animation-duration: 480ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-::view-transition-image-pair(event-art) {
-  isolation: isolate;
-}
-
-::view-transition-old(event-art),
-::view-transition-new(event-art) {
-  animation-duration: 420ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-  mix-blend-mode: plus-lighter;
-  object-fit: cover;
-}
-
-/* Auth form dissolves / arrives independently of the art morph */
-::view-transition-group(auth-form) {
-  animation-duration: 360ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-html[data-vt="to-app"]::view-transition-old(auth-form) {
-  animation: zppz-form-out 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-
-html[data-vt="to-auth"]::view-transition-new(auth-form) {
-  animation: zppz-form-in 380ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation-name: zppz-slide-from-left;
+  z-index: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
-  ::view-transition-new(root),
-  ::view-transition-group(event-art),
-  ::view-transition-old(event-art),
-  ::view-transition-new(event-art),
-  ::view-transition-group(auth-form),
-  ::view-transition-old(auth-form),
-  ::view-transition-new(auth-form) {
+  ::view-transition-new(root) {
     animation: none !important;
   }
 }

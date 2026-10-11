@@ -67,7 +67,6 @@ export default function AuthPage() {
           overflow: "hidden",
           bgcolor: palette.tint,
           display: { xs: stageArt ? "block" : "none", md: "block" },
-          viewTransitionName: "event-art",
           "@keyframes authArtIn": {
             from: { opacity: 0, transform: "scale(1.03)" },
             to: { opacity: 1, transform: "scale(1)" },
@@ -157,7 +156,6 @@ export default function AuthPage() {
             borderColor: "divider",
             bgcolor: "background.paper",
             boxShadow: (theme) => theme.shadows[3],
-            viewTransitionName: "auth-form",
             "@keyframes authFormIn": {
               from: { opacity: 0, transform: "translateY(10px)" },
               to: { opacity: 1, transform: "translateY(0)" },

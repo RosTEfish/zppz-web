@@ -66,7 +66,6 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
           position: "relative",
           overflow: "hidden",
           borderRadius: "16px",
-          viewTransitionName: "event-art",
           backgroundImage: heroArt
             ? "none"
             : "radial-gradient(520px 260px at 78% 0%, rgba(201,151,59,0.13), transparent 62%), radial-gradient(680px 320px at 96% 100%, rgba(23,107,82,0.11), transparent 58%)",

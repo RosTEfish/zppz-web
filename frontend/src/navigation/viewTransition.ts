@@ -13,7 +13,7 @@ export function viewTransitionKind(to: To): ViewTransitionKind {
   return path === "/login" ? "to-auth" : "to-app";
 }
 
-/** Soft directional crossfade between auth shell and app shell (View Transitions API + fallback). */
+/** Full-page horizontal slide between auth shell and app shell (View Transitions API + fallback). */
 export function navigateWithViewTransition(navigate: NavigateFunction, to: To, options?: NavigateOptions) {
   const kind = viewTransitionKind(to);
   const nextOptions: NavigateOptions = {
