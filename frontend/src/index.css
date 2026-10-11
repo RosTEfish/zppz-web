@@ -1,6 +1,17 @@
 :root {
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --zppz-brand: #176b52;
+  --zppz-brand-dark: #0e523e;
+  --zppz-brand-darker: #0a3b2d;
+  --zppz-brand-tint: #dceee5;
+  --zppz-brand-wash: rgba(23, 107, 82, 0.06);
+  --zppz-accent: #c9973b;
+  --zppz-accent-soft: rgba(201, 151, 59, 0.14);
+  --zppz-wash-a: rgba(23, 107, 82, 0.07);
+  --zppz-wash-b: rgba(31, 110, 128, 0.05);
+  --zppz-wash-c: rgba(201, 151, 59, 0.04);
+  --zppz-selection: rgba(23, 107, 82, 0.18);
 }
 
 html {
@@ -16,11 +27,12 @@ body {
   overflow-x: hidden;
   background-color: #f7f7f4;
   background-image:
-    radial-gradient(1100px 480px at 88% -8%, rgba(23, 107, 82, 0.07), transparent 60%),
-    radial-gradient(900px 420px at -6% 30%, rgba(31, 110, 128, 0.05), transparent 55%),
-    radial-gradient(700px 380px at 70% 110%, rgba(201, 151, 59, 0.04), transparent 60%),
+    radial-gradient(1100px 480px at 88% -8%, var(--zppz-wash-a), transparent 60%),
+    radial-gradient(900px 420px at -6% 30%, var(--zppz-wash-b), transparent 55%),
+    radial-gradient(700px 380px at 70% 110%, var(--zppz-wash-c), transparent 60%),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   background-attachment: scroll;
+  transition: background-image 320ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 * {
@@ -46,7 +58,7 @@ svg {
 }
 
 ::selection {
-  background: rgba(23, 107, 82, 0.18);
+  background: var(--zppz-selection);
 }
 
 @media (max-width: 599px) {

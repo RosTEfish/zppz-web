@@ -3,6 +3,7 @@ export const queryKeys = {
   event: ["event"] as const,
   phases: ["event-phases"] as const,
   guessAvailability: ["guess-availability"] as const,
+  backgrounds: ["assets", "backgrounds"] as const,
   songs: {
     mine: ["songs", "mine"] as const,
     admin: ["songs", "admin"] as const,
