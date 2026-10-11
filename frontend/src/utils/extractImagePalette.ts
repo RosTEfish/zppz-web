@@ -26,18 +26,18 @@ export interface EventPalette {
 }
 
 export const defaultEventPalette: EventPalette = {
-  main: "#176B52",
-  dark: "#0E523E",
-  darker: "#0A3B2D",
-  tint: "#DCEEE5",
-  wash: "rgba(23, 107, 82, 0.06)",
+  main: "#1F5A47",
+  dark: "#154233",
+  darker: "#0F2F25",
+  tint: "#D8E5DF",
+  wash: "rgba(31, 90, 71, 0.06)",
   accent: "#C9973B",
   accentSoft: "rgba(201, 151, 59, 0.14)",
-  washA: "rgba(23, 107, 82, 0.07)",
+  washA: "rgba(31, 90, 71, 0.08)",
   washB: "rgba(31, 110, 128, 0.05)",
-  washC: "rgba(201, 151, 59, 0.04)",
-  selection: "rgba(23, 107, 82, 0.18)",
-  shadowInk: { r: 13, g: 53, b: 41 },
+  washC: "rgba(226, 230, 228, 0.55)",
+  selection: "rgba(31, 90, 71, 0.18)",
+  shadowInk: { r: 28, g: 35, b: 33 },
 };
 
 function loadImage(url: string): Promise<HTMLImageElement> {

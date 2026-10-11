@@ -6,6 +6,7 @@ import { Archive, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { navigateWithViewTransition } from "./navigation/viewTransition";
 import { SWRConfig } from "swr";
+import BrandLogo from "./components/BrandLogo";
 import { LoadingBlock } from "./components/PagePrimitives";
 import HomePageSkeleton from "./components/HomePageSkeleton";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -16,7 +17,7 @@ import { announcementSignature, shouldShowAnnouncement } from "./components/anno
 import { preloadAdminTab } from "./pages/admin/adminTabLoaders";
 import { identityLabel } from "./identity";
 
-const DRAWER_WIDTH = 248;
+const DRAWER_WIDTH = 280;
 
 const loadHomePage = () => import("./pages/HomePage");
 const loadAuthPage = () => import("./pages/AuthPage");
@@ -81,6 +82,7 @@ function AppShell() {
   const { palette } = useEventTheme();
   const navigate = useNavigate();
   const authLayout = location.pathname === "/login";
+  const homeLayout = location.pathname === "/";
   const showGuessEntry = isAdmin || isPoolEditor || guessGameAvailable;
   const managerPath = isAdmin ? "/admin/overview" : "/admin/songs";
   const announcement = event?.settings.announcement_text ?? "";
@@ -126,20 +128,54 @@ function AppShell() {
     { label: "往届乐曲", to: "/archive", icon: Archive, preload: loadArchivePage },
   ].filter(({ to }) => to !== "/guess" || showGuessEntry);
 
-  const drawer = (
+  const mobileDrawer = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Toolbar sx={{ gap: 1.5, minHeight: 64 }}>
-        <Box aria-hidden="true" sx={{ width: 36, height: 36, borderRadius: 2, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 19, color: "#fff", background: `linear-gradient(135deg, ${palette.main} 0%, ${palette.dark} 100%)`, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 6px -2px rgba(13,53,41,0.35)" }}>Z</Box>
-        <Box sx={{ minWidth: 0 }}><Typography noWrap sx={{ fontWeight: 800, letterSpacing: "-0.01em" }}>ZPPZ Arena</Typography><Typography variant="caption" color="text.secondary" noWrap>{event?.name || "赛事平台"}</Typography></Box>
+        <BrandLogo size={36} borderRadius={2} />
+        <Box sx={{ minWidth: 0 }}>
+          <Typography noWrap sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700 }}>ZPPZ Arena</Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>{event?.name || "赛事平台"}</Typography>
+        </Box>
       </Toolbar>
       <Divider />
       <List sx={{ px: 1, py: 1.5 }}>
         {links.map(({ label, to, icon: Icon, preload }) => (
-          <ListItemButton key={to} component={Link} to={to} selected={location.pathname === to} onPointerEnter={() => void preload()} onFocus={() => void preload()} sx={{ mb: 0.5, borderRadius: 1, borderLeft: "3px solid transparent", "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: palette.wash, color: "primary.dark" } }}>
-            <ListItemIcon sx={{ minWidth: 38 }}><Icon size={19} /></ListItemIcon><ListItemText primary={label} />
+          <ListItemButton
+            key={to}
+            component={Link}
+            to={to}
+            selected={location.pathname === to}
+            onPointerEnter={() => void preload()}
+            onFocus={() => void preload()}
+            sx={{
+              mb: 0.5,
+              borderRadius: 1,
+              borderLeft: "3px solid transparent",
+              "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: palette.wash, color: "primary.dark" },
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 38 }}><Icon size={19} /></ListItemIcon>
+            <ListItemText primary={label} />
           </ListItemButton>
         ))}
-        {(isAdmin || isPoolEditor) ? <ListItemButton component={Link} to={managerPath} selected={location.pathname.startsWith("/admin")} onPointerEnter={() => void preloadAdminPage(managerPath)} onFocus={() => void preloadAdminPage(managerPath)} sx={{ mt: 1, borderRadius: 1, borderLeft: "3px solid transparent", "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: palette.wash, color: "primary.dark" } }}><ListItemIcon sx={{ minWidth: 38 }}><Gauge size={19} /></ListItemIcon><ListItemText primary="管理工作台" /></ListItemButton> : null}
+        {(isAdmin || isPoolEditor) ? (
+          <ListItemButton
+            component={Link}
+            to={managerPath}
+            selected={location.pathname.startsWith("/admin")}
+            onPointerEnter={() => void preloadAdminPage(managerPath)}
+            onFocus={() => void preloadAdminPage(managerPath)}
+            sx={{
+              mt: 1,
+              borderRadius: 1,
+              borderLeft: "3px solid transparent",
+              "&.Mui-selected": { borderLeftColor: "primary.main", bgcolor: palette.wash, color: "primary.dark" },
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 38 }}><Gauge size={19} /></ListItemIcon>
+            <ListItemText primary="管理工作台" />
+          </ListItemButton>
+        ) : null}
       </List>
       <Box sx={{ flex: 1 }} />
       <Divider />
@@ -163,29 +199,10 @@ function AppShell() {
                 textDecoration: "none",
                 color: "inherit",
                 bgcolor: location.pathname === "/account" ? palette.wash.replace("0.06", "0.08") : "transparent",
-                "&:hover": { bgcolor: location.pathname === "/account" ? palette.wash.replace("0.06", "0.12") : "rgba(23, 33, 28, 0.04)" },
-                "&.Mui-focusVisible, &:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+                "&:hover": { bgcolor: location.pathname === "/account" ? palette.wash.replace("0.06", "0.12") : "rgba(28, 35, 33, 0.04)" },
               }}
             >
-              <Box
-                aria-hidden="true"
-                sx={{
-                  width: 36,
-                  height: 36,
-                  flexShrink: 0,
-                  borderRadius: "50%",
-                  display: "grid",
-                  placeItems: "center",
-                  fontWeight: 750,
-                  fontSize: 14,
-                  letterSpacing: "-0.02em",
-                  color: "#fff",
-                  background: `linear-gradient(145deg, ${palette.main} 0%, ${palette.dark} 100%)`,
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)",
-                }}
-              >
-                {(user?.display_name || user?.user_code || "?").trim().charAt(0).toUpperCase() || "?"}
-              </Box>
+              <BrandLogo size={36} borderRadius="50%" />
               <Box sx={{ minWidth: 0, flex: 1 }}>
                 <Typography noWrap sx={{ fontWeight: 700, fontSize: 14, lineHeight: 1.25 }}>
                   {user?.display_name || user?.user_code}
@@ -200,14 +217,7 @@ function AppShell() {
               color="inherit"
               startIcon={<LogOut size={15} />}
               onClick={() => void logout().then(() => navigate("/"))}
-              sx={{
-                justifyContent: "flex-start",
-                px: 1.25,
-                minHeight: 36,
-                color: "text.secondary",
-                fontWeight: 600,
-                "&:hover": { color: "text.primary", bgcolor: "rgba(23, 33, 28, 0.04)" },
-              }}
+              sx={{ justifyContent: "flex-start", px: 1.25, minHeight: 36, color: "text.secondary", fontWeight: 600 }}
             >
               退出登录
             </Button>
@@ -257,34 +267,238 @@ function AppShell() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="fixed" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider", zIndex: theme.zIndex.drawer + 1, backgroundColor: "rgba(247,247,244,0.82)", backdropFilter: "blur(12px) saturate(1.4)", WebkitBackdropFilter: "blur(12px) saturate(1.4)" }}><Toolbar sx={{ gap: 1.5 }}>{mobile ? <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)}><MenuIcon size={21} /></IconButton> : null}<Typography variant="h6" sx={{ flex: 1, fontWeight: 750 }}>{event?.name || "ZPPZ Arena"}</Typography>{phases?.capabilities.submission ? <Chip size="small" color="success" label="投稿开放" /> : <Chip size="small" variant="outlined" label="投稿未开放" />}</Toolbar></AppBar>
-      <Drawer variant={mobile ? "temporary" : "permanent"} open={mobile ? drawerOpen : true} onClose={() => setDrawerOpen(false)} ModalProps={{ keepMounted: true }} sx={{ width: DRAWER_WIDTH, flexShrink: 0, "& .MuiDrawer-paper": { width: DRAWER_WIDTH, boxSizing: "border-box", backgroundColor: "#FBFBF9", borderRightColor: "rgba(23, 33, 28, 0.10)" } }}>{drawer}</Drawer>
-      <Box component="main" sx={{ ml: mobile ? 0 : `${DRAWER_WIDTH}px`, pt: 8, minWidth: 0, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-        <Box
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-            px: { xs: 2, sm: 3 },
-            py: { xs: 2, md: 3 },
-            width: "100%",
-            maxWidth: theme.breakpoints.values.xl,
-            mx: "auto",
+      <AppBar
+        position="fixed"
+        color="inherit"
+        elevation={0}
+        sx={{
+          borderBottom: 1,
+          borderColor: "divider",
+          zIndex: theme.zIndex.drawer + 1,
+          backgroundColor: "rgba(250,251,250,0.85)",
+          backdropFilter: "blur(16px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(16px) saturate(1.3)",
+        }}
+      >
+        <Toolbar sx={{ gap: 1.5, minHeight: 64, px: { xs: 2, md: 3.5 } }}>
+          {mobile ? (
+            <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)} edge="start">
+              <MenuIcon size={21} />
+            </IconButton>
+          ) : null}
+
+          <Box
+            component={Link}
+            to="/"
+            onPointerEnter={() => void loadHomePage()}
+            sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0, color: "inherit", textDecoration: "none" }}
+          >
+            <BrandLogo size={32} borderRadius={2} />
+            <Typography
+              noWrap
+              sx={{
+                fontFamily: '"Noto Serif SC", serif',
+                fontWeight: 700,
+                fontSize: { xs: 16, md: 18 },
+                letterSpacing: "-0.01em",
+                display: { xs: "none", sm: "block" },
+              }}
+            >
+              ZPPZ Arena
+            </Typography>
+          </Box>
+
+          {!mobile ? (
+            <Stack direction="row" spacing={0.5} sx={{ ml: 3, flex: 1, alignItems: "stretch", minWidth: 0 }}>
+              {links.map(({ label, to, preload }) => {
+                const selected = location.pathname === to;
+                return (
+                  <Box
+                    key={to}
+                    component={Link}
+                    to={to}
+                    onPointerEnter={() => void preload()}
+                    onFocus={() => void preload()}
+                    sx={{
+                      px: 1.5,
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: selected ? "text.primary" : "text.secondary",
+                      borderBottom: "2px solid",
+                      borderColor: selected ? "primary.main" : "transparent",
+                      textDecoration: "none",
+                      transition: "color 160ms ease, border-color 160ms ease",
+                      "&:hover": { color: "text.primary" },
+                    }}
+                  >
+                    {label}
+                  </Box>
+                );
+              })}
+              {(isAdmin || isPoolEditor) ? (
+                <Box
+                  component={Link}
+                  to={managerPath}
+                  onPointerEnter={() => void preloadAdminPage(managerPath)}
+                  onFocus={() => void preloadAdminPage(managerPath)}
+                  sx={{
+                    px: 1.5,
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: location.pathname.startsWith("/admin") ? "text.primary" : "text.secondary",
+                    borderBottom: "2px solid",
+                    borderColor: location.pathname.startsWith("/admin") ? "primary.main" : "transparent",
+                    textDecoration: "none",
+                    "&:hover": { color: "text.primary" },
+                  }}
+                >
+                  管理
+                </Box>
+              ) : null}
+            </Stack>
+          ) : (
+            <Box sx={{ flex: 1 }} />
+          )}
+
+          {phases?.capabilities.submission ? (
+            <Chip size="small" color="success" label="投稿开放" sx={{ display: { xs: "none", sm: "inline-flex" } }} />
+          ) : (
+            <Chip size="small" variant="outlined" label="投稿未开放" sx={{ display: { xs: "none", sm: "inline-flex" } }} />
+          )}
+
+          {!mobile ? (
+            isLoggedIn ? (
+              <Button
+                component={Link}
+                to="/account"
+                color="inherit"
+                aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
+                onPointerEnter={() => void loadAccountPage()}
+                sx={{ fontWeight: 600, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+              >
+                {user?.display_name || user?.user_code || "账号"}
+              </Button>
+            ) : (
+              <Button
+                color="inherit"
+                startIcon={<LogIn size={17} />}
+                onPointerEnter={() => void loadAuthPage()}
+                onClick={() => navigateWithViewTransition(navigate, "/login")}
+                sx={{ fontWeight: 600 }}
+              >
+                登录
+              </Button>
+            )
+          ) : null}
+        </Toolbar>
+      </AppBar>
+
+      <Drawer
+        variant="temporary"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        ModalProps={{ keepMounted: true }}
+        sx={{
+          display: { xs: "block", md: "none" },
+          "& .MuiDrawer-paper": {
+            width: DRAWER_WIDTH,
             boxSizing: "border-box",
-          }}
-        >
-          {routes}
-        </Box>
+            backgroundColor: "#FAFBFA",
+            borderRightColor: "rgba(28, 35, 33, 0.10)",
+          },
+        }}
+      >
+        {mobileDrawer}
+      </Drawer>
+
+      <Box
+        component="main"
+        sx={{
+          pt: 8,
+          minWidth: 0,
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {homeLayout ? (
+          <Box sx={{ flex: 1, minWidth: 0 }}>{routes}</Box>
+        ) : (
+          <Box
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+              px: { xs: 2, sm: 3 },
+              py: { xs: 2, md: 3 },
+              width: "100%",
+              maxWidth: theme.breakpoints.values.xl,
+              mx: "auto",
+              boxSizing: "border-box",
+            }}
+          >
+            {routes}
+          </Box>
+        )}
         {location.pathname !== "/" || homepageReady ? <SiteFooter /> : null}
       </Box>
-      {event && announcementMounted && (showAnnouncement || announcementOpen) ? <Suspense fallback={null}><AnnouncementDialog key={`${event.id}:${announcementSignature(announcement)}`} eventId={event.id} markdown={announcement} open={announcementOpen} onClose={() => setAnnouncementOpen(false)} /></Suspense> : null}
+      {event && announcementMounted && (showAnnouncement || announcementOpen) ? (
+        <Suspense fallback={null}>
+          <AnnouncementDialog
+            key={`${event.id}:${announcementSignature(announcement)}`}
+            eventId={event.id}
+            markdown={announcement}
+            open={announcementOpen}
+            onClose={() => setAnnouncementOpen(false)}
+          />
+        </Suspense>
+      ) : null}
     </Box>
   );
 }
 
 function SiteFooter() {
-  return <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper", py: 2 }}><Container maxWidth="xl"><Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 0.75, sm: 2 }} useFlexGap sx={{ alignItems: "center", justifyContent: "center", flexWrap: "wrap", textAlign: "center" }}><Typography component="a" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" variant="caption" color="text.secondary" sx={{ "&:hover": { color: "text.primary" } }}>京ICP备2026012070号-1</Typography><Stack component="a" href="https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846" target="_blank" rel="noopener noreferrer" direction="row" spacing={0.5} sx={{ alignItems: "center", color: "text.secondary", "&:hover": { color: "text.primary" } }}><Box component="img" src={beianIcon} alt="公安备案图标" sx={{ width: 18, height: 18, objectFit: "contain" }} /><Typography variant="caption" color="inherit">京公网安备11010802047846号</Typography></Stack></Stack></Container></Box>;
+  return (
+    <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper", py: 2 }}>
+      <Container maxWidth="xl">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={{ xs: 0.75, sm: 2 }}
+          useFlexGap
+          sx={{ alignItems: "center", justifyContent: "center", flexWrap: "wrap", textAlign: "center" }}
+        >
+          <Typography
+            component="a"
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="caption"
+            color="text.secondary"
+            sx={{ "&:hover": { color: "text.primary" } }}
+          >
+            京ICP备2026012070号-1
+          </Typography>
+          <Stack
+            component="a"
+            href="https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846"
+            target="_blank"
+            rel="noopener noreferrer"
+            direction="row"
+            spacing={0.5}
+            sx={{ alignItems: "center", color: "text.secondary", "&:hover": { color: "text.primary" } }}
+          >
+            <Box component="img" src={beianIcon} alt="公安备案图标" sx={{ width: 18, height: 18, objectFit: "contain" }} />
+            <Typography variant="caption" color="inherit">京公网安备11010802047846号</Typography>
+          </Stack>
+        </Stack>
+      </Container>
+    </Box>
+  );
 }
 
 function RequireLogin({ children }: { children: ReactNode }) {
@@ -297,6 +511,10 @@ function RequireLogin({ children }: { children: ReactNode }) {
   if (!isLoggedIn) return <LoadingBlock />;
   return children;
 }
-function RequireManager({ children }: { children: ReactNode }) { const { isAdmin, isPoolEditor, loading } = useAuth(); if (loading) return <LoadingBlock />; return isAdmin || isPoolEditor ? children : <Navigate to="/" replace />; }
+function RequireManager({ children }: { children: ReactNode }) {
+  const { isAdmin, isPoolEditor, loading } = useAuth();
+  if (loading) return <LoadingBlock />;
+  return isAdmin || isPoolEditor ? children : <Navigate to="/" replace />;
+}
 
 export default App;

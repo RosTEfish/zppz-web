@@ -86,8 +86,9 @@ export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
   const currentIndex = ordered.findIndex((item) => item.phase === phases.active_phase);
   const referenceTime = phases.server_time ? new Date(phases.server_time).getTime() : Date.now();
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, overflowX: "auto" }}>
-      <Typography variant="overline" color="text.secondary">赛事时间轴 · 北京时间</Typography>
+    <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, overflowX: "auto", borderRadius: 0, bgcolor: "transparent" }}>
+      <Typography variant="h2" sx={{ fontSize: "1.625rem", mb: 0.5 }}>赛事时间轴</Typography>
+      <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: "0.14em" }}>Beijing Time</Typography>
       <Box sx={{ position: "relative", mt: 1.5 }}>
         {ordered.length > 0 && <Box aria-hidden="true" sx={{ position: "absolute", top: 7, left: 7, right: 7, height: 2, bgcolor: "rgba(23, 33, 28, 0.08)", borderRadius: 1 }} />}
         <Box sx={{ position: "relative", display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: `repeat(${Math.max(ordered.length, 1)}, minmax(96px, 1fr))` }, gap: { xs: 1.5, sm: 1 } }}>
@@ -106,10 +107,10 @@ export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
                     borderRadius: "50%",
                     mb: 1,
                     ...(active
-                      ? { bgcolor: "#C9973B", boxShadow: "0 0 0 4px rgba(201, 151, 59, 0.22)" }
+                      ? { bgcolor: "primary.main", boxShadow: "0 0 0 4px rgba(31, 90, 71, 0.18)", transform: "scale(1.15)" }
                       : completed || (currentIndex > -1 && index < currentIndex)
-                        ? { bgcolor: "primary.main" }
-                        : { bgcolor: "background.paper", border: "2px solid rgba(23, 33, 28, 0.16)" }),
+                        ? { bgcolor: "text.primary" }
+                        : { bgcolor: "transparent", border: "2px solid rgba(28, 35, 33, 0.3)" }),
                   }}
                 />
                 <Typography variant="caption" component="p" sx={{ fontWeight: active ? 800 : 650, color: active ? "primary.dark" : "text.primary" }}>{PHASE_LABELS[item.phase]}</Typography>

@@ -16,21 +16,24 @@ export const brand = {
 } as const;
 
 export const ink = {
-  primary: "#17211C",
-  secondary: "#57645D",
+  primary: "#1C2321",
+  secondary: "#5A6561",
   disabled: "#93A09A",
 } as const;
 
 export const surface = {
-  canvas: "#F7F7F4",
+  canvas: "#FAFBFA",
   paper: "#FFFFFF",
-  subtle: "#F1F3EF",
+  subtle: "#F4F6F5",
 } as const;
 
 export const borderColor = {
-  default: "rgba(23, 33, 28, 0.10)",
-  strong: "rgba(23, 33, 28, 0.16)",
+  default: "rgba(28, 35, 33, 0.10)",
+  strong: "rgba(28, 35, 33, 0.16)",
 } as const;
+
+const fontSans = '"Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
+const fontDisplay = '"Noto Serif SC", "Noto Sans SC", "Songti SC", serif';
 
 function buildShadows(palette: EventPalette) {
   const inkRgb = palette.shadowInk;
@@ -86,16 +89,16 @@ export function createAppTheme(palette: EventPalette = defaultEventPalette) {
     shape: { borderRadius: 8 },
     shadows: tintedShadows as typeof base.shadows,
     typography: {
-      fontFamily: '"Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif',
-      h1: { fontSize: "clamp(2rem, 4vw, 2.75rem)", fontWeight: 800, lineHeight: 1.15 },
-      h2: { fontSize: "1.625rem", fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.01em" },
-      h3: { fontSize: "1.1875rem", fontWeight: 650, lineHeight: 1.35 },
+      fontFamily: fontSans,
+      h1: { fontFamily: fontDisplay, fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, lineHeight: 1.12 },
+      h2: { fontFamily: fontDisplay, fontSize: "1.625rem", fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.01em" },
+      h3: { fontFamily: fontDisplay, fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.35 },
       subtitle1: { fontSize: "1rem", fontWeight: 550, lineHeight: 1.5 },
       body1: { fontSize: "0.9375rem", lineHeight: 1.65, letterSpacing: 0, fontVariantNumeric: "tabular-nums" },
       body2: { fontSize: "0.875rem", lineHeight: 1.6, letterSpacing: 0, fontVariantNumeric: "tabular-nums" },
       button: { fontWeight: 600, textTransform: "none", letterSpacing: 0, fontVariantNumeric: "tabular-nums" },
       caption: { fontSize: "0.8125rem", fontWeight: 600, lineHeight: 1.45, fontVariantNumeric: "tabular-nums" },
-      overline: { fontSize: "0.6875rem", fontWeight: 700, lineHeight: 1.4, fontVariantNumeric: "tabular-nums" },
+      overline: { fontSize: "0.6875rem", fontWeight: 700, lineHeight: 1.4, letterSpacing: "0.14em", fontVariantNumeric: "tabular-nums" },
     },
     components: {
       MuiButton: {

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/": {
+      "targetKind": "existing-ui",
+      "projectId": "b3c01b67-1e3c-4ab7-9b80-e1c792149618",
+      "baselineDraftId": "b5c17555-a503-4d00-9de1-70731b8cffbf",
+      "activeDraftId": "eaa7d275-0f47-4a15-951f-2aff1ac09126",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "d76c7565-4f21-40f2-bb75-b470921fe0f3",
+        "bg-square.webp"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "bg-square.webp",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/b3c01b67-1e3c-4ab7-9b80-e1c792149618/brand-assets/bg-square.webp/square.webp",
+          "sourcePath": "bg/square.webp"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md:1:88",
+        "frontend/src/App.tsx:129:228",
+        "frontend/src/App.tsx:258:287",
+        "frontend/src/pages/HomePage.tsx",
+        "frontend/src/components/EventHeroArt.tsx",
+        "frontend/src/components/EventPhaseStatus.tsx:58:124",
+        "frontend/src/index.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "9b1db00adf1d609406280e4d895642c03f400c38a3f412fc7dadabe502a6b902",
+        ".superdesign/init/theme.md": "c7b81dc7d68b3a6c6c9840f99d4966218cabae2c19d63a996b536fcc5711b48d",
+        "frontend/src/App.tsx": "4c8bb418ef955a69b1bc6b833419d1a0b359520fb92edfa3115b9af5aeb60451",
+        "frontend/src/pages/HomePage.tsx": "aa4074164a7658f880e3a16b5adb6aeb65a2794491e284c72ca6d458ddb51ee6",
+        "frontend/src/components/EventHeroArt.tsx": "2ac32d2709a995d165440f52e6c14706677bc8ec6b17677e78ae9106850ee6cf",
+        "frontend/src/components/EventPhaseStatus.tsx": "0511ae2e7b10d4a8bacf3e62c3ea9bf4556b86c14de7cb59467f6ace20d6dd54",
+        "frontend/src/index.css": "1689c21cd59a96ca0dbd98adf824e211b69f5ee401f4161b375dea070d62f6ac"
+      },
+      "components": [
+        {
+          "name": "SideNav",
+          "id": "0a1b3cbf-4240-41ff-ade6-5fdb5f538367",
+          "sourcePath": "frontend/src/App.tsx",
+          "logoAssetKey": "bg-square.webp"
+        },
+        {
+          "name": "TopAppBar",
+          "id": "cd5f507e-d5dd-4530-b040-88c953d4ce6e",
+          "sourcePath": "frontend/src/App.tsx"
+        }
+      ],
+      "drafts": {
+        "b5c17555-a503-4d00-9de1-70731b8cffbf": {
+          "title": "Current HomePage",
+          "visualDirection": "pixel-perfect baseline",
+          "currentVersion": 1
+        },
+        "f2feebad-c1f0-4f06-b562-bb91b3de778d": {
+          "title": "Direction A — layout restructure",
+          "visualDirection": "keep design system, clearer first viewport hierarchy",
+          "parentDraftId": "b5c17555-a503-4d00-9de1-70731b8cffbf",
+          "currentVersion": 1
+        },
+        "db71d70c-b486-4d8a-8176-7695dab28fe0": {
+          "title": "Direction B — Dark Concert Stage",
+          "visualDirection": "new dark concert-hall visual language",
+          "parentDraftId": "b5c17555-a503-4d00-9de1-70731b8cffbf",
+          "currentVersion": 1
+        },
+        "eaa7d275-0f47-4a15-951f-2aff1ac09126": {
+          "title": "Direction B2 — Ink-Wash Digital Festival",
+          "visualDirection": "ink-wash; square.webp 1:1 logo",
+          "parentDraftId": "b5c17555-a503-4d00-9de1-70731b8cffbf",
+          "currentVersion": 3
+        },
+        "820fcb12-c19f-4994-a98e-fc51b7e7f7ce": {
+          "title": "B2 Home · Mobile",
+          "visualDirection": "ink-wash mobile; square.webp logo",
+          "parentDraftId": "eaa7d275-0f47-4a15-951f-2aff1ac09126",
+          "currentVersion": 2
+        },
+        "cc415227-8719-497a-b70f-239a42ad9caa": {
+          "title": "B2 Login · Ink-Wash",
+          "visualDirection": "ink-wash login; square.webp logo",
+          "parentDraftId": "eaa7d275-0f47-4a15-951f-2aff1ac09126",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-10-11T13:22:00.000Z"
+    }
+  }
+}

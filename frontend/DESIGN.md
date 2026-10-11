@@ -1,17 +1,17 @@
 # ZPPZ Arena Design System（这谱谱这 · 视觉契约）
 
-> 方向：**高级感浅色「精密舞台」**——以 Stripe 浅色体系为 token 源（Layer B: `stripe.md`；Layer A: `soft-skill.md` 执行纪律），
-> 保留赛事既有的常青绿品牌基因。所有 UI 改动必须回溯到本文件的 token，禁止游离的裸 hex / 魔法 px。
+> 方向：**浅色「水墨数字节」(Ink-Wash Digital Festival)**——空气感画布 + 玉绿交互 + 衬线标题，
+> 保留赛事动态取色基因。所有 UI 改动必须回溯到本文件的 token，禁止游离的裸 hex / 魔法 px。
 > 硬约束：**只改视觉，不改任何功能逻辑、路由、数据流、表单行为、文案语义、可访问性结构（aria/testid 全部保留）。**
 
 ---
 
 ## 1. Atmosphere & Identity
 
-- **氛围**：明亮、精密、"舞台灯光下的仪器"。深度感来自 **多层染色阴影 + 表面亮度分层**，而不是边框。
-- **签名材质**：绿墨染色阴影（远层大模糊染色 + 近层小模糊中性，Stripe 公式）；关键卡片用「双壳嵌套」(outer shell + inner core)。
-- **色彩故事**：松墨绿 ink 做标题（不是纯黑）→ **赛事动态 primary**（从 `bg/` 素材取色，对比度钳制后作为唯一交互强调色；无素材时回退常青绿）→ 暖纸白画布 → 取色 accent 仅做装饰性点缀（时间轴辉光、渐变高光、eyebrow 下划线），不参与交互色。
-- **记忆点**：首页 Hero 的赛事视觉平面（动态读取 `bg/` → `/api/v1/assets/backgrounds`）+ 取色叠层；登录页全幅沉浸背景 + 玻璃表单；无素材时回退「聚光灯」渐变与超大号细描边音符水印；阶段时间轴的 accent 辉光活动节点。
+- **氛围**：明亮、编辑感、"水墨洗过的数字节"。深度感来自 **柔和墨色阴影 + 表面亮度分层**，首屏以全幅赛事视觉为主。
+- **签名材质**：玉绿 CTA、轻描边编辑卡、Hero 左侧/底部水墨可读性蒙版（非沉重不透明板）。
+- **色彩故事**：墨炭 ink 做标题 → **赛事动态 primary**（从 `bg/` 取色；无素材时回退玉绿 `#1F5A47`）→ 冷纸白画布 `#FAFBFA` → accent 仅装饰性点缀，不参与交互色。
+- **记忆点**：顶栏水平导航 + 1:1 `square` logo；首页全幅 Hero（`banner→post→square`）品牌先行（ZPPZ Arena / 这谱谱这 → 赛事名 → CTA）；登录页分栏海报 + 实体纸卡表单；时间轴活动节点用 primary 辉光。
 
 ## 2. Color
 
@@ -19,25 +19,25 @@
 
 | Token | 值 | 用途 |
 |---|---|---|
-| `bg.canvas` | `#F7F7F4` | 页面画布（暖纸白，替代 #F7F9F7） |
+| `bg.canvas` | `#FAFBFA` | 页面画布（冷纸白） |
 | `bg.paper` | `#FFFFFF` | 卡片/面板表面 |
-| `bg.subtle` | `#F1F3EF` | 次级填充、表头、hover 底 |
-| `ink.primary` | `#17211C` | 标题/正文主色（深松墨绿，非纯黑） |
-| `ink.secondary` | `#57645D` | 次级文字 |
+| `bg.subtle` | `#F4F6F5` | 次级填充、表头、hover 底 |
+| `ink.primary` | `#1C2321` | 标题/正文主色（墨炭，非纯黑） |
+| `ink.secondary` | `#5A6561` | 次级文字 |
 | `ink.disabled` | `#93A09A` | 占位符、禁用文字 |
-| `brand.main` | 默认 `#176B52`；运行时可被素材取色覆盖 | primary 主色（对白字对比 ≥ 4.5） |
-| `brand.dark` | 默认 `#0E523E` | primary hover / 强调深色 |
-| `brand.darker` | 默认 `#0A3B2D` | 渐变端点、Hero 深色 |
-| `brand.tint` | 默认 `#DCEEE5` | primary.light：图标底、选中底、soft 按钮 |
-| `brand.wash` | 默认 `rgba(23,107,82,0.06)` | 极浅色洗（背景光晕、选中导航底） |
+| `brand.main` | 默认 `#1F5A47`；运行时可被素材取色覆盖 | primary 主色（对白字对比 ≥ 4.5） |
+| `brand.dark` | 默认 `#154233` | primary hover / 强调深色 |
+| `brand.darker` | 默认 `#0F2F25` | 渐变端点、Hero 深色 |
+| `brand.tint` | 默认 `#D8E5DF` | primary.light：图标底、选中底、soft 按钮 |
+| `brand.wash` | 默认 `rgba(31,90,71,0.06)` | 极浅色洗（背景光晕、选中导航底） |
 | `accent` / `gold.decorative` | 默认 `#C9973B`；随素材 accent 变化 | 装饰性点缀（渐变、辉光、eyebrow 下划线）。**禁止用作按钮/链接色** |
 | `gold.tint` | `#F5EBD7` | 金色浅底（装饰容器；无动态覆盖时保留） |
 | `state.warning` | `main #B4740A / light #FBF0DA` | 警告（唯一允许的暖色语义色） |
 | `state.info` | `main #1F6E80 / light #DDF0F3` | 提示信息（teal，与绿系同族） |
 | `state.success` | `main #218650 / light #DEF2E4` | 成功 |
 | `state.error` | `main #BC4038 / light #FADEDC` | 错误 |
-| `border.default` | `rgba(23,33,28,0.10)` | 卡片/输入默认描边（半透明墨绿灰） |
-| `border.strong` | `rgba(23,33,28,0.16)` | hover 描边、分隔强调 |
+| `border.default` | `rgba(28,35,33,0.10)` | 卡片/输入默认描边（半透明墨灰） |
+| `border.strong` | `rgba(28,35,33,0.16)` | hover 描边、分隔强调 |
 
 ### Rules
 
@@ -53,39 +53,40 @@
 ### Font Stack
 
 ```
-"Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif
+UI / body: "Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif
+Display (h1–h3 / 品牌字): "Noto Serif SC", "Noto Sans SC", "Songti SC", serif
 ```
 
-依赖已存在：`@fontsource/outfit`、`@fontsource/noto-sans-sc`。按需补 import 字重（300/400/500/600/700/800），不新增字体包。
+依赖：`@fontsource/outfit`、`@fontsource/noto-sans-sc`、`@fontsource/noto-serif-sc`。字重经 `fonts.css` 异步加载。
 
 ### Scale（MUI variant 映射）
 
 | Variant | Size | Weight | LineHeight | Tracking | 备注 |
 |---|---|---|---|---|---|
-| h1 | clamp(2rem→2.75rem) | 800 | 1.15 | -0.02em | Hero 大标题（中文为主时 tracking 归零，拉丁可用负值） |
-| h2 | 1.625rem | 700 | 1.25 | -0.01em | 页面标题 |
-| h3 | 1.1875rem | 650 | 1.35 | normal | 卡片标题 |
+| h1 | clamp(2rem→3.5rem) | 900 | 1.12 | normal | Hero 赛事名（衬线） |
+| h2 | 1.625rem | 700 | 1.25 | -0.01em | 区块标题（衬线） |
+| h3 | 1.25rem | 700 | 1.35 | normal | 卡片标题（衬线） |
 | subtitle1 | 1rem | 550 | 1.5 | normal | 强调正文 |
 | body1/body2 | 0.9375rem | 400 | 1.65 | normal | 正文（保持 tabular-nums） |
 | button | 0.9375rem | 600 | 1 | normal | textTransform: none |
-| caption | 0.8125rem | 500 | 1.45 | normal | 辅助说明 |
-| overline | 0.6875rem | 700 | 1.4 | 0.14em | eyebrow 小标签（全大写拉丁） |
+| caption | 0.8125rem | 600 | 1.45 | normal | 辅助说明 |
+| overline | 0.6875rem | 700 | 1.4 | 0.14em | eyebrow 小标签 |
 
 ### Rules
 
-1. 三档字重哲学（Stripe 原则改造）：400 读 / 600 强调 UI / 800 宣告。标题层级靠 size+weight 对比，不靠颜色。
-2. 数字一律 tabular-nums（现状保留）。
-3. eyebrow 模式：overline 小标签 + 可选金色短下划线（宽 24px 高 2px 圆角）。
-4. 中文文本不加负 letter-spacing；仅拉丁展示字（Outfit）允许 -0.01~-0.02em。
+1. 三档字重：400 读 / 600 UI / 700–900 宣告（衬线标题）。
+2. 数字一律 tabular-nums。
+3. 品牌 eyebrow：玉绿短下划线（宽 ~32px 高 2px）。
+4. 中文文本不加负 letter-spacing。
 
 ## 4. Spacing & Layout
 
 - **Base unit**: 8px；常用档位 4/8/12/16/20/24/32/40/56。
-- **Grid**: 保持现有 `Container maxWidth="xl"` + 左侧固定 Drawer 248px 的壳层骨架（功能不动）。页面内容纵向节奏：PageHeader → 内容块 gap 24px。
+- **Shell**: 固定玻璃顶栏（水平导航，md+）；移动端汉堡 + temporary Drawer。首页 `/` 全宽无内容 padding（自管 maxWidth 1280）；其余路由保持 xl 内容区 padding。
 - **Rules**:
-  1. 卡片内 padding：桌面 24px / 移动 16px。
-  2. 相关控件组 gap 8~12px；区块之间 24~32px；页面级留白宁可多不少。
-  3. 断点沿用 MUI 默认 xs/sm/md/lg/xl；移动端所有多列网格塌缩为单列。
+  1. 卡片内 padding：桌面 24–28px / 移动 16–20px。
+  2. 相关控件组 gap 8~12px；区块之间 24~40px。
+  3. 断点沿用 MUI 默认；移动端多列网格塌缩为单列/列表。
 
 ## 5. Components
 
@@ -107,14 +108,11 @@
 - 开放态：`success.light` 底 + success 字；未开放：透明底 + `border.default` + secondary 字。
 
 ### AppBar（顶栏）
-- 玻璃拟态：`rgba(247,247,244,0.82)` + `backdrop-filter: blur(12px)` saturate(1.4)，底部 1px `border.default`，无阴影。
-- 高度 64px；右侧状态 Chip 用 §Chip 规范。
+- 玻璃拟态：`rgba(250,251,250,0.85)` + `backdrop-filter: blur(16px)`，底部 1px `border.default`，无阴影。
+- 高度 64px；左侧 1:1 `square` logo（`BrandLogo` / `backgrounds.brand`）+「ZPPZ Arena」；md+ 水平导航（选中底边 2px primary）；右侧投稿 Chip + 登录/账号。
 
-### Drawer（侧栏导航）
-- 背景 `#FBFBF9`（比画布亮半档），右缘 1px border。
-- 品牌区：36px 圆角方块 "Z"（`brand.main`→`brand.dark` 渐变 + 微内高光），下方两行品牌字。
-- 导航项：radius 8，selected = `brand.wash` 底 + 3px 左侧 `brand.main` 指示条 + `brand.dark` 文字 + 图标同色；hover = `bg.subtle`。过渡 160ms。
-- 底部用户卡：独立 `bg.subtle` 圆角容器包住账号信息 + 退出按钮。
+### Drawer（仅移动端）
+- temporary Drawer，宽 280；品牌区用 `BrandLogo` + 赛事名；导航项 selected = wash + 左侧 3px primary；底部账号/登录。
 
 ### Table / DataGrid
 - 表头：`bg.subtle` 底、`ink.secondary` 700 字重、无竖线、行 hover `brand.wash`。
@@ -139,7 +137,7 @@
 - 42px 圆角(12) 图标方块改：`linear-gradient(135deg, brand.tint, #EFF7F2)` 底 + `brand.dark` 图标 + 1px border.default；标题 h2；meta caption。右侧 actions 不变。
 
 ### PhaseTimeline（阶段时间轴）
-- 真实时间轴形态：横向轨道线（2px `border.default`）+ 各阶段节点圆点；已完成=`brand.main` 实心，进行中=金色点 + `rgba(201,151,59,0.25)` 8px 辉光环，未开始=`bg.subtle` 描边空心；节点下 label + 时间 caption。移动端塌缩为紧凑列表。
+- 横向轨道线 + 节点圆点；已完成=ink 实心，进行中=`brand.main` + tint 辉光环，未开始=描边空心；节点下 label + 时间 caption。
 
 ### Skeletons（HomePageSkeleton/TableSkeleton/CardGridSkeleton）
 - 保持结构，Skeleton 波纹色改为 `rgba(23,107,82,0.08)`↔`rgba(23,107,82,0.03)`，容器卡片同步 §Card 规范。
@@ -165,7 +163,7 @@
 
 | 层级 | 配方 | 用途 |
 |---|---|---|
-| L0 canvas | `#F7F7F4` + 顶部绿色 radial wash(0.05) + 右上 teal 光晕 + 噪点纹理(0.035) | 页面背景 |
+| L0 canvas | `#FAFBFA` + 右上 jade tint wash + 左下 ink-wash + 轻噪点 | 页面背景 |
 | L1 flat card | 白底 + `border.default` + r12，无阴影 | 列表项、次要容器 |
 | L2 raised | L1 + shadow sh1 | 内容主卡 |
 | L3 floating | L2 + shadow sh2；hover 升 sh3 + translateY(-2px) | 可点卡片 |
@@ -180,22 +178,14 @@ sh3 = "0 4px 12px -2px rgba(18,42,33,0.08), 0 20px 44px -16px rgba(13,53,41,0.22
 sh4 = "0 8px 20px -8px rgba(23,23,23,0.10), 0 28px 56px -20px rgba(13,53,41,0.26)"
 ```
 
-**画布配方（index.css body）**：
-```css
-background-color: #F7F7F4;
-background-image:
-  radial-gradient(1100px 480px at 88% -8%, rgba(23,107,82,0.07), transparent 60%),
-  radial-gradient(900px 420px at -6% 30%, rgba(31,110,128,0.05), transparent 55%),
-  radial-gradient(700px 380px at 70% 110%, rgba(201,151,59,0.04), transparent 60%),
-  url("noise-svg opacity 0.035");
-```
+**画布配方（index.css body）**：见 `frontend/src/index.css`（`#FAFBFA` + jade/ink radial washes + 轻噪点）。
 
-**Hero 赛事视觉（首页 Hero）**：
-1. 运行时拉取 `GET /api/v1/assets/backgrounds`（仓库 `bg/` 由 prepare 同步；栅格图在同步时转 WebP）。按文件名角色解析：`banner` / `post` / `square`；支持届次前缀（如 `zppz4_post.webp`）。优先匹配当前赛事 slug / `#N` → `zppzN`，否则用无前缀 canonical；同角色优先 `.webp`。
-2. Hero 选用顺序：`banner` → `post` → `square`。图片 `object-fit: cover` 铺满 Hero，上方叠暖纸白可读性渐变 + 既有金/绿聚光灯 wash；文案区 `z-index: 1`，桌面侧限制 `maxWidth` 以免压住画面。
-3. 登录页（Draft A · 分栏海报）：独立全屏壳（**无 AppBar / Drawer**）。`md+` 左栏整幅 `post`（→ brand → hero），右栏暖纸画布 + **实体纸卡表单**（不透明、无玻璃雾）。移动端顶条海报（约 220px）+ 下方表单。
-4. **无素材回退**：Hero 沿用聚光灯 + Music2 水印；登录左栏用 tint/wash 渐变占位。
-5. 动效：Hero/Auth 图 420ms scale+fade（经 View Transition 抵达时跳过，避免叠动）；Auth 表单 360ms fade-up。登录壳 ↔ 主壳用 View Transitions 整页水平滑动（`navigateWithViewTransition`）：切到登录时新页从左滑入、旧页右出；登录后旧页左出、主壳从右滑入；`prefers-reduced-motion` 时跳过。
+**Hero / Logo / Auth**：
+1. `GET /api/v1/assets/backgrounds` 解析 `banner` / `post` / `square`（届次前缀优先）。
+2. Hero：`banner → post → square`，全幅 cover + 水墨可读性蒙版；首屏品牌层级：ZPPZ Arena → 这谱谱这 → 赛事名 → CTA。
+3. Logo：`BrandLogo` 使用 `backgrounds.brand`（`square → post → banner`），无素材回退字母 Z。
+4. 登录：独立全屏壳；`md+` 左栏 `post→brand→hero`，右栏实体纸卡表单。
+5. 动效与 View Transitions 规则不变。
 
 ## 8. Accessibility Constraints & Accepted Debt
 

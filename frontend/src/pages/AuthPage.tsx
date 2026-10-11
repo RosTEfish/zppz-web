@@ -4,6 +4,7 @@ import { LogIn } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import BrandLogo from "../components/BrandLogo";
 import { isRegistrationClosed } from "../components/EventPhaseStatus";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
@@ -106,7 +107,7 @@ export default function AuthPage() {
               : [
                   `radial-gradient(720px 420px at 20% 20%, ${palette.washA}, transparent 60%)`,
                   `radial-gradient(640px 380px at 80% 80%, ${palette.accentSoft}, transparent 58%)`,
-                  "linear-gradient(135deg, #F7F7F4, #F1E8DF)",
+                  "linear-gradient(135deg, #FAFBFA, #F4F6F5)",
                 ].join(", "),
           }}
         />
@@ -165,28 +166,11 @@ export default function AuthPage() {
           }}
         >
           <Stack direction="row" spacing={1.5} sx={{ mb: 2.25, alignItems: "center" }}>
-            <Box
-              aria-hidden="true"
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "12px",
-                display: "grid",
-                placeItems: "center",
-                flexShrink: 0,
-                color: "#fff",
-                fontWeight: 800,
-                fontSize: 18,
-                background: `linear-gradient(135deg, ${palette.main} 0%, ${palette.dark} 100%)`,
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
-              }}
-            >
-              Z
-            </Box>
+            <BrandLogo size={40} borderRadius="12px" />
             <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontWeight: 800, lineHeight: 1.2 }}>ZPPZ Arena</Typography>
+              <Typography sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700, lineHeight: 1.2 }}>ZPPZ Arena</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, fontWeight: 600 }}>
-                登录入口
+                这谱谱这 · 登录入口
               </Typography>
             </Box>
           </Stack>
