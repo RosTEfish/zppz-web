@@ -218,6 +218,33 @@ function AppShell() {
     </Box>
   );
 
+  const routes = (
+    <Suspense fallback={location.pathname === "/" ? <HomePageSkeleton /> : <LoadingBlock />}>
+      <Routes>
+        <Route path="/" element={<HomePage onOpenAnnouncement={openAnnouncement} />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/songs" element={<RequireLogin><SongPoolPage /></RequireLogin>} />
+        <Route path="/banlist" element={<Navigate to="/songs?view=ban-check" replace />} />
+        <Route path="/draw" element={<RequireLogin><DrawPage /></RequireLogin>} />
+        <Route path="/submissions" element={<RequireLogin><SubmissionPage /></RequireLogin>} />
+        <Route path="/guess" element={<GuessPage />} />
+        <Route path="/archive" element={<ArchivePage />} />
+        <Route path="/account" element={<RequireLogin><AccountPage /></RequireLogin>} />
+        <Route path="/admin/:tab" element={<RequireManager><AdminPage /></RequireManager>} />
+        <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
+  );
+
+  if (authLayout) {
+    return (
+      <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
+        {routes}
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar position="fixed" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider", zIndex: theme.zIndex.drawer + 1, backgroundColor: "rgba(247,247,244,0.82)", backdropFilter: "blur(12px) saturate(1.4)", WebkitBackdropFilter: "blur(12px) saturate(1.4)" }}><Toolbar sx={{ gap: 1.5 }}>{mobile ? <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)}><MenuIcon size={21} /></IconButton> : null}<Typography variant="h6" sx={{ flex: 1, fontWeight: 750 }}>{event?.name || "ZPPZ Arena"}</Typography>{phases?.capabilities.submission ? <Chip size="small" color="success" label="投稿开放" /> : <Chip size="small" variant="outlined" label="投稿未开放" />}</Toolbar></AppBar>
@@ -229,36 +256,17 @@ function AppShell() {
             minWidth: 0,
             display: "flex",
             flexDirection: "column",
-            ...(authLayout
-              ? {}
-              : {
-                  px: { xs: 2, sm: 3 },
-                  py: { xs: 2, md: 3 },
-                  width: "100%",
-                  maxWidth: theme.breakpoints.values.xl,
-                  mx: "auto",
-                  boxSizing: "border-box",
-                }),
+            px: { xs: 2, sm: 3 },
+            py: { xs: 2, md: 3 },
+            width: "100%",
+            maxWidth: theme.breakpoints.values.xl,
+            mx: "auto",
+            boxSizing: "border-box",
           }}
         >
-          <Suspense fallback={location.pathname === "/" ? <HomePageSkeleton /> : <LoadingBlock />}>
-            <Routes>
-              <Route path="/" element={<HomePage onOpenAnnouncement={openAnnouncement} />} />
-              <Route path="/login" element={<AuthPage />} />
-              <Route path="/songs" element={<RequireLogin><SongPoolPage /></RequireLogin>} />
-              <Route path="/banlist" element={<Navigate to="/songs?view=ban-check" replace />} />
-              <Route path="/draw" element={<RequireLogin><DrawPage /></RequireLogin>} />
-              <Route path="/submissions" element={<RequireLogin><SubmissionPage /></RequireLogin>} />
-              <Route path="/guess" element={<GuessPage />} />
-              <Route path="/archive" element={<ArchivePage />} />
-              <Route path="/account" element={<RequireLogin><AccountPage /></RequireLogin>} />
-              <Route path="/admin/:tab" element={<RequireManager><AdminPage /></RequireManager>} />
-              <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
+          {routes}
         </Box>
-        {!authLayout && (location.pathname !== "/" || homepageReady) ? <SiteFooter /> : null}
+        {location.pathname !== "/" || homepageReady ? <SiteFooter /> : null}
       </Box>
       {event && announcementMounted && (showAnnouncement || announcementOpen) ? <Suspense fallback={null}><AnnouncementDialog key={`${event.id}:${announcementSignature(announcement)}`} eventId={event.id} markdown={announcement} open={announcementOpen} onClose={() => setAnnouncementOpen(false)} /></Suspense> : null}
     </Box>

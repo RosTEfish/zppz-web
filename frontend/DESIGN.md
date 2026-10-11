@@ -193,9 +193,9 @@ background-image:
 **Hero 赛事视觉（首页 Hero）**：
 1. 运行时拉取 `GET /api/v1/assets/backgrounds`（仓库 `bg/` 由 prepare 同步）。按文件名角色解析：`banner` / `post` / `square`；支持届次前缀（如 `zppz4_post.png`）。优先匹配当前赛事 slug / `#N` → `zppzN`，否则用无前缀 canonical 文件。
 2. Hero 选用顺序：`banner` → `post` → `square`。图片 `object-fit: cover` 铺满 Hero，上方叠暖纸白可读性渐变 + 既有金/绿聚光灯 wash；文案区 `z-index: 1`，桌面侧限制 `maxWidth` 以免压住画面。
-3. 登录页：全幅沉浸（`post` → `brand` → `hero`）+ 玻璃表单居中；禁止并排「素材卡 + 表单卡」。可读性靠暖纸白斜向 veil + 动态 wash/accent 光晕。
-4. **无素材回退**：沿用聚光灯配方 + lucide Music2 水印（`strokeWidth={1}`，约 200px+）；登录页仅保留动态/默认 wash。
-5. 动效：Hero 图 420ms scale+fade；Auth 舞台 480ms + 表单 360ms fade-up；均尊重 `prefers-reduced-motion`。
+3. 登录页（Draft A · 分栏海报）：独立全屏壳（**无 AppBar / Drawer**）。`md+` 左栏整幅 `post`（→ brand → hero），右栏暖纸画布 + **实体纸卡表单**（不透明、无玻璃雾）。移动端顶条海报（约 220px）+ 下方表单。
+4. **无素材回退**：Hero 沿用聚光灯 + Music2 水印；登录左栏用 tint/wash 渐变占位。
+5. 动效：Hero/Auth 图 420ms scale+fade；Auth 表单 360ms fade-up；均尊重 `prefers-reduced-motion`。
 
 ## 8. Accessibility Constraints & Accepted Debt
 
