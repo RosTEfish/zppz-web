@@ -1,0 +1,21 @@
+{
+  "name": "这谱谱这",
+  "short_name": "ZPPZ",
+  "description": "这谱谁写的的写谁谱这",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#FAFBFA",
+  "theme_color": "#1F5A47",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
