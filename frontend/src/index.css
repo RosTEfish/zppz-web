@@ -61,6 +61,45 @@ svg {
   background: var(--zppz-selection);
 }
 
+/* Auth shell ↔ app shell crossfade (View Transitions API) */
+@keyframes zppz-vt-out {
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+    filter: blur(6px);
+  }
+}
+
+@keyframes zppz-vt-in {
+  from {
+    opacity: 0;
+    transform: scale(1.015);
+    filter: blur(6px);
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 340ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+}
+
+::view-transition-old(root) {
+  animation-name: zppz-vt-out;
+}
+
+::view-transition-new(root) {
+  animation-name: zppz-vt-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
 @media (max-width: 599px) {
   .MuiDialog-paper:not(.MuiDialog-paperFullScreen) {
     margin: 12px;

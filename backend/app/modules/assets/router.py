@@ -78,7 +78,14 @@ def background_file(file_name: str):
     file = get_settings().assets_dir / "backgrounds" / safe
     if not file.exists():
         raise HTTPException(status_code=404, detail="背景不存在")
-    return FileResponse(file, headers=BACKGROUND_CACHE_HEADERS)
+    media_types = {
+        ".webp": "image/webp",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+    }
+    return FileResponse(file, media_type=media_types.get(file.suffix.lower()), headers=BACKGROUND_CACHE_HEADERS)
 
 
 @router.get("/guess-covers/{file_name}")

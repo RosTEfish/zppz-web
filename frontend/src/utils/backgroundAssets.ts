@@ -16,6 +16,22 @@ export interface ResolvedBackgrounds {
 }
 
 const ROLES: BackgroundRole[] = ["banner", "post", "square"];
+const FORMAT_RANK: Record<string, number> = {
+  ".webp": 0,
+  ".jpg": 1,
+  ".jpeg": 2,
+  ".png": 3,
+  ".gif": 4,
+};
+
+function extensionOf(fileName: string): string {
+  const idx = fileName.lastIndexOf(".");
+  return idx >= 0 ? fileName.slice(idx).toLowerCase() : "";
+}
+
+function formatRank(fileName: string): number {
+  return FORMAT_RANK[extensionOf(fileName)] ?? 50;
+}
 
 export function parseBackgroundRole(fileName: string): { role: BackgroundRole | null; editionKey: string | null } {
   const stem = fileName.replace(/\.[^.]+$/, "").toLowerCase();
@@ -43,20 +59,25 @@ export function preferredEditionKeys(event: { name?: string | null; slug?: strin
   return [...new Set(keys.filter(Boolean))];
 }
 
+function bestAsset(candidates: BackgroundAsset[]): BackgroundAsset | null {
+  if (!candidates.length) return null;
+  return [...candidates].sort((a, b) => formatRank(a.file_name) - formatRank(b.file_name))[0] ?? null;
+}
+
 function pickForRole(assets: BackgroundAsset[], role: BackgroundRole, preferredKeys: string[]): BackgroundAsset | null {
   const candidates = assets
     .map((asset) => ({ asset, ...parseBackgroundRole(asset.file_name) }))
     .filter((item) => item.role === role);
 
   for (const key of preferredKeys) {
-    const match = candidates.find((item) => item.editionKey === key);
-    if (match) return match.asset;
+    const match = bestAsset(candidates.filter((item) => item.editionKey === key).map((item) => item.asset));
+    if (match) return match;
   }
 
-  const canonical = candidates.find((item) => item.editionKey === null);
-  if (canonical) return canonical.asset;
+  const canonical = bestAsset(candidates.filter((item) => item.editionKey === null).map((item) => item.asset));
+  if (canonical) return canonical;
 
-  return candidates[0]?.asset ?? null;
+  return bestAsset(candidates.map((item) => item.asset));
 }
 
 export function resolveBackgrounds(
