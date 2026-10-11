@@ -10,6 +10,7 @@ import { useConfig } from "../contexts/ConfigContext";
 import { useEventTheme } from "../contexts/EventThemeProvider";
 import { authSchema, type AuthFormValues } from "../forms/schemas";
 import { useEventBackgrounds } from "../hooks/useEventBackgrounds";
+import { navigateWithViewTransition } from "../navigation/viewTransition";
 
 export default function AuthPage() {
   const [error, setError] = useState("");
@@ -34,7 +35,7 @@ export default function AuthPage() {
     try {
       if (form.mode === "login") await login(form.user_code, form.password);
       else await registerAccount(form.user_code, form.qq_id, form.password, registrationClosed ? "guest" : form.identity);
-      navigate("/");
+      navigateWithViewTransition(navigate, "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败");
     }

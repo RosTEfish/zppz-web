@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Card, CardActionArea, Paper, Stack, Typography } from "@mui/material";
 import { Archive, BookOpenText, ChevronRight, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { isGuessEnded, phaseStatusLabel, PhaseHeadline, PhaseTimeline } from "../components/EventPhaseStatus";
 import EventHeroArt from "../components/EventHeroArt";
 import HomePageSkeleton from "../components/HomePageSkeleton";
@@ -8,6 +8,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 import { useEventTheme } from "../contexts/EventThemeProvider";
 import { useEventBackgrounds } from "../hooks/useEventBackgrounds";
+import { navigateWithViewTransition } from "../navigation/viewTransition";
 
 function announcementPreview(markdown: string) {
   const text = markdown
@@ -23,6 +24,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
   const { user, isLoggedIn, isAdmin, isPoolEditor } = useAuth();
   const backgrounds = useEventBackgrounds();
   const { palette } = useEventTheme();
+  const navigate = useNavigate();
   if (loading || !event) return <HomePageSkeleton />;
 
   const heroArt = backgrounds.hero;
@@ -82,7 +84,15 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
             </Paper>
           ) : null}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2.5, flexWrap: "wrap" }}>
-            {!isLoggedIn ? <Button component={Link} to="/login" variant="contained" startIcon={<LogIn size={18} />}>进入赛事</Button> : null}
+            {!isLoggedIn ? (
+              <Button
+                variant="contained"
+                startIcon={<LogIn size={18} />}
+                onClick={() => navigateWithViewTransition(navigate, "/login")}
+              >
+                进入赛事
+              </Button>
+            ) : null}
             <Button component="a" href="/api/v1/assets/rule/view" target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<BookOpenText size={18} />}>查看规则</Button>
           </Stack>
         </Box>

@@ -8,7 +8,7 @@
 - `frontend/`：React + TypeScript + Vite 前端。
 - `infra/`：Nginx 配置。
 - `scripts/deploy_remote.sh`：GitHub Actions 远程部署脚本。
-- `bg/`、`ruleDetail/`、`banlist/`：赛事静态资源，会在部署流水线的自动准备阶段同步到数据目录。
+- `bg/`、`ruleDetail/`、`banlist/`：赛事静态资源，会在部署流水线的自动准备阶段同步到数据目录（`bg/` 栅格图会转成 WebP 再提供给前端）。
 
 ## 本地前端
 

@@ -4,6 +4,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import { theme as fallbackTheme } from "./theme";
 import { Archive, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { navigateWithViewTransition } from "./navigation/viewTransition";
 import { SWRConfig } from "swr";
 import { LoadingBlock } from "./components/PagePrimitives";
 import HomePageSkeleton from "./components/HomePageSkeleton";
@@ -212,7 +213,16 @@ function AppShell() {
             </Button>
           </Stack>
         ) : (
-          <Button fullWidth variant="contained" startIcon={<LogIn size={17} />} component={Link} to="/login" onPointerEnter={() => void loadAuthPage()} onFocus={() => void loadAuthPage()}>登录</Button>
+          <Button
+            fullWidth
+            variant="contained"
+            startIcon={<LogIn size={17} />}
+            onPointerEnter={() => void loadAuthPage()}
+            onFocus={() => void loadAuthPage()}
+            onClick={() => navigateWithViewTransition(navigate, "/login")}
+          >
+            登录
+          </Button>
         )}
       </Box>
     </Box>
@@ -277,7 +287,16 @@ function SiteFooter() {
   return <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper", py: 2 }}><Container maxWidth="xl"><Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 0.75, sm: 2 }} useFlexGap sx={{ alignItems: "center", justifyContent: "center", flexWrap: "wrap", textAlign: "center" }}><Typography component="a" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" variant="caption" color="text.secondary" sx={{ "&:hover": { color: "text.primary" } }}>京ICP备2026012070号-1</Typography><Stack component="a" href="https://beian.mps.gov.cn/#/query/webSearch?code=11010802047846" target="_blank" rel="noopener noreferrer" direction="row" spacing={0.5} sx={{ alignItems: "center", color: "text.secondary", "&:hover": { color: "text.primary" } }}><Box component="img" src={beianIcon} alt="公安备案图标" sx={{ width: 18, height: 18, objectFit: "contain" }} /><Typography variant="caption" color="inherit">京公网安备11010802047846号</Typography></Stack></Stack></Container></Box>;
 }
 
-function RequireLogin({ children }: { children: ReactNode }) { const { isLoggedIn, loading } = useAuth(); if (loading) return <LoadingBlock />; return isLoggedIn ? children : <Navigate to="/login" replace />; }
+function RequireLogin({ children }: { children: ReactNode }) {
+  const { isLoggedIn, loading } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!loading && !isLoggedIn) navigateWithViewTransition(navigate, "/login", { replace: true });
+  }, [isLoggedIn, loading, navigate]);
+  if (loading) return <LoadingBlock />;
+  if (!isLoggedIn) return <LoadingBlock />;
+  return children;
+}
 function RequireManager({ children }: { children: ReactNode }) { const { isAdmin, isPoolEditor, loading } = useAuth(); if (loading) return <LoadingBlock />; return isAdmin || isPoolEditor ? children : <Navigate to="/" replace />; }
 
 export default App;

@@ -7,20 +7,13 @@ from app.core.config import get_settings
 from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults, upgrade_schema
 from app.models import BanImport, User
 from app.db.session import SessionLocal
+from app.modules.assets.sync import sync_bundled_assets
 from app.modules.banlist.service import BAN_PARSER_VERSION, create_ban_import
-from app.modules.submissions.service import copy_asset_from_repo, drain_storage_deletions
+from app.modules.submissions.service import drain_storage_deletions
 from app.modules.webhooks.service import seed_publication_baseline
 
-
-def sync_bundled_assets() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    for source, target in (
-        (repo_root / "ruleDetail", "rules"),
-        (repo_root / "banlist", "banlists"),
-        (repo_root / "bg", "backgrounds"),
-    ):
-        for file in source.glob("*.*"):
-            copy_asset_from_repo(file, target)
+# Re-export for tests / callers that import prepare.sync_bundled_assets
+__all__ = ["prepare", "sync_bundled_assets", "seed_bundled_banlist"]
 
 
 def prepare() -> None:
