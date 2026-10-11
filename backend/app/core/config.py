@@ -32,7 +32,7 @@ def parse_allowed_extensions(value: str | None) -> set[str]:
 
 
 class Settings:
-    app_name = "ZPPZ Arena"
+    app_name = "ZPPZ-web"
     api_prefix = "/api/v1"
     database_url = os.getenv("DATABASE_URL", "sqlite:///./zppz_v2.db")
     db_pool_size = int(os.getenv("DB_POOL_SIZE", "5"))

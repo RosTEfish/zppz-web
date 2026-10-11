@@ -133,7 +133,7 @@ function AppShell() {
       <Toolbar sx={{ gap: 1.5, minHeight: 72 }}>
         <BrandLogo size={36} borderRadius={2} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700 }}>ZPPZ Arena</Typography>
+          <Typography noWrap sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700 }}>ZPPZ </Typography>
           <Typography variant="caption" color="text.secondary" noWrap>{event?.name || "赛事平台"}</Typography>
         </Box>
       </Toolbar>
@@ -304,7 +304,7 @@ function AppShell() {
                 display: { xs: "none", sm: "block" },
               }}
             >
-              ZPPZ Arena
+              ZPPZ
             </Typography>
           </Box>
 

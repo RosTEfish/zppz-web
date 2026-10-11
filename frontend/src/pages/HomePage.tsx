@@ -105,7 +105,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                 letterSpacing: "-0.01em",
               }}
             >
-              ZPPZ Arena
+              ZPPZ 
             </Typography>
             <Typography
               sx={{

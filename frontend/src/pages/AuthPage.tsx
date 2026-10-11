@@ -127,7 +127,7 @@ export default function AuthPage() {
               {event.name}
             </Typography>
             <Typography sx={{ mt: 0.5, fontWeight: 600, fontSize: "0.85rem", opacity: 0.92 }}>
-              ZPPZ Arena · 赛事入口
+              ZPPZ · 赛事入口
             </Typography>
           </Box>
         ) : null}
@@ -168,7 +168,7 @@ export default function AuthPage() {
           <Stack direction="row" spacing={1.5} sx={{ mb: 2.25, alignItems: "center" }}>
             <BrandLogo size={40} borderRadius="12px" />
             <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700, lineHeight: 1.2 }}>ZPPZ Arena</Typography>
+              <Typography sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700, lineHeight: 1.2 }}>ZPPZ </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, fontWeight: 600 }}>
                 这谱谱这 · 登录入口
               </Typography>
