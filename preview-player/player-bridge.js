@@ -58,9 +58,13 @@ export function createRequestGate() {
   };
 }
 
-export function isTrustedLoadMessage(event, parentWindow, parentOrigin, sessionId) {
+export function parentAllowed(origin) {
+  return PRODUCTION_PARENTS.has(origin) || LOCAL_PARENTS.has(origin);
+}
+
+export function isTrustedLoadMessage(event, parentWindow, sessionId) {
   return (
-    event.origin === parentOrigin
+    parentAllowed(event.origin)
     && event.source === parentWindow
     && event.data?.type === "zppz.preview.load"
     && event.data?.version === VERSION
@@ -68,8 +72,11 @@ export function isTrustedLoadMessage(event, parentWindow, parentOrigin, sessionI
   );
 }
 
-function parentAllowed(origin) {
-  return PRODUCTION_PARENTS.has(origin) || LOCAL_PARENTS.has(origin);
+/** Fan-out targets so a wrong single-origin guess cannot drop the ready handshake. */
+export function parentPostTargets(resolvedOrigin) {
+  const targets = new Set([resolvedOrigin, DEFAULT_PARENT, ...PRODUCTION_PARENTS]);
+  if (LOCAL_PARENTS.has(resolvedOrigin)) targets.add(resolvedOrigin);
+  return [...targets];
 }
 
 export function resolveParentOrigin({
@@ -128,6 +135,7 @@ function bootstrap() {
 
   const sessionId = new URL(window.location.href).searchParams.get("zppz_session") || "";
   const parentOrigin = resolveParentOrigin();
+  const postTargets = parentPostTargets(parentOrigin);
   const requests = createRequestGate();
   let unity = null;
   let activeAbortController = null;
@@ -135,10 +143,10 @@ function bootstrap() {
 
   function post(type, payload = {}) {
     if (window.parent === window) return;
-    window.parent.postMessage(
-      { type, version: VERSION, session_id: sessionId, ...payload },
-      parentOrigin,
-    );
+    const message = { type, version: VERSION, session_id: sessionId, ...payload };
+    for (const target of postTargets) {
+      window.parent.postMessage(message, target);
+    }
   }
 
   function setStatus(text, value) {
@@ -220,7 +228,7 @@ function bootstrap() {
   }
 
   window.addEventListener("message", (event) => {
-    if (!isTrustedLoadMessage(event, window.parent, parentOrigin, sessionId)) return;
+    if (!isTrustedLoadMessage(event, window.parent, sessionId)) return;
     const requestId = String(event.data.request_id || "");
     const token = requests.claim(requestId);
     if (token === null) return;
@@ -270,7 +278,7 @@ function bootstrap() {
       streamingAssetsUrl: "StreamingAssets",
       companyName: "Majdata",
       productName: "MajdataView",
-      productVersion: "zppz-pinned-bridge2",
+      productVersion: "zppz-pinned-bridge3",
       showBanner(text, type) {
         if (type === "error") {
           setStatus("播放器加载失败");

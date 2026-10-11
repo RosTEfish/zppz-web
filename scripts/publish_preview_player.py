@@ -174,6 +174,21 @@ def main() -> None:
         print(f"pinned player {version} already published; skipping source downloads")
         for key in keys:
             print(f"skip {key}")
+        # Overlay files are part of the immutable version prefix. If the repo
+        # changed them without bumping majdata-build.json version, fail loudly
+        # instead of silently serving the old R2 objects.
+        for name in ("player.html", "player-bridge.js", "THIRD_PARTY_NOTICES.txt"):
+            path = player_dir / name
+            key = f"{prefix}/{name}"
+            digest = sha256(path)
+            existing = head_object(client, bucket, key) or {}
+            remote = existing.get("Metadata", {}).get("sha256")
+            if remote != digest:
+                raise RuntimeError(
+                    f"{name} changed but player version {version!r} is already published "
+                    f"at {key}. Bump majdata-build.json version (e.g. ...-bridge3) so a "
+                    f"new immutable prefix is uploaded."
+                )
         verify_origin(origin, prefix)
         write_outputs(player_url, version)
         print(player_url)

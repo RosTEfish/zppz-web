@@ -4,6 +4,7 @@ import {
   createReadinessGate,
   createRequestGate,
   isTrustedLoadMessage,
+  parentPostTargets,
   resolveParentOrigin,
 } from "./player-bridge.js";
 
@@ -57,11 +58,15 @@ test("load messages require matching parent, origin, protocol, and session", () 
     },
   };
 
-  assert.equal(isTrustedLoadMessage(base, parent, base.origin, "session-1"), true);
-  assert.equal(isTrustedLoadMessage({ ...base, origin: "https://evil.example" }, parent, base.origin, "session-1"), false);
-  assert.equal(isTrustedLoadMessage({ ...base, source: {} }, parent, base.origin, "session-1"), false);
-  assert.equal(isTrustedLoadMessage({ ...base, data: { ...base.data, version: 1 } }, parent, base.origin, "session-1"), false);
-  assert.equal(isTrustedLoadMessage(base, parent, base.origin, "session-2"), false);
+  assert.equal(isTrustedLoadMessage(base, parent, "session-1"), true);
+  assert.equal(
+    isTrustedLoadMessage({ ...base, origin: "https://przppz.club" }, parent, "session-1"),
+    true,
+  );
+  assert.equal(isTrustedLoadMessage({ ...base, origin: "https://evil.example" }, parent, "session-1"), false);
+  assert.equal(isTrustedLoadMessage({ ...base, source: {} }, parent, "session-1"), false);
+  assert.equal(isTrustedLoadMessage({ ...base, data: { ...base.data, version: 1 } }, parent, "session-1"), false);
+  assert.equal(isTrustedLoadMessage(base, parent, "session-2"), false);
 });
 
 
@@ -86,4 +91,11 @@ test("parent origin prefers www referrer and allows apex / local docker", () => 
     resolveParentOrigin({ referrer: "https://evil.example/" }),
     "https://www.przppz.club",
   );
+});
+
+
+test("parent post targets always include www and apex", () => {
+  const targets = parentPostTargets("https://www.przppz.club");
+  assert.equal(targets.includes("https://www.przppz.club"), true);
+  assert.equal(targets.includes("https://przppz.club"), true);
 });

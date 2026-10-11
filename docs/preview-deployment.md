@@ -50,6 +50,11 @@ PREVIEW_PUBLIC_SECRET_ACCESS_KEY
 检查通过后，工作流才会把生成的 `PREVIEW_PLAYER_URL` 写入服务器环境并激活
 网站版本。
 
+**改 `player-bridge.js` / `player.html` 时必须 bump**
+`preview-player/majdata-build.json` 的 `version` 后缀（例如 `…-bridge2` →
+`…-bridge3`）。版本前缀是 immutable 的：同版本已发布时不会覆盖旧对象；若
+仓库 overlay 与 R2 哈希不一致，发布脚本会报错提醒 bump，避免线上继续用旧桥接。
+
 部署脚本执行 `python -m app.prepare`、重启服务并检查 API 与播放器。失败时
 代码和旧预览环境变量一起恢复。公共 R2 历史版本不会由部署流程删除，因此
 至少保留最近五个版本的要求由“不自动删除”满足。
