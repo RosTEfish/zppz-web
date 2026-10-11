@@ -134,8 +134,8 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                 color: "text.secondary",
               }}
             >
-              编谱、抽曲、投稿与猜谱——进入本届赛事舞台，完成你的下一步。
-            </Typography>
+              
+            </Typography>这谱谱这是一款类魂游戏风格的开放世界游戏，你将扮演一名谱师，在开放世界中探索、收集乐谱，并与其他谱师进行战斗。
 
             {phases ? (
               <Box sx={{ mt: 2.5 }}>
