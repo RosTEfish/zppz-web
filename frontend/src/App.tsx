@@ -130,7 +130,7 @@ function AppShell() {
 
   const mobileDrawer = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Toolbar sx={{ gap: 1.5, minHeight: 64 }}>
+      <Toolbar sx={{ gap: 1.5, minHeight: 72 }}>
         <BrandLogo size={36} borderRadius={2} />
         <Box sx={{ minWidth: 0 }}>
           <Typography noWrap sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700 }}>ZPPZ Arena</Typography>
@@ -280,7 +280,7 @@ function AppShell() {
           WebkitBackdropFilter: "blur(16px) saturate(1.3)",
         }}
       >
-        <Toolbar sx={{ gap: 1.5, minHeight: 64, px: { xs: 2, md: 3.5 } }}>
+        <Toolbar sx={{ gap: 1.5, minHeight: 72, px: { xs: 2, md: 3.5 } }}>
           {mobile ? (
             <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)} edge="start">
               <MenuIcon size={21} />
@@ -372,16 +372,31 @@ function AppShell() {
 
           {!mobile ? (
             isLoggedIn ? (
-              <Button
-                component={Link}
-                to="/account"
-                color="inherit"
-                aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
-                onPointerEnter={() => void loadAccountPage()}
-                sx={{ fontWeight: 600, color: "text.secondary", "&:hover": { color: "text.primary" } }}
-              >
-                {user?.display_name || user?.user_code || "账号"}
-              </Button>
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flexShrink: 0 }}>
+                <Button
+                  component={Link}
+                  to="/account"
+                  color="inherit"
+                  aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
+                  onPointerEnter={() => void loadAccountPage()}
+                  sx={{ fontWeight: 600, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+                >
+                  {user?.display_name || user?.user_code || "账号"}
+                </Button>
+                <Button
+                  color="inherit"
+                  startIcon={<LogOut size={16} />}
+                  onClick={() => void logout().then(() => navigate("/"))}
+                  sx={{
+                    fontWeight: 600,
+                    color: "text.secondary",
+                    minWidth: 0,
+                    "&:hover": { color: "text.primary", bgcolor: "rgba(28, 35, 33, 0.04)" },
+                  }}
+                >
+                  退出
+                </Button>
+              </Stack>
             ) : (
               <Button
                 color="inherit"
@@ -418,7 +433,7 @@ function AppShell() {
       <Box
         component="main"
         sx={{
-          pt: 8,
+          pt: 9,
           minWidth: 0,
           minHeight: "100vh",
           display: "flex",
