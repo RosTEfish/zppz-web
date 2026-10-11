@@ -100,7 +100,7 @@ jobs:
       PREVIEW_ENABLED: ${{ vars.PREVIEW_ENABLED || 'false' }}
       PREVIEW_PUBLIC_BUCKET_NAME: ${{ vars.PREVIEW_PUBLIC_BUCKET_NAME }}
       PREVIEW_PLAYER_ORIGIN: ${{ vars.PREVIEW_PLAYER_ORIGIN }}
-      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || 'https://przppz.club' }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || 'https://www.przppz.club' }}
 
     steps:
       - name: Checkout

@@ -9,7 +9,8 @@ R2 的短期签名 URL，不渲染、不编码，也不转发音频、图片或�
 2. 给它绑定 `preview.przppz.club`，等待 HTTPS 证书签发。
 3. 创建仅限该 Bucket 的 Object Read & Write R2 Token。
 4. 私有投稿 Bucket 的 CORS 允许：
-   - `https://przppz.club`
+   - `https://www.przppz.club`
+   - `https://przppz.club`（根域名跳转过渡期可保留）
    - `https://preview.przppz.club`
    - 开发环境所需的 `http://localhost:3000`
    - 方法 `GET`、`HEAD`、`PUT`
@@ -17,7 +18,7 @@ R2 的短期签名 URL，不渲染、不编码，也不转发音频、图片或�
    - 暴露 `ETag`、`Accept-Ranges`、`Content-Length`、`Content-Range`
 5. 在 Cloudflare 响应头规则中，为
    `preview.przppz.club/majdata/*` 添加：
-   `Content-Security-Policy: frame-ancestors https://przppz.club`
+   `Content-Security-Policy: frame-ancestors https://www.przppz.club https://przppz.club`
 
 不要公开现有投稿 Bucket，也不要将任何投稿对象复制到公共 Bucket。
 

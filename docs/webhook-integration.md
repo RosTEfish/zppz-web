@@ -18,7 +18,7 @@ Token 用于调用订阅管理 API，Secret 用于校验网站发送的 Webhook�
 先启动 Bot 的 HTTPS 接收接口，再注册：
 
 ```http
-PUT https://przppz.club/api/v1/integrations/webhook-subscription
+PUT https://www.przppz.club/api/v1/integrations/webhook-subscription
 Authorization: Bearer <integration_token>
 Content-Type: application/json
 
@@ -112,7 +112,7 @@ if not hmac.compare_digest(expected, provided):
       {"chart_id": 301, "slot": "4", "level": "13+", "designer": "某谱师"}
     ],
     "cover": {
-      "url": "https://przppz.club/api/v1/integrations/webhook-assets/...",
+      "url": "https://www.przppz.club/api/v1/integrations/webhook-assets/...",
       "content_type": "image/png",
       "width": 512,
       "height": 512,
@@ -120,7 +120,7 @@ if not hmac.compare_digest(expected, provided):
       "sha256": "...",
       "expires_at": "2026-08-09T12:30:00Z"
     },
-    "page_url": "https://przppz.club/guess"
+    "page_url": "https://www.przppz.club/guess"
   },
   "changes": null
 }

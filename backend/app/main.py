@@ -6,7 +6,7 @@ from time import perf_counter
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
@@ -41,7 +41,9 @@ logger = logging.getLogger("app.requests")
 FRONTEND_HTML_CACHE_CONTROL = "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
 TEXT_RESOURCE_CACHE_CONTROL = "public, max-age=300"
 ROBOTS_TXT_FALLBACK = "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin/\n"
-LLMS_TXT_FALLBACK = "# przppz.club\n\nZPPZ Arena is an event platform for music chart submissions, draws, and interaction.\n"
+LLMS_TXT_FALLBACK = "# www.przppz.club\n\nZPPZ Arena is an event platform for music chart submissions, draws, and interaction.\n"
+APEX_HOST = "przppz.club"
+CANONICAL_HOST = "www.przppz.club"
 
 
 @asynccontextmanager
@@ -100,6 +102,17 @@ async def log_slow_requests(request: Request, call_next):
                 status_code,
                 elapsed_ms,
             )
+
+
+@app.middleware("http")
+async def redirect_apex_host(request: Request, call_next):
+    host = request.headers.get("host", "").split(":", 1)[0].lower()
+    if host == APEX_HOST:
+        target = f"https://{CANONICAL_HOST}{request.url.path}"
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(url=target, status_code=301)
+    return await call_next(request)
 
 
 @app.get("/health")

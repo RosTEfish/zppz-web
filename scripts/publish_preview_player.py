@@ -119,10 +119,10 @@ def verify_origin(origin: str, prefix: str) -> None:
                 raise RuntimeError(f"unexpected Content-Type for {url}: {received}")
             if name == "player.html":
                 csp = response.headers.get("Content-Security-Policy", "")
-                if "frame-ancestors https://przppz.club" not in csp:
+                if "frame-ancestors https://www.przppz.club" not in csp:
                     raise RuntimeError(
                         "player response is missing Content-Security-Policy: "
-                        "frame-ancestors https://przppz.club"
+                        "frame-ancestors https://www.przppz.club"
                     )
 
 
