@@ -60,9 +60,19 @@ svg {
   background: var(--zppz-selection);
 }
 
-/* Auth shell ↔ app shell (View Transitions API): full-page horizontal slides.
-   to-auth: login slides in from the left; app exits to the right.
-   to-app: login slides out to the left; app enters from the right. */
+/* View Transitions API
+   - to-auth / to-app: full-page horizontal slides between auth shell and app shell
+   - to-page: main content fade/slide; chrome (app bar / footer) stays put */
+.zppz-page {
+  view-transition-name: zppz-page;
+}
+
+/* Keep named page out of the snapshot during shell slides so root morphs cleanly. */
+html[data-vt="to-auth"] .zppz-page,
+html[data-vt="to-app"] .zppz-page {
+  view-transition-name: none;
+}
+
 @keyframes zppz-slide-from-left {
   from {
     transform: translateX(-100%);
@@ -84,6 +94,20 @@ svg {
 @keyframes zppz-slide-to-left {
   to {
     transform: translateX(-100%);
+  }
+}
+
+@keyframes zppz-page-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes zppz-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
   }
 }
 
@@ -121,9 +145,26 @@ html[data-vt="to-auth"]::view-transition-new(root) {
   z-index: 1;
 }
 
+/* In-app: freeze chrome (root), animate only the named page region */
+html[data-vt="to-page"]::view-transition-old(root),
+html[data-vt="to-page"]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-vt="to-page"]::view-transition-old(zppz-page) {
+  animation: zppz-page-out 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+html[data-vt="to-page"]::view-transition-new(zppz-page) {
+  animation: zppz-page-in 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
-  ::view-transition-new(root) {
+  ::view-transition-new(root),
+  ::view-transition-old(zppz-page),
+  ::view-transition-new(zppz-page) {
     animation: none !important;
   }
 }

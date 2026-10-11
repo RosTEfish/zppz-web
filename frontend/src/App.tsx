@@ -3,7 +3,8 @@ import { AppBar, Box, Button, Chip, Container, CssBaseline, Divider, Drawer, Ico
 import { ThemeProvider } from "@mui/material/styles";
 import { theme as fallbackTheme } from "./theme";
 import { Archive, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { ViewTransitionLink } from "./navigation/ViewTransitionLink";
 import { navigateWithViewTransition } from "./navigation/viewTransition";
 import { SWRConfig } from "swr";
 import BrandLogo from "./components/BrandLogo";
@@ -142,7 +143,7 @@ function AppShell() {
         {links.map(({ label, to, icon: Icon, preload }) => (
           <ListItemButton
             key={to}
-            component={Link}
+            component={ViewTransitionLink}
             to={to}
             selected={location.pathname === to}
             onPointerEnter={() => void preload()}
@@ -160,7 +161,7 @@ function AppShell() {
         ))}
         {(isAdmin || isPoolEditor) ? (
           <ListItemButton
-            component={Link}
+            component={ViewTransitionLink}
             to={managerPath}
             selected={location.pathname.startsWith("/admin")}
             onPointerEnter={() => void preloadAdminPage(managerPath)}
@@ -183,7 +184,7 @@ function AppShell() {
         {isLoggedIn ? (
           <Stack spacing={0.75}>
             <Box
-              component={Link}
+              component={ViewTransitionLink}
               to="/account"
               aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
               onPointerEnter={() => void loadAccountPage()}
@@ -216,7 +217,7 @@ function AppShell() {
               size="small"
               color="inherit"
               startIcon={<LogOut size={15} />}
-              onClick={() => void logout().then(() => navigate("/"))}
+              onClick={() => void logout().then(() => navigateWithViewTransition(navigate, "/"))}
               sx={{ justifyContent: "flex-start", px: 1.25, minHeight: 36, color: "text.secondary", fontWeight: 600 }}
             >
               退出登录
@@ -288,7 +289,7 @@ function AppShell() {
           ) : null}
 
           <Box
-            component={Link}
+            component={ViewTransitionLink}
             to="/"
             onPointerEnter={() => void loadHomePage()}
             sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0, color: "inherit", textDecoration: "none" }}
@@ -315,7 +316,7 @@ function AppShell() {
                 return (
                   <Box
                     key={to}
-                    component={Link}
+                    component={ViewTransitionLink}
                     to={to}
                     onPointerEnter={() => void preload()}
                     onFocus={() => void preload()}
@@ -339,7 +340,7 @@ function AppShell() {
               })}
               {(isAdmin || isPoolEditor) ? (
                 <Box
-                  component={Link}
+                  component={ViewTransitionLink}
                   to={managerPath}
                   onPointerEnter={() => void preloadAdminPage(managerPath)}
                   onFocus={() => void preloadAdminPage(managerPath)}
@@ -374,7 +375,7 @@ function AppShell() {
             isLoggedIn ? (
               <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flexShrink: 0 }}>
                 <Button
-                  component={Link}
+                  component={ViewTransitionLink}
                   to="/account"
                   color="inherit"
                   aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
@@ -386,7 +387,7 @@ function AppShell() {
                 <Button
                   color="inherit"
                   startIcon={<LogOut size={16} />}
-                  onClick={() => void logout().then(() => navigate("/"))}
+                  onClick={() => void logout().then(() => navigateWithViewTransition(navigate, "/"))}
                   sx={{
                     fontWeight: 600,
                     color: "text.secondary",
@@ -440,26 +441,28 @@ function AppShell() {
           flexDirection: "column",
         }}
       >
-        {homeLayout ? (
-          <Box sx={{ flex: 1, minWidth: 0 }}>{routes}</Box>
-        ) : (
-          <Box
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              display: "flex",
-              flexDirection: "column",
-              px: { xs: 2, sm: 3 },
-              py: { xs: 2, md: 3 },
-              width: "100%",
-              maxWidth: theme.breakpoints.values.xl,
-              mx: "auto",
-              boxSizing: "border-box",
-            }}
-          >
-            {routes}
-          </Box>
-        )}
+        <Box className="zppz-page" sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {homeLayout ? (
+            <Box sx={{ flex: 1, minWidth: 0 }}>{routes}</Box>
+          ) : (
+            <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                flexDirection: "column",
+                px: { xs: 2, sm: 3 },
+                py: { xs: 2, md: 3 },
+                width: "100%",
+                maxWidth: theme.breakpoints.values.xl,
+                mx: "auto",
+                boxSizing: "border-box",
+              }}
+            >
+              {routes}
+            </Box>
+          )}
+        </Box>
         {location.pathname !== "/" || homepageReady ? <SiteFooter /> : null}
       </Box>
       {event && announcementMounted && (showAnnouncement || announcementOpen) ? (

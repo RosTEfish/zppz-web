@@ -1,6 +1,6 @@
 import { Box, Button, Card, CardActionArea, Stack, Typography } from "@mui/material";
 import { Archive, BookOpenText, ChevronRight, LogIn, Music2, Sparkles, Upload, Vote } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { isGuessEnded, phaseStatusLabel, PhaseHeadline, PhaseTimeline } from "../components/EventPhaseStatus";
 import EventHeroArt from "../components/EventHeroArt";
 import HomePageSkeleton from "../components/HomePageSkeleton";
@@ -8,6 +8,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
 import { useEventTheme } from "../contexts/EventThemeProvider";
 import { useEventBackgrounds } from "../hooks/useEventBackgrounds";
+import { ViewTransitionLink } from "../navigation/ViewTransitionLink";
 import { navigateWithViewTransition } from "../navigation/viewTransition";
 
 function announcementPreview(markdown: string) {
@@ -285,7 +286,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
               }}
             >
               <CardActionArea
-                component={Link}
+                component={ViewTransitionLink}
                 to={to}
                 sx={{
                   p: { xs: 2.5, md: 3.5 },

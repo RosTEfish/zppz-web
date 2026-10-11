@@ -1,21 +1,33 @@
 import { flushSync } from "react-dom";
 import type { NavigateFunction, NavigateOptions, To } from "react-router-dom";
 
-export type ViewTransitionKind = "to-app" | "to-auth";
+export type ViewTransitionKind = "to-app" | "to-auth" | "to-page";
 
 export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function viewTransitionKind(to: To): ViewTransitionKind {
-  const path = typeof to === "string" ? to.split(/[?#]/)[0] : to.pathname ?? "";
-  return path === "/login" ? "to-auth" : "to-app";
+export function pathFromTo(to: To): string {
+  if (typeof to === "string") return to.split(/[?#]/)[0] || "/";
+  return to.pathname ?? "/";
 }
 
-/** Full-page horizontal slide between auth shell and app shell (View Transitions API + fallback). */
+export function viewTransitionKind(to: To, fromPath = typeof window !== "undefined" ? window.location.pathname : ""): ViewTransitionKind {
+  const toPath = pathFromTo(to);
+  const toAuth = toPath === "/login";
+  const fromAuth = fromPath === "/login";
+  if (toAuth && !fromAuth) return "to-auth";
+  if (!toAuth && fromAuth) return "to-app";
+  return "to-page";
+}
+
+/** View Transitions between shells (auth ↔ app) and in-app pages. */
 export function navigateWithViewTransition(navigate: NavigateFunction, to: To, options?: NavigateOptions) {
   const kind = viewTransitionKind(to);
+  const toPath = pathFromTo(to);
+  const samePath = typeof window !== "undefined" && toPath === window.location.pathname;
+
   const nextOptions: NavigateOptions = {
     ...options,
     state: {
@@ -30,8 +42,10 @@ export function navigateWithViewTransition(navigate: NavigateFunction, to: To, o
     });
   };
 
+  // Query/hash-only changes, reduced motion, or missing API → plain navigate.
   if (
-    typeof document === "undefined"
+    samePath
+    || typeof document === "undefined"
     || typeof document.startViewTransition !== "function"
     || prefersReducedMotion()
   ) {

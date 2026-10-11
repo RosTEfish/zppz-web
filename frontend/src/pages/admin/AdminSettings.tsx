@@ -5,6 +5,7 @@ import { useSnackbar } from "notistack";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
+import { navigateWithViewTransition } from "../../navigation/viewTransition";
 import { api, type AdminResetResponse, type EventRotateResponse, type EventUpdatePayload } from "../../api/v1";
 import { LoadingBlock } from "../../components/PagePrimitives";
 import { useAuth } from "../../contexts/AuthContext";
@@ -88,7 +89,7 @@ export default function AdminSettings() {
 
   async function finishReset() {
     await logout();
-    navigate("/login", { replace: true });
+    navigateWithViewTransition(navigate, "/login", { replace: true });
   }
 
   const numberField = (name: keyof EventUpdatePayload, label: string, min: number, max: number) => (
@@ -170,7 +171,7 @@ export default function AdminSettings() {
       </DialogContent>
       <DialogActions>
         {rotateResult ? (
-          <Button variant="contained" onClick={() => { setRotateOpen(false); navigate("/archive"); }}>查看往届乐曲</Button>
+          <Button variant="contained" onClick={() => { setRotateOpen(false); navigateWithViewTransition(navigate, "/archive"); }}>查看往届乐曲</Button>
         ) : (
           <>
             <Button disabled={rotateForm.formState.isSubmitting} onClick={() => setRotateOpen(false)}>取消</Button>
