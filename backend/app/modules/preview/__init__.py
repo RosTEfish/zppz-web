@@ -1,1 +1,1 @@
-"""Browser-rendered Majdata preview support."""
+"""Browser-rendered MiaView (MiaCode) preview support."""

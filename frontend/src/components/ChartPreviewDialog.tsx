@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -11,7 +11,6 @@ import {
   DialogTitle,
   FormControl,
   InputLabel,
-  LinearProgress,
   MenuItem,
   Select,
   Stack,
@@ -29,33 +28,64 @@ type PreviewPhase =
   | "confirm"
   | "preparing"
   | "loading-player"
-  | "waiting-receiver"
-  | "checking-assets"
   | "loading-chart"
+  | "ready"
   | "error";
 
-const PROTOCOL_VERSION = 2;
+/** MiaView SDK surface used by the stage; kept local so tests can mock createPreview. */
+export interface MiaViewPreview {
+  ready: Promise<unknown>;
+  load: (input: {
+    maidata: { url: string };
+    audio?: string;
+    cover?: string;
+    video?: string | null;
+    difficulty?: number;
+  }) => Promise<unknown>;
+  selectDifficulty: (difficulty: number) => Promise<unknown>;
+  destroy: () => void;
+  on: (type: string, listener: (payload: { message?: string }) => void) => () => void;
+}
+
+export type CreateMiaViewPreview = (
+  container: HTMLElement,
+  options: {
+    rendererUrl: string;
+    resolution: { width: number; height: number };
+    maxFps: number;
+    diagnostics: boolean;
+    theme: "dark" | "light";
+  },
+) => MiaViewPreview;
+
 const PLAYER_READY_TIMEOUT_MS = 90_000;
 const MOBILE_CONFIRMATION_KEY = "zppz-preview-mobile-confirmed";
-
-function createId(): string {
-  return globalThis.crypto?.randomUUID?.()
-    ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-}
-
-function playerUrlWithSession(url: string, sessionId: string): string {
-  const next = new URL(url, window.location.href);
-  next.searchParams.set("zppz_session", sessionId);
-  return next.href;
-}
+const PREVIEW_RESOLUTION = { width: 1080, height: 1080 } as const;
 
 const PHASE_LABELS: Partial<Record<PreviewPhase, string>> = {
   preparing: "准备预览素材",
   "loading-player": "加载播放器",
-  "waiting-receiver": "初始化谱面接收器",
-  "checking-assets": "检查谱面和媒体素材",
   "loading-chart": "加载谱面和音乐",
 };
+
+async function importCreatePreview(sdkUrl: string): Promise<CreateMiaViewPreview> {
+  const module = await import(/* @vite-ignore */ sdkUrl) as { createPreview?: CreateMiaViewPreview };
+  if (typeof module.createPreview !== "function") {
+    throw new Error("MiaView SDK 未导出 createPreview");
+  }
+  return module.createPreview;
+}
+
+/** Test seam: swap to inject a fake SDK without dynamic import. */
+export let loadMiaViewCreatePreview: (sdkUrl: string) => Promise<CreateMiaViewPreview> = importCreatePreview;
+
+export function setMiaViewCreatePreviewLoader(
+  loader: ((sdkUrl: string) => Promise<CreateMiaViewPreview>) | null,
+): void {
+  loadMiaViewCreatePreview = loader ?? importCreatePreview;
+}
+
+const PHASE_LABELS_READY = "预览已就绪";
 
 export interface ChartPreviewStageProps {
   active: boolean;
@@ -88,60 +118,59 @@ export function ChartPreviewStage({
   const mobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [loadApproved, setLoadApproved] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [sessionId, setSessionId] = useState(createId);
   const [manifest, setManifest] = useState<PreviewManifest | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [phase, setPhase] = useState<PreviewPhase>("idle");
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
-  const [playerProgress, setPlayerProgress] = useState(0);
-  const [playerReady, setPlayerReady] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const sentRequestsRef = useRef<Set<string>>(new Set());
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const previewRef = useRef<MiaViewPreview | null>(null);
+  const instanceKeyRef = useRef("");
+  const loadedDifficultyRef = useRef<number | null>(null);
   const activeIdentityRef = useRef("");
 
+  const destroyPreview = useCallback(() => {
+    previewRef.current?.destroy();
+    previewRef.current = null;
+    instanceKeyRef.current = "";
+    loadedDifficultyRef.current = null;
+    if (containerRef.current) containerRef.current.replaceChildren();
+  }, []);
+
   const resetSession = useCallback(() => {
-    setSessionId(createId());
+    destroyPreview();
     setManifest(null);
     setSelectedSlot(null);
     setError("");
     setWarning("");
-    setPlayerProgress(0);
-    setPlayerReady(false);
-    sentRequestsRef.current.clear();
     setAttempt((current) => current + 1);
-  }, []);
+  }, [destroyPreview]);
 
   useEffect(() => {
     if (!active) {
       activeIdentityRef.current = "";
+      destroyPreview();
       setLoadApproved(false);
       setManifest(null);
       setSelectedSlot(null);
       setError("");
       setWarning("");
-      setPlayerProgress(0);
-      setPlayerReady(false);
       setPhase("idle");
-      sentRequestsRef.current.clear();
       return;
     }
     const identity = `${source}:${sourceId ?? "none"}`;
     if (activeIdentityRef.current !== identity) {
       activeIdentityRef.current = identity;
-      setSessionId(createId());
+      destroyPreview();
       setManifest(null);
       setSelectedSlot(null);
       setError("");
       setWarning("");
-      setPlayerProgress(0);
-      setPlayerReady(false);
-      sentRequestsRef.current.clear();
     }
     const approved = !mobile || localStorage.getItem(MOBILE_CONFIRMATION_KEY) === "1";
     setLoadApproved(approved);
     setPhase(approved ? "preparing" : "confirm");
-  }, [active, attempt, mobile, source, sourceId]);
+  }, [active, attempt, destroyPreview, mobile, source, sourceId]);
 
   useEffect(() => {
     if (!active || !loadApproved || sourceId === null) return;
@@ -169,7 +198,7 @@ export function ChartPreviewStage({
           setError("预览素材准备超时，请稍后重试");
           return;
         }
-        if (next.status !== "ready" || !next.assets || !next.player_url) {
+        if (next.status !== "ready" || !next.assets || !next.player_url || !next.renderer_url) {
           setPhase("error");
           return;
         }
@@ -188,83 +217,103 @@ export function ChartPreviewStage({
     };
   }, [active, attempt, loadApproved, source, sourceId]);
 
-  const selectedLevel = manifest?.levels.find((item) => item.slot === selectedSlot);
-  const requestId = useMemo(
-    () => selectedLevel && manifest
-      ? `${sessionId}:${manifest.source_version}:${selectedLevel.slot}`
-      : "",
-    [manifest, selectedLevel, sessionId],
-  );
-  const ready = manifest?.status === "ready" && Boolean(manifest.assets && manifest.player_url);
-  const iframeUrl = ready && manifest
-    ? playerUrlWithSession(manifest.player_url, sessionId)
-    : "";
+  const ready = manifest?.status === "ready"
+    && Boolean(manifest.assets && manifest.player_url && manifest.renderer_url);
 
   useEffect(() => {
-    if (!active || !ready || playerReady) return;
-    const timer = window.setTimeout(() => {
+    if (!active || !ready || !manifest?.assets || selectedSlot === null || !containerRef.current) {
+      return;
+    }
+
+    const instanceKey = `${manifest.player_url}|${manifest.renderer_url}|${manifest.source_version}|${attempt}`;
+    if (instanceKeyRef.current === instanceKey && previewRef.current) return;
+
+    let cancelled = false;
+    const container = containerRef.current;
+    const initialSlot = selectedSlot;
+    const unsubscribeRef = { current: null as null | (() => void) };
+    const timeout = window.setTimeout(() => {
+      if (cancelled) return;
       setPhase("error");
       setError("播放器初始化超时，请重新加载预览");
+      destroyPreview();
     }, PLAYER_READY_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [active, playerReady, ready, sessionId]);
 
-  useLayoutEffect(() => {
-    if (!active || !manifest?.player_origin) return;
-    const receive = (event: MessageEvent) => {
-      if (
-        event.origin !== manifest.player_origin
-        || event.source !== iframeRef.current?.contentWindow
-        || event.data?.version !== PROTOCOL_VERSION
-        || event.data?.session_id !== sessionId
-      ) return;
-      if (event.data.type === "zppz.preview.progress") {
-        const progress = Math.max(0, Math.min(1, Number(event.data.progress) || 0));
-        setPlayerProgress(progress);
-        setPhase(progress >= 1 ? "waiting-receiver" : "loading-player");
-      } else if (event.data.type === "zppz.preview.ready") {
-        setPlayerReady(true);
-        setPhase("checking-assets");
-      } else if (event.data.type === "zppz.preview.state") {
-        if (event.data.request_id !== requestId) return;
-        if (event.data.phase === "checking-assets") setPhase("checking-assets");
-        if (event.data.phase === "chart-dispatched") setPhase("loading-chart");
-      } else if (event.data.type === "zppz.preview.error") {
+    const run = async () => {
+      try {
+        setPhase("loading-player");
+        destroyPreview();
+        const createPreview = await loadMiaViewCreatePreview(manifest.player_url);
+        if (cancelled) return;
+        const preview = createPreview(container, {
+          rendererUrl: manifest.renderer_url,
+          resolution: { ...PREVIEW_RESOLUTION },
+          maxFps: 60,
+          diagnostics: false,
+          theme: "dark",
+        });
+        if (cancelled) {
+          preview.destroy();
+          return;
+        }
+        previewRef.current = preview;
+        instanceKeyRef.current = instanceKey;
+        unsubscribeRef.current = preview.on("error", ({ message }) => {
+          setPhase("error");
+          setError(message || "播放器加载失败");
+        });
+        await preview.ready;
+        if (cancelled) return;
+        setPhase("loading-chart");
+        await preview.load({
+          maidata: { url: manifest.assets!.maidata_url },
+          audio: manifest.assets!.track_url,
+          cover: manifest.assets!.background_url,
+          video: manifest.assets!.video_url ?? undefined,
+          difficulty: initialSlot,
+        });
+        if (cancelled) return;
+        loadedDifficultyRef.current = initialSlot;
+        setPhase("ready");
+      } catch (reason) {
+        if (cancelled) return;
+        destroyPreview();
         setPhase("error");
-        setError(event.data.message || "播放器加载失败");
-      } else if (event.data.type === "zppz.preview.warning") {
-        setWarning(event.data.message || "部分媒体已回退");
+        setError(reason instanceof Error ? reason.message : "播放器加载失败");
+      } finally {
+        window.clearTimeout(timeout);
       }
     };
-    window.addEventListener("message", receive);
-    return () => window.removeEventListener("message", receive);
-  }, [active, manifest?.player_origin, requestId, sessionId]);
+
+    void run();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      unsubscribeRef.current?.();
+      // Only tear down when this effect is replaced by a new instance key or unmount.
+      // Slot-only updates keep the same instanceKey and early-return above.
+    };
+  }, [active, attempt, destroyPreview, manifest, ready, selectedSlot]);
 
   useEffect(() => {
-    if (
-      !playerReady
-      || !manifest?.assets
-      || !selectedLevel
-      || !requestId
-      || !iframeRef.current?.contentWindow
-      || sentRequestsRef.current.has(requestId)
-    ) return;
-    sentRequestsRef.current.add(requestId);
-    setPhase("checking-assets");
-    iframeRef.current.contentWindow.postMessage(
-      {
-        type: "zppz.preview.load",
-        version: PROTOCOL_VERSION,
-        session_id: sessionId,
-        request_id: requestId,
-        payload: {
-          ...manifest.assets,
-          difficulty_index: selectedLevel.difficulty_index,
-        },
-      },
-      manifest.player_origin,
-    );
-  }, [manifest, playerReady, requestId, selectedLevel, sessionId]);
+    const preview = previewRef.current;
+    if (!preview || selectedSlot === null || phase !== "ready") return;
+    if (loadedDifficultyRef.current === selectedSlot) return;
+    let cancelled = false;
+    void preview.selectDifficulty(selectedSlot)
+      .then(() => {
+        if (cancelled) return;
+        loadedDifficultyRef.current = selectedSlot;
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        setPhase("error");
+        setError(reason instanceof Error ? reason.message : "切换难度失败");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, selectedSlot]);
 
   function approveMobileLoad() {
     localStorage.setItem(MOBILE_CONFIRMATION_KEY, "1");
@@ -316,7 +365,7 @@ export function ChartPreviewStage({
         >
           <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
             {levelLabel ? <Chip label={levelLabel} sx={{ bgcolor: "rgba(255,255,255,.92)", color: "#17211d" }} /> : null}
-            <Typography variant="body2" sx={{ color: "rgba(255,255,255,.76)" }}>Majdata 实时渲染</Typography>
+            <Typography variant="body2" sx={{ color: "rgba(255,255,255,.76)" }}>MiaView 实时渲染</Typography>
           </Stack>
           {idleAction ?? (
             <Button
@@ -337,54 +386,56 @@ export function ChartPreviewStage({
 
   const manifestMessage = manifest?.message || "正在准备预览素材";
   const recoverableError = error || (manifest?.status === "failed" ? manifestMessage : "");
+  const showPlayer = ready && !recoverableError && manifest?.status !== "unsupported" && loadApproved;
+
   return (
     <Stack spacing={1.25}>
       {warning ? <Alert severity="warning">{warning}</Alert> : null}
       <Box
         sx={{
           width: "100%",
-          aspectRatio: "1",
           position: "relative",
           overflow: "hidden",
           bgcolor: "#050807",
           borderRadius: { xs: 0, sm: 1.5 },
           color: "common.white",
           boxShadow: "0 18px 48px rgba(3, 18, 12, .18)",
+          // Square canvas + MiaView transport bar (~80px).
+          minHeight: { xs: 320, sm: 420 },
         }}
       >
         {!loadApproved ? (
-          <StageMessage
-            icon={<Wifi size={42} />}
-            title="播放器首次加载约几十 MB"
-            body="建议使用 Wi-Fi；播放器文件后续将使用浏览器缓存。"
-            actions={<Button variant="contained" startIcon={<Play size={17} />} onClick={approveMobileLoad}>继续加载预览</Button>}
-          />
-        ) : recoverableError || manifest?.status === "unsupported" ? (
-          <StageMessage
-            title={recoverableError || manifestMessage}
-            body={manifest?.status === "unsupported" ? "该投稿仍可正常下载，不影响赛事流程。" : "在线预览暂不可用，可以重新创建播放器会话。"}
-            severity={manifest?.status === "unsupported" ? "warning" : "error"}
-            actions={(
-              <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: "center", flexWrap: "wrap" }}>
-                {manifest?.status !== "unsupported" ? <Button variant="contained" startIcon={<RefreshCw size={17} />} onClick={retry}>重新加载预览</Button> : null}
-                <Button color="inherit" variant="outlined" startIcon={<Download size={17} />} onClick={() => void onDownload().catch(() => {})}>下载投稿</Button>
-              </Stack>
-            )}
-          />
-        ) : ready && manifest ? (
-          <>
-            <Box
-              component="iframe"
-              key={sessionId}
-              ref={iframeRef}
-              src={iframeUrl}
-              title={`${title} Majdata 在线预览`}
-              allow="autoplay; fullscreen"
-              allowFullScreen
-              sandbox="allow-scripts allow-same-origin allow-pointer-lock"
-              sx={{ border: 0, width: "100%", height: "100%", display: "block" }}
+          <Box sx={{ aspectRatio: "1", position: "relative" }}>
+            <StageMessage
+              icon={<Wifi size={42} />}
+              title="播放器首次加载约几十 MB"
+              body="建议使用 Wi-Fi；播放器文件后续将使用浏览器缓存。"
+              actions={<Button variant="contained" startIcon={<Play size={17} />} onClick={approveMobileLoad}>继续加载预览</Button>}
             />
-            {phase !== "loading-chart" ? (
+          </Box>
+        ) : recoverableError || manifest?.status === "unsupported" ? (
+          <Box sx={{ aspectRatio: "1", position: "relative" }}>
+            <StageMessage
+              title={recoverableError || manifestMessage}
+              body={manifest?.status === "unsupported" ? "该投稿仍可正常下载，不影响赛事流程。" : "在线预览暂不可用，可以重新创建播放器会话。"}
+              severity={manifest?.status === "unsupported" ? "warning" : "error"}
+              actions={(
+                <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: "center", flexWrap: "wrap" }}>
+                  {manifest?.status !== "unsupported" ? <Button variant="contained" startIcon={<RefreshCw size={17} />} onClick={retry}>重新加载预览</Button> : null}
+                  <Button color="inherit" variant="outlined" startIcon={<Download size={17} />} onClick={() => void onDownload().catch(() => {})}>下载投稿</Button>
+                </Stack>
+              )}
+            />
+          </Box>
+        ) : showPlayer ? (
+          <Box sx={{ position: "relative", width: "100%" }}>
+            <Box
+              ref={containerRef}
+              data-testid="miaview-preview-root"
+              title={`${title} MiaView 在线预览`}
+              sx={{ width: "100%", "& > *": { width: "100% !important", maxWidth: "100%" } }}
+            />
+            {phase !== "ready" ? (
               <Box
                 role="status"
                 sx={{
@@ -409,24 +460,19 @@ export function ChartPreviewStage({
                     backdropFilter: "blur(8px)",
                   }}
                 >
-                  {PHASE_LABELS[phase] ?? "加载预览"}
+                  {PHASE_LABELS[phase] ?? PHASE_LABELS_READY}
                 </Typography>
               </Box>
             ) : null}
-            {phase === "loading-player" && playerProgress < 1 ? (
-              <LinearProgress
-                variant="determinate"
-                value={playerProgress * 100}
-                sx={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
-              />
-            ) : null}
-          </>
+          </Box>
         ) : (
-          <StageMessage
-            icon={<CircularProgress color="inherit" />}
-            title={manifestMessage}
-            body="首次生成历史投稿预览时可能需要等待片刻。"
-          />
+          <Box sx={{ aspectRatio: "1", position: "relative" }}>
+            <StageMessage
+              icon={<CircularProgress color="inherit" />}
+              title={manifestMessage}
+              body="首次生成历史投稿预览时可能需要等待片刻。"
+            />
+          </Box>
         )}
       </Box>
       {active && onDeactivate ? (

@@ -38,14 +38,21 @@ def reset_db_and_preview_settings():
         settings.preview_enabled,
         settings.preview_player_url,
         settings.preview_player_origin,
+        settings.preview_renderer_url,
     )
     settings.preview_enabled = True
-    settings.preview_player_url = "https://preview.przppz.club/majdata/test/player.html"
+    settings.preview_player_url = "https://preview.przppz.club/miaview/test/sdk/index.mjs"
     settings.preview_player_origin = "https://preview.przppz.club"
+    settings.preview_renderer_url = ""
     shutil.rmtree(settings.uploads_dir, ignore_errors=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     yield
-    settings.preview_enabled, settings.preview_player_url, settings.preview_player_origin = old
+    (
+        settings.preview_enabled,
+        settings.preview_player_url,
+        settings.preview_player_origin,
+        settings.preview_renderer_url,
+    ) = old
 
 
 def _archive_bytes(
@@ -142,6 +149,8 @@ def test_preview_builds_versioned_local_assets_and_signed_urls():
         assert bundle.video_key and bundle.video_key.endswith("/video.mp4")
         payload = manifest_payload(db, bundle, base_url="http://testserver")
     assert [level["slot"] for level in payload["levels"]] == [4, 5]
+    assert payload["player_url"].endswith("/sdk/index.mjs")
+    assert payload["renderer_url"].endswith("/renderer/index.html")
     assert payload["assets"]["track_url"].startswith("http://testserver/api/v1/preview-assets/")
 
     with TestClient(app) as client:
