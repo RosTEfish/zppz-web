@@ -52,7 +52,7 @@ export type CreateMiaViewPreview = (
   options: {
     rendererUrl: string;
     resolution: { width: number; height: number };
-    maxFps: number;
+    maxFps: number | "unlimited";
     diagnostics: boolean;
     theme: "dark" | "light";
   },
@@ -277,7 +277,7 @@ export function ChartPreviewStage({
         preview = createPreview(container, {
           rendererUrl,
           resolution: { ...PREVIEW_RESOLUTION },
-          maxFps: 60,
+          maxFps: "unlimited",
           diagnostics: false,
           theme: "dark",
         });
