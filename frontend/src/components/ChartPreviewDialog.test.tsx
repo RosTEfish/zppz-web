@@ -53,6 +53,25 @@ function createFakePreview(overrides: Partial<MiaViewPreview> = {}): MiaViewPrev
   };
 }
 
+function mockAssetFetch() {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes("maidata")) {
+      return new Response("&title=测试歌曲\n&inote_4=\n", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    if (url.includes("track") || url.includes("bg") || url.includes("video")) {
+      return new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+    }
+    return new Response("not found", { status: 404 });
+  });
+}
+
 
 describe("ChartPreviewStage", () => {
   afterEach(() => {
@@ -86,8 +105,9 @@ describe("ChartPreviewStage", () => {
     expect(manifest).not.toHaveBeenCalled();
   });
 
-  it("loads the chart through createPreview after the SDK is ready", async () => {
+  it("loads the chart through createPreview after host-prefetching assets", async () => {
     vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
     const preview = createFakePreview();
     const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
     setMiaViewCreatePreviewLoader(async (sdkUrl) => {
@@ -116,19 +136,20 @@ describe("ChartPreviewStage", () => {
       }),
     );
     await waitFor(() => expect(preview.load).toHaveBeenCalledTimes(1));
-    expect(preview.load).toHaveBeenCalledWith({
-      maidata: { url: READY_MANIFEST.assets!.maidata_url },
-      audio: READY_MANIFEST.assets!.track_url,
-      cover: READY_MANIFEST.assets!.background_url,
-      video: undefined,
-      difficulty: 4,
-    });
+    const loadArg = vi.mocked(preview.load).mock.calls[0][0];
+    expect(loadArg.maidata).toContain("&title=测试歌曲");
+    // jsdom/undici can expose different Blob constructors; assert duck-typed bodies.
+    expect(loadArg.audio).toEqual(expect.objectContaining({ size: 3, type: "application/octet-stream" }));
+    expect(loadArg.cover).toEqual(expect.objectContaining({ size: 3, type: "application/octet-stream" }));
+    expect(loadArg.video).toBeUndefined();
+    expect(loadArg.difficulty).toBe(4);
     await waitFor(() => expect(preview.play).toHaveBeenCalledTimes(1));
     expect(await screen.findByTitle("测试歌曲 MiaView 在线预览")).toBeInTheDocument();
   });
 
   it("reloads the chart after an in-flight player bootstrap is cancelled", async () => {
     vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
 
     let releaseReady: (() => void) | undefined;
     const readyGate = new Promise<void>((resolve) => {
@@ -170,6 +191,7 @@ describe("ChartPreviewStage", () => {
 
   it("waits for the player host node before creating the first preview", async () => {
     vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
     const preview = createFakePreview();
     const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
     let resolveImport: ((value: CreateMiaViewPreview) => void) | undefined;
@@ -219,6 +241,7 @@ describe("ChartPreviewStage", () => {
 
   it("manual retry destroys the failed player and creates a new instance", async () => {
     const manifest = vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
     const first = createFakePreview({
       load: vi.fn().mockRejectedValue(new Error("谱面接收器初始化失败")),
     });
@@ -247,6 +270,7 @@ describe("ChartPreviewStage", () => {
 
   it("destroys the player across ten activate/deactivate cycles", async () => {
     vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
     const previews: MiaViewPreview[] = [];
     const createPreview = vi.fn<CreateMiaViewPreview>().mockImplementation(() => {
       const preview = createFakePreview();
@@ -274,5 +298,26 @@ describe("ChartPreviewStage", () => {
 
     expect(createPreview).toHaveBeenCalledTimes(10);
     expect(screen.getByRole("button", { name: "开始在线预览" })).toBeInTheDocument();
+  });
+
+  it("surfaces asset download failures before creating the player", async () => {
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("gone", { status: 403 }));
+    const createPreview = vi.fn<CreateMiaViewPreview>();
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "重新加载预览" })).toBeInTheDocument();
+    expect(createPreview).not.toHaveBeenCalled();
+    expect(screen.getByText(/谱面下载失败|素材下载失败/)).toBeInTheDocument();
   });
 });
