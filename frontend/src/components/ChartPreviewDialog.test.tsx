@@ -124,6 +124,46 @@ describe("ChartPreviewStage", () => {
     expect(await screen.findByTitle("测试歌曲 MiaView 在线预览")).toBeInTheDocument();
   });
 
+  it("reloads the chart after an in-flight player bootstrap is cancelled", async () => {
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+
+    let releaseReady: (() => void) | undefined;
+    const readyGate = new Promise<void>((resolve) => {
+      releaseReady = resolve;
+    });
+    const first = createFakePreview({
+      ready: readyGate,
+      load: vi.fn().mockResolvedValue({ title: "first" }),
+    });
+    const second = createFakePreview({
+      load: vi.fn().mockResolvedValue({ title: "second" }),
+    });
+    const createPreview = vi.fn<CreateMiaViewPreview>()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    const props = {
+      source: "guess" as const,
+      sourceId: 9,
+      title: "测试歌曲",
+      onDownload: vi.fn().mockResolvedValue(undefined),
+    };
+    const view = render(<ChartPreviewStage active {...props} />);
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(1));
+
+    // Remount while the first instance is still waiting on ready — previously this
+    // cancelled load() and then skipped recreation, leaving an empty player shell.
+    view.rerender(<ChartPreviewStage active={false} {...props} />);
+    releaseReady?.();
+    view.rerender(<ChartPreviewStage active {...props} />);
+
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(second.load).toHaveBeenCalledTimes(1));
+    expect(first.load).not.toHaveBeenCalled();
+    expect(first.destroy).toHaveBeenCalled();
+  });
+
   it("requires mobile confirmation before requesting the manifest", async () => {
     window.matchMedia = matchMedia(true);
     const manifest = vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);

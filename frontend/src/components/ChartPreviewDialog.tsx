@@ -219,19 +219,31 @@ export function ChartPreviewStage({
 
   const ready = manifest?.status === "ready"
     && Boolean(manifest.assets && manifest.player_url && manifest.renderer_url);
+  const slotReady = selectedSlot !== null;
+  const selectedSlotRef = useRef(selectedSlot);
+  selectedSlotRef.current = selectedSlot;
 
   useEffect(() => {
-    if (!active || !ready || !manifest?.assets || selectedSlot === null || !containerRef.current) {
+    if (!active || !ready || !manifest?.assets || !slotReady) return;
+
+    const instanceKey = `${manifest.player_url}|${manifest.renderer_url}|${manifest.source_version}|${attempt}`;
+    // Only skip when this exact instance already finished loading a chart.
+    // Skipping earlier left a "player shell ready, chart never loaded" zombie after
+    // React Strict Mode / dependency churn cancelled an in-flight load().
+    if (
+      instanceKeyRef.current === instanceKey
+      && previewRef.current
+      && loadedDifficultyRef.current !== null
+    ) {
       return;
     }
 
-    const instanceKey = `${manifest.player_url}|${manifest.renderer_url}|${manifest.source_version}|${attempt}`;
-    if (instanceKeyRef.current === instanceKey && previewRef.current) return;
-
     let cancelled = false;
-    const container = containerRef.current;
-    const initialSlot = selectedSlot;
-    const unsubscribeRef = { current: null as null | (() => void) };
+    let preview: MiaViewPreview | null = null;
+    let unsubscribe: (() => void) | null = null;
+    const assets = manifest.assets;
+    const playerUrl = manifest.player_url;
+    const rendererUrl = manifest.renderer_url;
     const timeout = window.setTimeout(() => {
       if (cancelled) return;
       setPhase("error");
@@ -241,12 +253,29 @@ export function ChartPreviewStage({
 
     const run = async () => {
       try {
+        // Wait until the player host node is actually mounted. The first ready
+        // render can run this effect before the ref is attached.
+        let container = containerRef.current;
+        for (let spin = 0; !container && spin < 30 && !cancelled; spin += 1) {
+          await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => resolve());
+          });
+          container = containerRef.current;
+        }
+        if (cancelled || !container) {
+          if (!cancelled) {
+            setPhase("error");
+            setError("播放器容器未就绪，请重新加载预览");
+          }
+          return;
+        }
+
         setPhase("loading-player");
         destroyPreview();
-        const createPreview = await loadMiaViewCreatePreview(manifest.player_url);
+        const createPreview = await loadMiaViewCreatePreview(playerUrl);
         if (cancelled) return;
-        const preview = createPreview(container, {
-          rendererUrl: manifest.renderer_url,
+        preview = createPreview(container, {
+          rendererUrl,
           resolution: { ...PREVIEW_RESOLUTION },
           maxFps: 60,
           diagnostics: false,
@@ -254,26 +283,31 @@ export function ChartPreviewStage({
         });
         if (cancelled) {
           preview.destroy();
+          preview = null;
           return;
         }
         previewRef.current = preview;
-        instanceKeyRef.current = instanceKey;
-        unsubscribeRef.current = preview.on("error", ({ message }) => {
+        unsubscribe = preview.on("error", ({ message }) => {
           setPhase("error");
           setError(message || "播放器加载失败");
         });
         await preview.ready;
         if (cancelled) return;
         setPhase("loading-chart");
+        const difficulty = selectedSlotRef.current;
+        if (difficulty === null) {
+          throw new Error("未选择预览难度");
+        }
         await preview.load({
-          maidata: { url: manifest.assets!.maidata_url },
-          audio: manifest.assets!.track_url,
-          cover: manifest.assets!.background_url,
-          video: manifest.assets!.video_url ?? undefined,
-          difficulty: initialSlot,
+          maidata: { url: assets.maidata_url },
+          audio: assets.track_url,
+          cover: assets.background_url,
+          video: assets.video_url ?? undefined,
+          difficulty,
         });
         if (cancelled) return;
-        loadedDifficultyRef.current = initialSlot;
+        instanceKeyRef.current = instanceKey;
+        loadedDifficultyRef.current = difficulty;
         setPhase("ready");
       } catch (reason) {
         if (cancelled) return;
@@ -289,11 +323,20 @@ export function ChartPreviewStage({
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
-      unsubscribeRef.current?.();
-      // Only tear down when this effect is replaced by a new instance key or unmount.
-      // Slot-only updates keep the same instanceKey and early-return above.
+      unsubscribe?.();
+      // Always tear down incomplete instances. A cancelled run that already
+      // created the SDK shell must not leave previewRef pointing at an empty player.
+      if (preview && previewRef.current === preview) {
+        preview.destroy();
+        previewRef.current = null;
+        instanceKeyRef.current = "";
+        loadedDifficultyRef.current = null;
+        if (containerRef.current) containerRef.current.replaceChildren();
+      } else if (preview) {
+        preview.destroy();
+      }
     };
-  }, [active, attempt, destroyPreview, manifest, ready, selectedSlot]);
+  }, [active, attempt, destroyPreview, manifest, ready, slotReady]);
 
   useEffect(() => {
     const preview = previewRef.current;
