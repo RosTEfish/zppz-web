@@ -28,3 +28,17 @@ def test_sync_background_keeps_native_webp(tmp_path: Path):
     target = get_settings().assets_dir / "backgrounds" / "post.webp"
     assert target.is_file()
     assert target.read_bytes() == source.read_bytes()
+
+
+def test_sync_square_writes_brand_thumb(tmp_path: Path):
+    source = tmp_path / "square.png"
+    Image.new("RGB", (800, 800), color=(20, 90, 70)).save(source, format="PNG")
+
+    sync_background_file(source)
+
+    directory = get_settings().assets_dir / "backgrounds"
+    assert (directory / "square.webp").is_file()
+    thumb = directory / "square.thumb.webp"
+    assert thumb.is_file()
+    with Image.open(thumb) as image:
+        assert max(image.size) <= 128

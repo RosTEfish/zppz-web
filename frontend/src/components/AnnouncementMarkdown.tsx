@@ -1,13 +1,11 @@
 import { Box } from "@mui/material";
 import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-
 
 const components: Components = {
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 };
 
-
+/** Lightweight markdown for announcements — no remark-gfm (tables/tasklists) to keep the dialog chunk small. */
 export function AnnouncementMarkdown({ children }: { children: string }) {
   return (
     <Box
@@ -54,22 +52,11 @@ export function AnnouncementMarkdown({ children }: { children: string }) {
           bgcolor: "background.default",
         },
         "& pre code": { p: 0, bgcolor: "transparent" },
-        "& table": {
-          display: "block",
-          width: "max-content",
-          maxWidth: "100%",
-          my: 1.5,
-          overflowX: "auto",
-          borderCollapse: "collapse",
-        },
-        "& th, & td": { px: 1.25, py: 0.75, border: 1, borderColor: "divider", textAlign: "left" },
-        "& th": { bgcolor: "action.hover", fontWeight: 750 },
         "& hr": { my: 2, border: 0, borderTop: 1, borderColor: "divider" },
         "& img": { display: "block", maxWidth: "100%", height: "auto", my: 1.5, borderRadius: 1 },
-        "& input[type='checkbox']": { mr: 0.75, accentColor: "primary.main" },
       }}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{children}</ReactMarkdown>
+      <ReactMarkdown components={components}>{children}</ReactMarkdown>
     </Box>
   );
 }

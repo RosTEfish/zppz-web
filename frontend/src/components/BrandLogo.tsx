@@ -10,15 +10,18 @@ export default function BrandLogo({
   size?: number;
   borderRadius?: number | string;
 }) {
-  const { brand } = useEventBackgrounds();
+  const { brandMark } = useEventBackgrounds();
   const { palette } = useEventTheme();
-  if (brand?.url) {
+  if (brandMark?.url) {
     return (
       <Box
         component="img"
-        src={brand.url}
+        src={brandMark.url}
         alt=""
         aria-hidden="true"
+        width={size}
+        height={size}
+        decoding="async"
         sx={{
           width: size,
           height: size,
@@ -40,7 +43,7 @@ export default function BrandLogo({
         borderRadius,
         display: "grid",
         placeItems: "center",
-        fontWeight: 800,
+        fontWeight: 700,
         fontSize: size * 0.52,
         color: "#fff",
         background: `linear-gradient(135deg, ${palette.main} 0%, ${palette.dark} 100%)`,

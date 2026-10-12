@@ -225,11 +225,17 @@ class EventPhasesRead(BaseModel):
     capabilities: PhaseCapabilitiesRead
 
 
+class BackgroundAssetRead(BaseModel):
+    file_name: str
+    url: str
+
+
 class BootstrapRead(BaseModel):
     event: EventRead
     user: UserRead | None = None
     phases: EventPhasesRead
     guess_availability: GuessAvailabilityRead
+    backgrounds: list[BackgroundAssetRead] = Field(default_factory=list)
 
 
 class SongCreate(BaseModel):

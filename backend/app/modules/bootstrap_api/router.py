@@ -6,6 +6,7 @@ from app.core.security import get_optional_user, user_payload
 from app.core.cache import ANONYMOUS_BOOTSTRAP_CACHE_CONTROL
 from app.db.session import get_db
 from app.models import GuessChart, User
+from app.modules.assets.backgrounds import list_background_assets
 from app.modules.events.service import get_current_event, get_phase_schedule
 from app.modules.events.phase_policy import apply_chart_visibility_filter, get_phase_status
 from app.schemas import BootstrapRead
@@ -33,4 +34,5 @@ def bootstrap(
         "user": user_payload(user) if user else None,
         "phases": get_phase_schedule(db, event),
         "guess_availability": {"available": db.scalar(availability_stmt.limit(1)) is not None},
+        "backgrounds": list_background_assets(),
     }

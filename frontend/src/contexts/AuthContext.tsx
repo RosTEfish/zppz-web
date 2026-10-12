@@ -1,8 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
-import useSWR from "swr";
 import { api, UserRead } from "../api/v1";
-import { queryKeys } from "../api/queryKeys";
 import type { Identity } from "../identity";
+import { useBootstrap } from "./BootstrapContext";
 
 interface AuthContextType {
   user: UserRead | null;
@@ -21,7 +20,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { data: bootstrap, isLoading: loading, mutate } = useSWR(queryKeys.bootstrap, api.bootstrap);
+  const { data: bootstrap, isLoading: loading, mutate } = useBootstrap();
   const user = bootstrap?.user ?? null;
 
   const login = useCallback(async (id: string, password: string) => {

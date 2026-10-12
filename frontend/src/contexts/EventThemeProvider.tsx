@@ -26,11 +26,40 @@ export function useEventTheme() {
   return useContext(EventThemeContext);
 }
 
+function preloadImage(url: string, priority: "high" | "low" = "high") {
+  const existing = Array.from(document.head.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="image"]'))
+    .find((link) => link.href === new URL(url, window.location.href).href);
+  if (existing) return () => {};
+  const link = document.createElement("link");
+  link.rel = "preload";
+  link.as = "image";
+  link.href = url;
+  if (priority === "high") {
+    link.setAttribute("fetchpriority", "high");
+  }
+  document.head.appendChild(link);
+  return () => {
+    link.remove();
+  };
+}
+
 export function EventThemeProvider({ children }: { children: ReactNode }) {
   const backgrounds = useEventBackgrounds();
   const sourceUrl = backgrounds.hero?.url ?? backgrounds.brand?.url ?? null;
+  const heroUrl = backgrounds.hero?.url ?? null;
+  const heroLargeUrl = backgrounds.heroLarge?.url ?? null;
   const [palette, setPalette] = useState<EventPalette>(defaultEventPalette);
   const [extracting, setExtracting] = useState(false);
+
+  useEffect(() => {
+    if (!heroUrl) return;
+    const stopHero = preloadImage(heroUrl, "high");
+    const stopLarge = heroLargeUrl && heroLargeUrl !== heroUrl ? preloadImage(heroLargeUrl, "high") : () => {};
+    return () => {
+      stopHero();
+      stopLarge();
+    };
+  }, [heroLargeUrl, heroUrl]);
 
   useEffect(() => {
     if (!sourceUrl) {
@@ -40,18 +69,28 @@ export function EventThemeProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     setExtracting(true);
-    void extractImagePalette(sourceUrl)
-      .then((next) => {
-        if (!cancelled) setPalette(next);
-      })
-      .catch(() => {
-        if (!cancelled) setPalette(defaultEventPalette);
-      })
-      .finally(() => {
-        if (!cancelled) setExtracting(false);
-      });
+    const run = () => {
+      void extractImagePalette(sourceUrl)
+        .then((next) => {
+          if (!cancelled) setPalette(next);
+        })
+        .catch(() => {
+          if (!cancelled) setPalette(defaultEventPalette);
+        })
+        .finally(() => {
+          if (!cancelled) setExtracting(false);
+        });
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(run, { timeout: 1200 });
+    const timeoutId = idleId === undefined ? window.setTimeout(run, 200) : undefined;
     return () => {
       cancelled = true;
+      if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
   }, [sourceUrl]);
 

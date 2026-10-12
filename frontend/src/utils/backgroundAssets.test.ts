@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isThumbAsset,
   parseBackgroundRole,
   preferredEditionKeys,
   resolveBackgrounds,
@@ -10,8 +11,10 @@ const sample: BackgroundAsset[] = [
   { file_name: "banner.webp", url: "/api/v1/assets/backgrounds/banner.webp" },
   { file_name: "post.webp", url: "/api/v1/assets/backgrounds/post.webp" },
   { file_name: "square.webp", url: "/api/v1/assets/backgrounds/square.webp" },
+  { file_name: "square.thumb.webp", url: "/api/v1/assets/backgrounds/square.thumb.webp" },
   { file_name: "zppz4_post.webp", url: "/api/v1/assets/backgrounds/zppz4_post.webp" },
   { file_name: "zppz4_square.webp", url: "/api/v1/assets/backgrounds/zppz4_square.webp" },
+  { file_name: "zppz4_square.thumb.webp", url: "/api/v1/assets/backgrounds/zppz4_square.thumb.webp" },
 ];
 
 describe("parseBackgroundRole", () => {
@@ -19,6 +22,11 @@ describe("parseBackgroundRole", () => {
     expect(parseBackgroundRole("banner.webp")).toEqual({ role: "banner", editionKey: null });
     expect(parseBackgroundRole("zppz4_post.WEBP")).toEqual({ role: "post", editionKey: "zppz4" });
     expect(parseBackgroundRole("readme.txt")).toEqual({ role: null, editionKey: null });
+  });
+
+  it("ignores generated thumb files", () => {
+    expect(isThumbAsset("square.thumb.webp")).toBe(true);
+    expect(parseBackgroundRole("square.thumb.webp")).toEqual({ role: null, editionKey: null });
   });
 });
 
@@ -36,7 +44,9 @@ describe("resolveBackgrounds", () => {
     expect(resolved.post?.file_name).toBe("post.webp");
     expect(resolved.square?.file_name).toBe("square.webp");
     expect(resolved.hero?.file_name).toBe("banner.webp");
+    expect(resolved.heroLarge?.file_name).toBe("post.webp");
     expect(resolved.brand?.file_name).toBe("square.webp");
+    expect(resolved.brandMark?.file_name).toBe("square.thumb.webp");
   });
 
   it("prefers edition-prefixed assets when the event matches", () => {
@@ -45,7 +55,9 @@ describe("resolveBackgrounds", () => {
     expect(resolved.square?.file_name).toBe("zppz4_square.webp");
     expect(resolved.banner?.file_name).toBe("banner.webp");
     expect(resolved.hero?.file_name).toBe("banner.webp");
+    expect(resolved.heroLarge?.file_name).toBe("zppz4_post.webp");
     expect(resolved.brand?.file_name).toBe("zppz4_square.webp");
+    expect(resolved.brandMark?.file_name).toBe("zppz4_square.thumb.webp");
   });
 
   it("prefers webp over png for the same role", () => {
@@ -62,7 +74,9 @@ describe("resolveBackgrounds", () => {
       post: null,
       square: null,
       hero: null,
+      heroLarge: null,
       brand: null,
+      brandMark: null,
     });
   });
 });

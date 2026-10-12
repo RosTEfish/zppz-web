@@ -12,6 +12,7 @@ from PIL import Image
 from app.core.config import get_settings
 
 RASTER_SUFFIXES = {".png", ".jpg", ".jpeg"}
+BRAND_THUMB_MAX_PX = 128
 
 
 def _copy_if_changed(source: Path, target: Path) -> None:
@@ -28,30 +29,58 @@ def _purge_stale_rasters(directory: Path, stem: str, keep: Path) -> None:
             candidate.unlink()
 
 
+def _is_square_role(stem: str) -> bool:
+    lowered = stem.lower()
+    return lowered == "square" or lowered.endswith("_square")
+
+
+def _write_webp(image: Image.Image, target: Path, *, quality: int = 82) -> None:
+    buffer = io.BytesIO()
+    image.save(buffer, format="WEBP", quality=quality, method=6)
+    payload = buffer.getvalue()
+    if not (target.is_file() and target.read_bytes() == payload):
+        target.write_bytes(payload)
+
+
+def _ensure_rgb(image: Image.Image) -> Image.Image:
+    if image.mode in {"RGB", "RGBA"}:
+        return image
+    return image.convert("RGBA" if "A" in image.getbands() else "RGB")
+
+
+def _write_brand_thumb(image: Image.Image, directory: Path, stem: str) -> None:
+    """Small square mark for AppBar / drawer logos (avoids shipping 800px for 32px UI)."""
+    if not _is_square_role(stem):
+        return
+    thumb = _ensure_rgb(image).copy()
+    thumb.thumbnail((BRAND_THUMB_MAX_PX, BRAND_THUMB_MAX_PX), Image.Resampling.LANCZOS)
+    _write_webp(thumb, directory / f"{stem}.thumb.webp", quality=80)
+
+
 def sync_background_file(source: Path) -> None:
     """Copy a background asset, converting raster images to WebP for faster delivery."""
     settings = get_settings()
     directory = settings.assets_dir / "backgrounds"
     directory.mkdir(parents=True, exist_ok=True)
     suffix = source.suffix.lower()
+    # Generated thumbs are derived from the square role asset; never treat as sources.
+    if ".thumb" in source.stem.lower():
+        return
 
     if suffix in RASTER_SUFFIXES:
         target = directory / f"{source.stem}.webp"
-        image = Image.open(source)
-        if image.mode not in {"RGB", "RGBA"}:
-            image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
-        buffer = io.BytesIO()
-        image.save(buffer, format="WEBP", quality=82, method=6)
-        payload = buffer.getvalue()
-        if not (target.is_file() and target.read_bytes() == payload):
-            target.write_bytes(payload)
+        image = _ensure_rgb(Image.open(source))
+        _write_webp(image, target)
         _purge_stale_rasters(directory, source.stem, target)
+        _write_brand_thumb(image, directory, source.stem)
         return
 
     target = directory / source.name
     _copy_if_changed(source, target)
     if suffix == ".webp":
         _purge_stale_rasters(directory, source.stem, target)
+        with Image.open(source) as image:
+            _write_brand_thumb(image, directory, source.stem)
 
 
 def sync_bundled_assets() -> None:

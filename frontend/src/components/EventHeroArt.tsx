@@ -3,7 +3,16 @@ import { useEventTheme } from "../contexts/EventThemeProvider";
 import type { BackgroundAsset } from "../utils/backgroundAssets";
 
 /** Full-bleed event art for the home hero; ink-wash veils follow canvas readability. */
-export default function EventHeroArt({ asset, animate = true }: { asset: BackgroundAsset; animate?: boolean }) {
+export default function EventHeroArt({
+  asset,
+  largeAsset = null,
+  animate = true,
+}: {
+  asset: BackgroundAsset;
+  /** Optional higher-res art for wide viewports (typically post when hero is banner). */
+  largeAsset?: BackgroundAsset | null;
+  animate?: boolean;
+}) {
   const { palette } = useEventTheme();
   return (
     <Box
@@ -22,22 +31,28 @@ export default function EventHeroArt({ asset, animate = true }: { asset: Backgro
         },
       }}
     >
-      <Box
-        component="img"
-        src={asset.url}
-        alt=""
-        loading="eager"
-        decoding="async"
-        sx={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: { xs: "62% 30%", md: "72% 42%" },
-          animation: animate ? "heroArtIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both" : "none",
-        }}
-      />
+      <picture style={{ position: "absolute", inset: 0, display: "block", width: "100%", height: "100%" }}>
+        {largeAsset ? <source media="(min-width: 900px)" srcSet={largeAsset.url} type="image/webp" /> : null}
+        <Box
+          component="img"
+          src={asset.url}
+          alt=""
+          width={960}
+          height={300}
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
+          sx={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: { xs: "62% 30%", md: "72% 42%" },
+            animation: animate ? "heroArtIn 420ms cubic-bezier(0.32, 0.72, 0, 1) both" : "none",
+          }}
+        />
+      </picture>
       <Box
         sx={{
           position: "absolute",

@@ -90,7 +90,7 @@ export function createAppTheme(palette: EventPalette = defaultEventPalette) {
     shadows: tintedShadows as typeof base.shadows,
     typography: {
       fontFamily: fontSans,
-      h1: { fontFamily: fontDisplay, fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, lineHeight: 1.12 },
+      h1: { fontFamily: fontDisplay, fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 700, lineHeight: 1.12 },
       h2: { fontFamily: fontDisplay, fontSize: "1.625rem", fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.01em" },
       h3: { fontFamily: fontDisplay, fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.35 },
       subtitle1: { fontSize: "1rem", fontWeight: 550, lineHeight: 1.5 },

@@ -73,6 +73,7 @@ def test_bootstrap_includes_phases_and_availability():
         assert "guess_availability" in payload
         assert "capabilities" in payload["phases"]
         assert "available" in payload["guess_availability"]
+        assert isinstance(payload.get("backgrounds"), list)
 
 
 def test_bootstrap_cache_policy_varies_with_session():

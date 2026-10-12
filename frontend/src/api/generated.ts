@@ -2440,6 +2440,13 @@ export interface components {
             /** Guessed User Id */
             guessed_user_id: number;
         };
+        /** BackgroundAssetRead */
+        BackgroundAssetRead: {
+            /** File Name */
+            file_name: string;
+            /** Url */
+            url: string;
+        };
         /** BanAliasCreate */
         BanAliasCreate: {
             /** Artist */
@@ -2645,6 +2652,8 @@ export interface components {
         };
         /** BootstrapRead */
         BootstrapRead: {
+            /** Backgrounds */
+            backgrounds?: components["schemas"]["BackgroundAssetRead"][];
             event: components["schemas"]["EventRead"];
             guess_availability: components["schemas"]["GuessAvailabilityRead"];
             phases: components["schemas"]["EventPhasesRead"];

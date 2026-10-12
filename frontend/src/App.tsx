@@ -11,6 +11,7 @@ import BrandLogo from "./components/BrandLogo";
 import { LoadingBlock } from "./components/PagePrimitives";
 import HomePageSkeleton from "./components/HomePageSkeleton";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { BootstrapProvider } from "./contexts/BootstrapContext";
 import { ConfigProvider, useConfig } from "./contexts/ConfigContext";
 import { EventThemeProvider, useEventTheme } from "./contexts/EventThemeProvider";
 import beianIcon from "./assets/beian.png";
@@ -50,24 +51,59 @@ const AdminPage = lazy(loadAdminPage);
 const AnnouncementDialog = lazy(loadAnnouncementDialog);
 const InteractionProviders = lazy(() => import("./components/InteractionProviders"));
 
+/** Defer snackbar/confirm providers off the homepage critical path; mount before leaving `/`. */
+function DeferredInteractionProviders({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  const onHome = pathname === "/";
+  const [homeArmed, setHomeArmed] = useState(false);
+  // Leaving `/` must arm synchronously so the first paint of other routes has providers.
+  const ready = !onHome || homeArmed;
+
+  useEffect(() => {
+    if (!onHome || homeArmed) return;
+    let cancelled = false;
+    const enable = () => {
+      if (!cancelled) setHomeArmed(true);
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(enable, { timeout: 3500 });
+    const timeoutId = idleId === undefined ? window.setTimeout(enable, 3500) : undefined;
+    return () => {
+      cancelled = true;
+      if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [homeArmed, onHome]);
+
+  if (!ready) return children;
+  return (
+    <Suspense fallback={onHome ? children : <LoadingBlock />}>
+      <InteractionProviders>{children}</InteractionProviders>
+    </Suspense>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider theme={fallbackTheme}>
       <CssBaseline />
       <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, revalidateOnFocus: false }}>
-        <Suspense fallback={null}>
-          <InteractionProviders>
-            <BrowserRouter>
-              <AuthProvider>
-                <ConfigProvider>
-                  <EventThemeProvider>
+        <BrowserRouter>
+          <BootstrapProvider>
+            <AuthProvider>
+              <ConfigProvider>
+                <EventThemeProvider>
+                  <DeferredInteractionProviders>
                     <AppShell />
-                  </EventThemeProvider>
-                </ConfigProvider>
-              </AuthProvider>
-            </BrowserRouter>
-          </InteractionProviders>
-        </Suspense>
+                  </DeferredInteractionProviders>
+                </EventThemeProvider>
+              </ConfigProvider>
+            </AuthProvider>
+          </BootstrapProvider>
+        </BrowserRouter>
       </SWRConfig>
     </ThemeProvider>
   );

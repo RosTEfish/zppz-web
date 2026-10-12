@@ -31,6 +31,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
   if (loading || !event) return <HomePageSkeleton />;
 
   const heroArt = backgrounds.hero;
+  const heroLarge = backgrounds.heroLarge;
   const guessEnded = phases ? isGuessEnded(phases) : false;
   const stages = [
     { label: "曲池", value: `${event?.settings.participant_song_limit ?? "-"} 首上限`, icon: Music2, to: "/songs", open: true },
@@ -71,7 +72,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
         }}
       >
         {heroArt ? (
-          <EventHeroArt asset={heroArt} animate={!skipEnter} />
+          <EventHeroArt asset={heroArt} largeAsset={heroLarge} animate={!skipEnter} />
         ) : (
           <Box
             aria-hidden="true"
@@ -129,14 +130,14 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                 mt: 2,
                 mb: 0,
                 maxWidth: 420,
-                fontWeight: 300,
+                fontWeight: 400,
                 fontSize: { xs: "0.9375rem", md: "1.0625rem" },
                 lineHeight: 1.7,
                 color: "text.secondary",
               }}
             >
-              
-            </Typography>这谱谱这是一款类魂游戏风格的开放世界游戏，你将扮演一名谱师，在开放世界中探索、收集乐谱，并与其他谱师进行战斗。
+              这谱谱这是一款类魂游戏风格的开放世界游戏，你将扮演一名谱师，在开放世界中探索、收集乐谱，并与其他谱师进行战斗。
+            </Typography>
 
             {phases ? (
               <Box sx={{ mt: 2.5 }}>

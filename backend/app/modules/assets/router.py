@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.security import get_optional_user, has_admin_access
 from app.db.session import get_db
 from app.models import GuessChart, User
+from app.modules.assets.backgrounds import BACKGROUND_CACHE_HEADERS, backgrounds_dir, list_background_assets
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import get_current_event
 
@@ -16,7 +17,6 @@ from app.modules.events.service import get_current_event
 router = APIRouter(prefix="/assets", tags=["assets"])
 DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300", "Content-Encoding": "identity"}
 RULE_CACHE_HEADERS = {"Cache-Control": "no-cache", "Content-Encoding": "identity"}
-BACKGROUND_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400", "Content-Encoding": "identity"}
 IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"}
 
 
@@ -64,18 +64,13 @@ def download_banlist():
 
 @router.get("/backgrounds")
 def backgrounds() -> list[dict]:
-    directory = get_settings().assets_dir / "backgrounds"
-    return [
-        {"file_name": item.name, "url": f"/api/v1/assets/backgrounds/{item.name}"}
-        for item in sorted(directory.iterdir())
-        if item.is_file() and item.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-    ]
+    return list_background_assets()
 
 
 @router.get("/backgrounds/{file_name}")
 def background_file(file_name: str):
     safe = Path(file_name).name
-    file = get_settings().assets_dir / "backgrounds" / safe
+    file = backgrounds_dir() / safe
     if not file.exists():
         raise HTTPException(status_code=404, detail="背景不存在")
     media_types = {

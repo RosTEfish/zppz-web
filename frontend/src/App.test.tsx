@@ -38,6 +38,7 @@ function bootstrapPayload(event = eventPayload, user: unknown = null, options: {
     user,
     phases: options.phases ?? phasesPayload,
     guess_availability: { available: options.available ?? true },
+    backgrounds: [],
   };
 }
 

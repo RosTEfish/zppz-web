@@ -11,8 +11,12 @@ export interface ResolvedBackgrounds {
   square: BackgroundAsset | null;
   /** Best visual for the home hero: banner, else post, else square. */
   hero: BackgroundAsset | null;
+  /** Higher-res companion for large viewports (usually post when hero is banner). */
+  heroLarge: BackgroundAsset | null;
   /** Best visual for auth / compact brand surfaces: square, else post. */
   brand: BackgroundAsset | null;
+  /** Small square mark for AppBar/drawer (prefers generated `.thumb.webp`). */
+  brandMark: BackgroundAsset | null;
 }
 
 const ROLES: BackgroundRole[] = ["banner", "post", "square"];
@@ -33,7 +37,13 @@ function formatRank(fileName: string): number {
   return FORMAT_RANK[extensionOf(fileName)] ?? 50;
 }
 
+/** Skip derived thumbs when resolving role art. */
+export function isThumbAsset(fileName: string): boolean {
+  return /\.thumb\./i.test(fileName) || /_thumb\./i.test(fileName);
+}
+
 export function parseBackgroundRole(fileName: string): { role: BackgroundRole | null; editionKey: string | null } {
+  if (isThumbAsset(fileName)) return { role: null, editionKey: null };
   const stem = fileName.replace(/\.[^.]+$/, "").toLowerCase();
   const role = ROLES.find((item) => stem === item || stem.endsWith(`_${item}`)) ?? null;
   if (!role) return { role: null, editionKey: null };
@@ -80,6 +90,16 @@ function pickForRole(assets: BackgroundAsset[], role: BackgroundRole, preferredK
   return bestAsset(candidates.map((item) => item.asset));
 }
 
+function thumbNameFor(fileName: string): string {
+  return fileName.replace(/(\.[^.]+)$/, ".thumb$1");
+}
+
+function resolveBrandMark(assets: BackgroundAsset[], brand: BackgroundAsset | null): BackgroundAsset | null {
+  if (!brand) return null;
+  const thumb = assets.find((asset) => asset.file_name === thumbNameFor(brand.file_name));
+  return thumb ?? brand;
+}
+
 export function resolveBackgrounds(
   assets: BackgroundAsset[] | null | undefined,
   event?: { name?: string | null; slug?: string | null } | null,
@@ -89,11 +109,16 @@ export function resolveBackgrounds(
   const banner = pickForRole(list, "banner", preferredKeys);
   const post = pickForRole(list, "post", preferredKeys);
   const square = pickForRole(list, "square", preferredKeys);
+  const hero = banner ?? post ?? square;
+  const heroLarge = post && hero && post.url !== hero.url ? post : null;
+  const brand = square ?? post ?? banner;
   return {
     banner,
     post,
     square,
-    hero: banner ?? post ?? square,
-    brand: square ?? post ?? banner,
+    hero,
+    heroLarge,
+    brand,
+    brandMark: resolveBrandMark(list, brand),
   };
 }
