@@ -1,7 +1,12 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type PreviewManifest } from "../api/v1";
-import { ChartPreviewStage } from "./ChartPreviewDialog";
+import {
+  ChartPreviewStage,
+  setMiaViewCreatePreviewLoader,
+  type CreateMiaViewPreview,
+  type MiaViewPreview,
+} from "./ChartPreviewDialog";
 
 
 const READY_MANIFEST: PreviewManifest = {
@@ -17,7 +22,8 @@ const READY_MANIFEST: PreviewManifest = {
     background_url: "https://assets.example/bg.jpg?signature=1",
     video_url: null,
   },
-  player_url: "https://preview.przppz.club/majdata/bridge2/player.html",
+  player_url: "https://preview.przppz.club/miaview/test/sdk/index.mjs",
+  renderer_url: "https://preview.przppz.club/miaview/test/renderer/index.html",
   player_origin: "https://preview.przppz.club",
 };
 
@@ -35,17 +41,15 @@ function matchMedia(matches: boolean) {
   });
 }
 
-function previewMessage(
-  source: Window,
-  data: Record<string, unknown>,
-): MessageEvent {
-  const event = new Event("message");
-  Object.defineProperties(event, {
-    origin: { value: READY_MANIFEST.player_origin },
-    source: { value: source },
-    data: { value: data },
-  });
-  return event as MessageEvent;
+function createFakePreview(overrides: Partial<MiaViewPreview> = {}): MiaViewPreview {
+  return {
+    ready: Promise.resolve(),
+    load: vi.fn().mockResolvedValue({ title: "测试歌曲" }),
+    selectDifficulty: vi.fn().mockResolvedValue({ title: "测试歌曲" }),
+    destroy: vi.fn(),
+    on: vi.fn().mockReturnValue(() => undefined),
+    ...overrides,
+  };
 }
 
 
@@ -54,6 +58,7 @@ describe("ChartPreviewStage", () => {
     cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
+    setMiaViewCreatePreviewLoader(null);
     window.matchMedia = matchMedia(false);
   });
 
@@ -74,13 +79,21 @@ describe("ChartPreviewStage", () => {
     );
 
     expect(manifest).not.toHaveBeenCalled();
+    expect(screen.getByText("MiaView 实时渲染")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "开始在线预览" }));
     expect(activate).toHaveBeenCalledTimes(1);
     expect(manifest).not.toHaveBeenCalled();
   });
 
-  it("sends one stable load message only after a trusted ready event", async () => {
+  it("loads the chart through createPreview after the SDK is ready", async () => {
     vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    setMiaViewCreatePreviewLoader(async (sdkUrl) => {
+      expect(sdkUrl).toBe(READY_MANIFEST.player_url);
+      return createPreview;
+    });
+
     render(
       <ChartPreviewStage
         active
@@ -91,32 +104,24 @@ describe("ChartPreviewStage", () => {
       />,
     );
 
-    const iframe = await screen.findByTitle("测试歌曲 Majdata 在线预览") as HTMLIFrameElement;
-    const sessionId = new URL(iframe.src).searchParams.get("zppz_session");
-    expect(sessionId).toBeTruthy();
-    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
-
-    const ready = previewMessage(iframe.contentWindow!, {
-      type: "zppz.preview.ready",
-      version: 2,
-      session_id: sessionId,
-    });
-    act(() => window.dispatchEvent(ready));
-
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1), { timeout: 3000 });
-    expect(postMessage).toHaveBeenCalledWith(
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(1));
+    expect(createPreview).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
       expect.objectContaining({
-        type: "zppz.preview.load",
-        version: 2,
-        session_id: sessionId,
-        request_id: expect.stringContaining("source-v1:4"),
+        rendererUrl: READY_MANIFEST.renderer_url,
+        diagnostics: false,
+        resolution: { width: 1080, height: 1080 },
       }),
-      READY_MANIFEST.player_origin,
     );
-
-    act(() => window.dispatchEvent(ready));
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
-    expect(postMessage).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(preview.load).toHaveBeenCalledTimes(1));
+    expect(preview.load).toHaveBeenCalledWith({
+      maidata: { url: READY_MANIFEST.assets!.maidata_url },
+      audio: READY_MANIFEST.assets!.track_url,
+      cover: READY_MANIFEST.assets!.background_url,
+      video: undefined,
+      difficulty: 4,
+    });
+    expect(await screen.findByTitle("测试歌曲 MiaView 在线预览")).toBeInTheDocument();
   });
 
   it("requires mobile confirmation before requesting the manifest", async () => {
@@ -139,8 +144,17 @@ describe("ChartPreviewStage", () => {
     await waitFor(() => expect(manifest).toHaveBeenCalledTimes(1));
   });
 
-  it("manual retry destroys the failed iframe and creates a new session", async () => {
+  it("manual retry destroys the failed player and creates a new instance", async () => {
     const manifest = vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    const first = createFakePreview({
+      load: vi.fn().mockRejectedValue(new Error("谱面接收器初始化失败")),
+    });
+    const second = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
     render(
       <ChartPreviewStage
         active
@@ -151,27 +165,23 @@ describe("ChartPreviewStage", () => {
       />,
     );
 
-    const first = await screen.findByTitle("测试歌曲 Majdata 在线预览") as HTMLIFrameElement;
-    const firstSession = new URL(first.src).searchParams.get("zppz_session");
-    const playerError = previewMessage(first.contentWindow!, {
-      type: "zppz.preview.error",
-      version: 2,
-      session_id: firstSession,
-      message: "谱面接收器初始化失败",
-    });
-    await waitFor(() => {
-      act(() => window.dispatchEvent(playerError));
-      expect(screen.getByRole("button", { name: "重新加载预览" })).toBeInTheDocument();
-    });
-
+    await waitFor(() => expect(screen.getByRole("button", { name: "重新加载预览" })).toBeInTheDocument());
+    expect(first.destroy).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "重新加载预览" }));
-    const second = await screen.findByTitle("测试歌曲 Majdata 在线预览") as HTMLIFrameElement;
-    await waitFor(() => expect(new URL(second.src).searchParams.get("zppz_session")).not.toBe(firstSession));
+    await waitFor(() => expect(second.load).toHaveBeenCalledTimes(1));
     expect(manifest).toHaveBeenCalledTimes(2);
   });
 
-  it("unmounts the iframe and creates a fresh session through ten preview cycles", async () => {
+  it("destroys the player across ten activate/deactivate cycles", async () => {
     vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    const previews: MiaViewPreview[] = [];
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockImplementation(() => {
+      const preview = createFakePreview();
+      previews.push(preview);
+      return preview;
+    });
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
     const props = {
       source: "guess" as const,
       sourceId: 9,
@@ -179,17 +189,17 @@ describe("ChartPreviewStage", () => {
       onDownload: vi.fn().mockResolvedValue(undefined),
     };
     const view = render(<ChartPreviewStage active {...props} />);
-    const sessions = new Set<string>();
 
     for (let cycle = 0; cycle < 10; cycle += 1) {
-      const iframe = await screen.findByTitle("测试歌曲 Majdata 在线预览") as HTMLIFrameElement;
-      sessions.add(new URL(iframe.src).searchParams.get("zppz_session") ?? "");
+      await waitFor(() => expect(previews.length).toBe(cycle + 1));
+      await waitFor(() => expect(previews[cycle].load).toHaveBeenCalled());
       view.rerender(<ChartPreviewStage active={false} {...props} />);
-      expect(screen.queryByTitle("测试歌曲 Majdata 在线预览")).not.toBeInTheDocument();
+      expect(previews[cycle].destroy).toHaveBeenCalled();
+      expect(screen.queryByTitle("测试歌曲 MiaView 在线预览")).not.toBeInTheDocument();
       if (cycle < 9) view.rerender(<ChartPreviewStage active {...props} />);
     }
 
-    expect(sessions).toHaveLength(10);
+    expect(createPreview).toHaveBeenCalledTimes(10);
     expect(screen.getByRole("button", { name: "开始在线预览" })).toBeInTheDocument();
   });
 });

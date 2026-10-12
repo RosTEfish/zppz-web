@@ -270,6 +270,7 @@ export interface PreviewManifest {
     video_url: string | null;
   };
   player_url: string;
+  renderer_url: string;
   player_origin: string;
 }
 

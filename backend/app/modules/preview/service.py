@@ -544,6 +544,7 @@ def manifest_payload(
         "levels": levels,
         "assets": None,
         "player_url": settings.preview_player_url,
+        "renderer_url": settings.resolve_preview_renderer_url(),
         "player_origin": settings.preview_player_origin,
     }
     if bundle.status != "ready":

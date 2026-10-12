@@ -3046,6 +3046,11 @@ export interface components {
              * @default
              */
             player_url: string;
+            /**
+             * Renderer Url
+             * @default
+             */
+            renderer_url: string;
             /** Selected Level Slot */
             selected_level_slot?: number | null;
             /** Source Version */

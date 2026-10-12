@@ -609,6 +609,7 @@ class PreviewManifestRead(BaseModel):
     levels: list[PreviewLevelRead] = Field(default_factory=list)
     assets: PreviewAssetsRead | None = None
     player_url: str = ""
+    renderer_url: str = ""
     player_origin: str = ""
 
 

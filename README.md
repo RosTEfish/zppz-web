@@ -110,4 +110,4 @@ set +a
 
 **例外**：`bg/`（背景图）、`ruleDetail/`（规则 PDF）、`banlist/`（Ban 曲列表）以及 `frontend/src/assets/beian.png`（备案图标）为赛事运营资源，**不在 MIT 许可范围内**，版权归各自权利人所有，仅用于本项目运行与赛事运营，请勿另行复制、再分发或商用。这些资源属于「这谱谱这」赛事运营素材，随仓库发布以便部署时同步到站点数据目录。
 
-`preview-player/` 目录捆绑了 [MajdataView](https://github.com/TeamMajdata/MajdataView) / [MajdataNet](https://github.com/TeamMajdata/MajdataNet) 的 **GPL-3.0** WebGL 构建（见 [THIRD_PARTY_NOTICES.txt](preview-player/THIRD_PARTY_NOTICES.txt)）。该预览播放器分发物须保持 GPL-3.0 兼容；其余代码仍适用 MIT 许可证。主要依赖均为 MIT/BSD/Apache 等宽松许可证。
+在线预览播放器使用 [MiaView_Web](https://github.com/Team-MiaCode/MiaView_Web)（基于 [MiaCode](https://github.com/Team-MiaCode/MiaCode) WASM）。仓库内 [`preview-player/miaview-build.json`](preview-player/miaview-build.json) 只固定上游提交与 CI 产物名；实际 `sdk/` / `renderer/` 由部署流水线发布到公共预览域名。上游许可与第三方声明随构建产物发布，使用或再分发时请核对其中条款。其余本仓库代码仍适用 MIT 许可证。主要依赖均为 MIT/BSD/Apache 等宽松许可证。

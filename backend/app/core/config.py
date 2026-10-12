@@ -64,6 +64,9 @@ class Settings:
     preview_enabled = os.getenv("PREVIEW_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
     preview_player_url = os.getenv("PREVIEW_PLAYER_URL", "").strip()
     preview_player_origin = os.getenv("PREVIEW_PLAYER_ORIGIN", "http://localhost:4173").strip().rstrip("/")
+    # Optional override; when empty, derived from PREVIEW_PLAYER_URL by swapping
+    # `/sdk/index.mjs` → `/renderer/index.html`.
+    preview_renderer_url = os.getenv("PREVIEW_RENDERER_URL", "").strip()
     preview_url_ttl_seconds = int(os.getenv("PREVIEW_URL_TTL_SECONDS", "21600"))
     preview_backfill_poll_seconds = int(os.getenv("PREVIEW_BACKFILL_POLL_SECONDS", "2"))
     configured_extensions = parse_allowed_extensions(os.getenv("ALLOWED_EXTENSIONS"))
@@ -100,6 +103,13 @@ class Settings:
             if missing:
                 raise RuntimeError(f"missing R2 configuration: {', '.join(missing)}")
 
+    def resolve_preview_renderer_url(self) -> str:
+        if self.preview_renderer_url:
+            return self.preview_renderer_url
+        if self.preview_player_url.endswith("/sdk/index.mjs"):
+            return f"{self.preview_player_url[: -len('/sdk/index.mjs')]}/renderer/index.html"
+        return ""
+
     def validate_preview(self) -> None:
         if not self.preview_enabled:
             return
@@ -107,6 +117,13 @@ class Settings:
             raise RuntimeError("PREVIEW_PLAYER_URL and PREVIEW_PLAYER_ORIGIN are required when PREVIEW_ENABLED=true")
         if not self.preview_player_url.startswith(f"{self.preview_player_origin}/"):
             raise RuntimeError("PREVIEW_PLAYER_URL must be hosted on PREVIEW_PLAYER_ORIGIN")
+        renderer_url = self.resolve_preview_renderer_url()
+        if not renderer_url:
+            raise RuntimeError(
+                "PREVIEW_RENDERER_URL is required when PREVIEW_PLAYER_URL is not a MiaView sdk/index.mjs URL"
+            )
+        if not renderer_url.startswith(f"{self.preview_player_origin}/"):
+            raise RuntimeError("PREVIEW_RENDERER_URL must be hosted on PREVIEW_PLAYER_ORIGIN")
         if self.preview_url_ttl_seconds < 60:
             raise RuntimeError("PREVIEW_URL_TTL_SECONDS must be at least 60")
 

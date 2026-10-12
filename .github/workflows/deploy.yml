@@ -252,12 +252,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Publish pinned Majdata player
+      - name: Publish pinned MiaView player
         if: env.PREVIEW_ENABLED == 'true'
         id: preview_player
         env:
           PREVIEW_PUBLIC_ACCESS_KEY_ID: ${{ secrets.PREVIEW_PUBLIC_ACCESS_KEY_ID }}
           PREVIEW_PUBLIC_SECRET_ACCESS_KEY: ${{ secrets.PREVIEW_PUBLIC_SECRET_ACCESS_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check boto3
