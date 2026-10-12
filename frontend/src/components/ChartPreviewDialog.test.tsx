@@ -110,6 +110,7 @@ describe("ChartPreviewStage", () => {
       expect.objectContaining({
         rendererUrl: READY_MANIFEST.renderer_url,
         diagnostics: false,
+        maxFps: "unlimited",
         resolution: { width: 1080, height: 1080 },
       }),
     );
