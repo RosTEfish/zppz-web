@@ -128,7 +128,7 @@ export function PageHeader({ icon: Icon, title, meta, actions }: { icon: LucideI
 }
 
 
-export function ResourceState({ loading, error, empty, emptyIcon: EmptyIcon, loadingVariant = "block" }: { loading: boolean; error: string; empty?: string; emptyIcon?: LucideIcon; loadingVariant?: "block" | "table" | "cards" }) {
+export function ResourceState({ loading, error, empty, emptyIcon: EmptyIcon, emptyAction, loadingVariant = "block" }: { loading: boolean; error: string; empty?: string; emptyIcon?: LucideIcon; emptyAction?: ReactNode; loadingVariant?: "block" | "table" | "cards" }) {
   if (loading) {
     if (loadingVariant === "table") return <TableSkeleton />;
     if (loadingVariant === "cards") return <CardGridSkeleton />;
@@ -137,13 +137,14 @@ export function ResourceState({ loading, error, empty, emptyIcon: EmptyIcon, loa
   if (error) return <Alert severity="error">{error}</Alert>;
   if (empty) {
     return (
-      <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center", display: "grid", justifyItems: "center", gap: 1 }}>
+      <Paper variant="outlined" sx={{ py: 7, px: 2, textAlign: "center", display: "grid", justifyItems: "center", gap: 1.25 }}>
         {EmptyIcon ? (
           <Box aria-hidden="true" sx={{ width: 48, height: 48, borderRadius: 3, bgcolor: "primary.light", color: "primary.dark", display: "grid", placeItems: "center" }}>
             <EmptyIcon size={24} strokeWidth={1.75} />
           </Box>
         ) : null}
-        <Typography color="text.secondary">{empty}</Typography>
+        <Typography variant="h3" sx={{ fontSize: "1.05rem", fontWeight: 650, color: "text.primary", maxWidth: 420, lineHeight: 1.55 }}>{empty}</Typography>
+        {emptyAction ? <Stack direction="row" sx={{ justifyContent: "center" }}>{emptyAction}</Stack> : null}
       </Paper>
     );
   }

@@ -123,7 +123,7 @@ export default function AuthPage() {
               display: { xs: "none", md: "block" },
             }}
           >
-            <Typography sx={{ fontWeight: 800, fontSize: "1.35rem", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+            <Typography sx={{ fontWeight: 800, fontSize: "1.35rem", lineHeight: 1.2 }}>
               {event.name}
             </Typography>
             <Typography sx={{ mt: 0.5, fontWeight: 600, fontSize: "0.85rem", opacity: 0.92 }}>

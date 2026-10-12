@@ -97,7 +97,17 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
             pb: { xs: 5, md: 0 },
           }}
         >
-          <Box sx={{ maxWidth: 560 }}>
+          <Box
+            sx={{
+              maxWidth: 560,
+              "@keyframes heroCopyIn": {
+                from: { opacity: 0, transform: "translateY(12px)" },
+                to: { opacity: 1, transform: "translateY(0)" },
+              },
+              animation: skipEnter ? "none" : "heroCopyIn 320ms cubic-bezier(0.32, 0.72, 0, 1) both",
+              "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+            }}
+          >
             <Typography
               sx={{
                 fontFamily: '"Noto Serif SC", serif',
@@ -249,7 +259,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
         >
           <Box>
             <Typography variant="h2" sx={{ mb: 2.5 }}>当前阶段</Typography>
-            <Box sx={{ p: 3, border: 1, borderColor: "divider", bgcolor: "#F4F6F5" }}>
+            <Box sx={{ p: 3, border: 1, borderColor: "divider", borderRadius: 1.5, bgcolor: "background.subtle" }}>
               <Typography variant="caption" sx={{ fontWeight: 800, display: "block", mb: 1, color: "text.secondary" }}>下一步</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.7 }}>{nextAction}</Typography>
               {phases ? <PhaseHeadline phases={phases} /> : null}
@@ -275,14 +285,18 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
               sx={{
                 borderRadius: 0,
                 boxShadow: "none",
-                borderColor: "rgba(28,35,33,0.08)",
+                borderColor: "divider",
                 borderTop: open && to === "/submissions" && phases?.capabilities.submission ? "2px solid" : undefined,
                 borderTopColor: open && to === "/submissions" && phases?.capabilities.submission ? "primary.main" : undefined,
-                transition: "transform 400ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms ease, box-shadow 400ms ease",
+                transition: "transform 240ms cubic-bezier(0.32, 0.72, 0, 1), border-color 200ms ease, box-shadow 240ms cubic-bezier(0.32, 0.72, 0, 1)",
                 "&:hover": {
-                  transform: "translateY(-4px)",
-                  borderColor: "rgba(28,35,33,0.25)",
-                  boxShadow: "0 12px 24px -8px rgba(28,35,33,0.08)",
+                  transform: "translateY(-3px)",
+                  borderColor: "rgba(28, 35, 33, 0.16)",
+                  boxShadow: "0 12px 24px -8px rgba(28, 35, 33, 0.08)",
+                },
+                "@media (prefers-reduced-motion: reduce)": {
+                  transition: "none",
+                  "&:hover": { transform: "none" },
                 },
               }}
             >

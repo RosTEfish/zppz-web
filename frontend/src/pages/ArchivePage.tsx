@@ -25,29 +25,17 @@ import { Archive, CheckCheck, ClipboardList, Clock3, Download, Library, Music2, 
 import { useSnackbar } from "notistack";
 import { api, formatDuration, type ArchiveChartRead } from "../api/v1";
 import { queryKeys } from "../api/queryKeys";
+import { chartLevelAccent, getChartLevelSlot } from "../components/chartLevelStyle";
 import { ChartPreviewStage } from "../components/ChartPreviewDialog";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
 import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
+import { useEventTheme } from "../contexts/EventThemeProvider";
 
 const EMPTY_CHARTS: ArchiveChartRead[] = [];
 type GroupMode = "edition" | "submitter";
 
-const LEVEL_SURFACES: Record<string, string> = {
-  "1": "#E8F2FF",
-  "2": "#E8F6ED",
-  "3": "#FFF6D6",
-  "4": "#FFE9E7",
-  "5": "#F1E9FF",
-  "6": "#FAF7FF",
-  "7": "#FFF0E2",
-};
-
 function DialogTitle({ children, sx }: { children: ReactNode; sx?: ComponentProps<typeof MuiDialogTitle>["sx"] }) {
   return <MuiDialogTitle component="div" sx={sx}>{children}</MuiDialogTitle>;
-}
-
-function getChartLevelSlot(sourceLevelSlot?: string): string {
-  return /(?:lv_)?([1-7])$/i.exec(sourceLevelSlot?.trim() ?? "")?.[1] ?? "";
 }
 
 function submitterGroupKey(chart: ArchiveChartRead): string {
@@ -74,10 +62,11 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
   selectionDisabled: boolean;
   onOpen: (chart: ArchiveChartRead) => void;
 }) {
+  const { palette } = useEventTheme();
   const isJ = chart.lane === "j";
   const isExhibition = chart.lane === "exhibition" || chart.source_submission_type === "exhibition";
   const levelSlot = getChartLevelSlot(chart.source_level_slot);
-  const levelSurface = LEVEL_SURFACES[levelSlot] ?? "background.paper";
+  const levelAccent = chartLevelAccent(levelSlot, palette);
   const coverUrl = chart.cover_thumb_path || chart.cover_path;
   const canSelect = chart.can_download !== false;
   return (
@@ -103,13 +92,13 @@ const ArchiveChartCard = memo(function ArchiveChartCard({
         sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}
       >
         {coverUrl ? (
-          <CardMedia component="img" height="164" image={coverUrl} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "#E4EAE6" }} />
+          <CardMedia component="img" height="164" image={coverUrl} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "primary.light" }} />
         ) : (
-          <Box sx={{ height: 164, flexShrink: 0, display: "grid", placeItems: "center", bgcolor: "#E4EAE6", color: "text.secondary" }}>
-            <Music2 size={38} />
+          <Box sx={{ height: 164, flexShrink: 0, display: "grid", placeItems: "center", backgroundImage: `linear-gradient(135deg, ${palette.tint}, ${palette.wash})`, color: "primary.dark" }}>
+            <Music2 size={38} strokeWidth={1.5} />
           </Box>
         )}
-        <CardContent sx={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", bgcolor: levelSurface, color: "#17211D", "& .MuiTypography-colorTextSecondary": { color: "#45534D" } }}>
+        <CardContent sx={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", bgcolor: "background.paper", borderTop: levelAccent ? "3px solid" : undefined, borderColor: levelAccent }}>
           <Typography variant="h3" noWrap title={chart.title}>{chart.title}</Typography>
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
             <Chip size="small" label={chart.level} />

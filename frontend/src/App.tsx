@@ -86,6 +86,55 @@ function DeferredInteractionProviders({ children }: { children: ReactNode }) {
   );
 }
 
+function DesktopNavItem({ label, to, selected, preload }: { label: string; to: string; selected: boolean; preload: () => Promise<unknown> }) {
+  return (
+    <Box
+      component={ViewTransitionLink}
+      to={to}
+      onPointerEnter={() => void preload()}
+      onFocus={() => void preload()}
+      sx={{
+        position: "relative",
+        px: 1.5,
+        display: "grid",
+        placeItems: "center",
+        fontSize: 14,
+        fontWeight: 600,
+        color: selected ? "text.primary" : "text.secondary",
+        textDecoration: "none",
+        transition: "color 160ms ease",
+        "&:hover": { color: "text.primary" },
+        "&:focus-visible": {
+          color: "text.primary",
+          outline: "2px solid",
+          outlineColor: "primary.main",
+          outlineOffset: -6,
+        },
+        "&::after": {
+          content: '""',
+          position: "absolute",
+          left: 10,
+          right: 10,
+          bottom: 0,
+          height: 2,
+          borderRadius: 2,
+          backgroundColor: "primary.main",
+          opacity: selected ? 1 : 0.45,
+          transform: selected ? "scaleX(1)" : "scaleX(0)",
+          transition: "transform 200ms cubic-bezier(0.32, 0.72, 0, 1), opacity 160ms ease",
+        },
+        "&:hover::after, &:focus-visible::after": { transform: "scaleX(1)" },
+        "@media (prefers-reduced-motion: reduce)": {
+          transition: "none",
+          "&::after": { transition: "none" },
+        },
+      }}
+    >
+      {label}
+    </Box>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider theme={fallbackTheme}>
@@ -346,55 +395,14 @@ function AppShell() {
           </Box>
 
           {!mobile ? (
-            <Stack direction="row" spacing={0.5} sx={{ ml: 3, flex: 1, alignItems: "stretch", minWidth: 0 }}>
+            <Stack direction="row" spacing={0.5} sx={{ ml: 3, flex: 1, alignSelf: "stretch", alignItems: "stretch", minWidth: 0 }}>
               {links.map(({ label, to, preload }) => {
-                const selected = location.pathname === to;
                 return (
-                  <Box
-                    key={to}
-                    component={ViewTransitionLink}
-                    to={to}
-                    onPointerEnter={() => void preload()}
-                    onFocus={() => void preload()}
-                    sx={{
-                      px: 1.5,
-                      display: "grid",
-                      placeItems: "center",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: selected ? "text.primary" : "text.secondary",
-                      borderBottom: "2px solid",
-                      borderColor: selected ? "primary.main" : "transparent",
-                      textDecoration: "none",
-                      transition: "color 160ms ease, border-color 160ms ease",
-                      "&:hover": { color: "text.primary" },
-                    }}
-                  >
-                    {label}
-                  </Box>
+                  <DesktopNavItem key={to} label={label} to={to} selected={location.pathname === to} preload={preload} />
                 );
               })}
               {(isAdmin || isPoolEditor) ? (
-                <Box
-                  component={ViewTransitionLink}
-                  to={managerPath}
-                  onPointerEnter={() => void preloadAdminPage(managerPath)}
-                  onFocus={() => void preloadAdminPage(managerPath)}
-                  sx={{
-                    px: 1.5,
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: location.pathname.startsWith("/admin") ? "text.primary" : "text.secondary",
-                    borderBottom: "2px solid",
-                    borderColor: location.pathname.startsWith("/admin") ? "primary.main" : "transparent",
-                    textDecoration: "none",
-                    "&:hover": { color: "text.primary" },
-                  }}
-                >
-                  管理
-                </Box>
+                <DesktopNavItem label="管理" to={managerPath} selected={location.pathname.startsWith("/admin")} preload={() => preloadAdminPage(managerPath)} />
               ) : null}
             </Stack>
           ) : (

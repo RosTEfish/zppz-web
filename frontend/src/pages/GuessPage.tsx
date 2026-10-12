@@ -4,11 +4,13 @@ import { useSnackbar } from "notistack";
 import { CheckCheck, ClipboardList, Clock3, Download, Eye, Heart, MessageSquare, Music2, SlidersHorizontal, Sparkles, Vote, X } from "lucide-react";
 import { api, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
 import { ChartPreviewStage } from "../components/ChartPreviewDialog";
+import { chartLevelAccent, getChartLevelSlot } from "../components/chartLevelStyle";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
 import { PageHeader, ResourceState, useApiResource } from "../components/PagePrimitives";
 import { queryKeys } from "../api/queryKeys";
 import { useAuth } from "../contexts/AuthContext";
 import { useConfig } from "../contexts/ConfigContext";
+import { useEventTheme } from "../contexts/EventThemeProvider";
 
 
 const EMPTY_GUESS_CHARTS: GuessChartRead[] = [];
@@ -16,16 +18,6 @@ const EMPTY_DESIGNER_CANDIDATES: DesignerGuessOverview["candidates"] = [];
 function DialogTitle({ children, sx }: { children: ReactNode; sx?: ComponentProps<typeof MuiDialogTitle>["sx"] }) { return <MuiDialogTitle component="div" sx={sx}>{children}</MuiDialogTitle>; }
 type GuessLaneFilter = "all" | "normal" | "j" | "exhibition";
 type GuessSelfFilter = "all" | "self" | "other";
-
-const GUESS_LEVEL_SURFACES: Record<string, string> = {
-  "1": "#E8F2FF",
-  "2": "#E8F6ED",
-  "3": "#FFF6D6",
-  "4": "#FFE9E7",
-  "5": "#F1E9FF",
-  "6": "#FAF7FF",
-  "7": "#FFF0E2",
-};
 
 function compareChartLevels(first: string, second: string): number {
   const pattern = /^(\d+(?:\.\d+)?)(\+?)$/;
@@ -37,10 +29,6 @@ function compareChartLevels(first: string, second: string): number {
     return Number(Boolean(firstMatch[2])) - Number(Boolean(secondMatch[2]));
   }
   return first.localeCompare(second, "zh-CN", { numeric: true });
-}
-
-function getChartLevelSlot(sourceLevelSlot?: string): string {
-  return /(?:lv_)?([1-7])$/i.exec(sourceLevelSlot?.trim() ?? "")?.[1] ?? "";
 }
 
 function chartGroupIdentity(chart: GuessChartRead): string {
@@ -124,18 +112,19 @@ const DesignerGuessSelect = memo(function DesignerGuessSelect({
 });
 
 const GuessChartCard = memo(function GuessChartCard({ chart, selecting, selected, selectionDisabled, candidates, candidateLabels, canGuess, guessedUserId, guessBusy, onOpen, onGuess }: { chart: GuessChartRead; selecting: boolean; selected: boolean; selectionDisabled: boolean; candidates: DesignerGuessOverview["candidates"]; candidateLabels: ReadonlyMap<number, string>; canGuess: boolean; guessedUserId?: number | null; guessBusy: boolean; onOpen: (chart: GuessChartRead) => void; onGuess: (chart: GuessChartRead, userId: number | null) => void }) {
+  const { palette } = useEventTheme();
   const isJ = chart.lane === "j";
   const isExhibition = chart.lane === "exhibition" || chart.source_submission_type === "exhibition";
   const levelSlot = getChartLevelSlot(chart.source_level_slot);
-  const levelSurface = GUESS_LEVEL_SURFACES[levelSlot] ?? "background.paper";
+  const levelAccent = chartLevelAccent(levelSlot, palette);
   const chartCanGuess = canGuess && !isExhibition && chart.can_author_guess !== false;
   const emptyLabel = chartCanGuess ? (candidates.length ? "未选择" : "暂无谱师候选") : isExhibition ? "该类型不参与作者竞猜" : "当前不可竞猜";
   const coverUrl = chart.cover_thumb_path || chart.cover_path;
   return (
     <Card variant="outlined" data-lane={isJ ? "j" : "normal"} data-level-slot={levelSlot ? `lv_${levelSlot}` : undefined} sx={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", borderWidth: isJ ? 2 : 1, borderColor: selected ? "primary.main" : isJ ? "secondary.main" : "divider", outline: selected ? "2px solid" : "none", outlineColor: "primary.main", contentVisibility: "auto", containIntrinsicSize: "420px" }}>
       <CardActionArea onClick={() => onOpen(chart)} sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
-        {coverUrl ? <CardMedia component="img" height="164" image={coverUrl} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "#E4EAE6" }} /> : <Box sx={{ height: 164, flexShrink: 0, display: "grid", placeItems: "center", bgcolor: "#E4EAE6", color: "text.secondary" }}><Music2 size={38} /></Box>}
-        <CardContent sx={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", bgcolor: levelSurface, color: "#17211D", transition: "background-color 160ms ease", "& .MuiTypography-colorTextSecondary": { color: "#45534D" } }}>
+        {coverUrl ? <CardMedia component="img" height="164" image={coverUrl} alt="" loading="lazy" decoding="async" sx={{ objectFit: "cover", bgcolor: "primary.light" }} /> : <Box sx={{ height: 164, flexShrink: 0, display: "grid", placeItems: "center", backgroundImage: `linear-gradient(135deg, ${palette.tint}, ${palette.wash})`, color: "primary.dark" }}><Music2 size={38} strokeWidth={1.5} /></Box>}
+        <CardContent sx={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", bgcolor: "background.paper", borderTop: levelAccent ? "3px solid" : undefined, borderColor: levelAccent }}>
           <Typography variant="h3" noWrap title={chart.title}>{chart.title}</Typography>
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}><Chip size="small" label={chart.level} /><Chip size="small" color={isJ ? "secondary" : isExhibition ? "info" : "default"} variant={isJ || isExhibition ? "filled" : "outlined"} label={isJ ? "J 谱" : isExhibition ? "场外" : "普通谱"} /><Chip size="small" color={chart.is_self_selected ? "warning" : "default"} variant={chart.is_self_selected ? "filled" : "outlined"} label={chart.is_self_selected ? "自选" : "非自选"} /></Stack>
           <Stack spacing={0.5} sx={{ mt: 1.25, minHeight: 62 }}><Typography variant="body2" color="text.secondary" noWrap title={chart.author}><Box component="span" sx={{ fontWeight: 700 }}>曲师</Box>　{chart.author}</Typography><Typography variant="body2" color="text.secondary" noWrap title={chart.designer || "请填写做谱人"}><Box component="span" sx={{ fontWeight: 700 }}>谱师</Box>　{chart.designer || "请填写做谱人"}</Typography><Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}><Typography variant="caption" color="text.secondary" aria-label={`音频时长 ${formatDuration(chart.track_duration_seconds)}`} sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}><Clock3 size={13} aria-hidden="true" />{formatDuration(chart.track_duration_seconds)}</Typography>{chart.is_long_track || (chart.track_duration_seconds ?? 0) > 240 ? <Chip size="small" color="warning" variant="outlined" label="Long Track" aria-label="Long Track，音频超过 4 分钟" /> : null}</Stack></Stack>

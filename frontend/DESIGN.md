@@ -66,7 +66,7 @@ Display (h1–h3 / 品牌字): "Noto Serif SC", "Noto Sans SC", "Songti SC", ser
 | Variant | Size | Weight | LineHeight | Tracking | 备注 |
 |---|---|---|---|---|---|
 | h1 | clamp(2rem→3.5rem) | 700 | 1.12 | normal | Hero 赛事名（衬线） |
-| h2 | 1.625rem | 700 | 1.25 | -0.01em | 区块标题（衬线） |
+| h2 | 1.625rem | 700 | 1.25 | normal | 区块标题（衬线） |
 | h3 | 1.25rem | 700 | 1.35 | normal | 卡片标题（衬线） |
 | subtitle1 | 1rem | 550 | 1.5 | normal | 强调正文 |
 | body1/body2 | 0.9375rem | 400 | 1.65 | normal | 正文（保持 tabular-nums） |

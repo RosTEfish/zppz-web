@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
 import { Clock3 } from "lucide-react";
 import type { EventPhaseName, EventPhasesRead } from "../api/v1";
+import { useEventTheme } from "../contexts/EventThemeProvider";
+import { hexToRgb, rgbaString } from "../utils/colorMath";
 
 export const PHASE_LABELS: Record<EventPhaseName, string> = {
   registration: "报名",
@@ -82,15 +84,17 @@ export function PhaseHeadline({ phases }: { phases: EventPhasesRead }) {
 }
 
 export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
+  const { palette } = useEventTheme();
   const ordered = useMemo(() => phases.phases, [phases.phases]);
   const currentIndex = ordered.findIndex((item) => item.phase === phases.active_phase);
   const referenceTime = phases.server_time ? new Date(phases.server_time).getTime() : Date.now();
+  const activeGlow = rgbaString(hexToRgb(palette.main), 0.18);
   return (
     <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, overflowX: "auto", borderRadius: 0, bgcolor: "transparent" }}>
       <Typography variant="h2" sx={{ fontSize: "1.625rem", mb: 0.5 }}>赛事时间轴</Typography>
       <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: "0.14em" }}>Beijing Time</Typography>
       <Box sx={{ position: "relative", mt: 1.5 }}>
-        {ordered.length > 0 && <Box aria-hidden="true" sx={{ position: "absolute", top: 7, left: 7, right: 7, height: 2, bgcolor: "rgba(23, 33, 28, 0.08)", borderRadius: 1 }} />}
+        {ordered.length > 0 && <Box aria-hidden="true" sx={{ position: "absolute", top: 7, left: 7, right: 7, height: 2, bgcolor: "divider", borderRadius: 1 }} />}
         <Box sx={{ position: "relative", display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: `repeat(${Math.max(ordered.length, 1)}, minmax(96px, 1fr))` }, gap: { xs: 1.5, sm: 1 } }}>
           {ordered.map((item, index) => {
             const active = item.phase === phases.active_phase;
@@ -107,7 +111,7 @@ export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
                     borderRadius: "50%",
                     mb: 1,
                     ...(active
-                      ? { bgcolor: "primary.main", boxShadow: "0 0 0 4px rgba(31, 90, 71, 0.18)", transform: "scale(1.15)" }
+                      ? { bgcolor: "primary.main", boxShadow: `0 0 0 4px ${activeGlow}`, transform: "scale(1.15)" }
                       : completed || (currentIndex > -1 && index < currentIndex)
                         ? { bgcolor: "text.primary" }
                         : { bgcolor: "transparent", border: "2px solid rgba(28, 35, 33, 0.3)" }),
