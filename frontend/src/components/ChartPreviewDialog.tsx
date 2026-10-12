@@ -42,6 +42,7 @@ export interface MiaViewPreview {
     video?: string | null;
     difficulty?: number;
   }) => Promise<unknown>;
+  play: () => Promise<unknown>;
   selectDifficulty: (difficulty: number) => Promise<unknown>;
   destroy: () => void;
   on: (type: string, listener: (payload: { message?: string }) => void) => () => void;
@@ -124,10 +125,17 @@ export function ChartPreviewStage({
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
   const previewRef = useRef<MiaViewPreview | null>(null);
   const instanceKeyRef = useRef("");
   const loadedDifficultyRef = useRef<number | null>(null);
   const activeIdentityRef = useRef("");
+  const bootstrapGenRef = useRef(0);
+
+  const setContainerNode = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContainerEl(node);
+  }, []);
 
   const destroyPreview = useCallback(() => {
     previewRef.current?.destroy();
@@ -138,6 +146,7 @@ export function ChartPreviewStage({
   }, []);
 
   const resetSession = useCallback(() => {
+    bootstrapGenRef.current += 1;
     destroyPreview();
     setManifest(null);
     setSelectedSlot(null);
@@ -148,6 +157,7 @@ export function ChartPreviewStage({
 
   useEffect(() => {
     if (!active) {
+      bootstrapGenRef.current += 1;
       activeIdentityRef.current = "";
       destroyPreview();
       setLoadApproved(false);
@@ -161,6 +171,7 @@ export function ChartPreviewStage({
     const identity = `${source}:${sourceId ?? "none"}`;
     if (activeIdentityRef.current !== identity) {
       activeIdentityRef.current = identity;
+      bootstrapGenRef.current += 1;
       destroyPreview();
       setManifest(null);
       setSelectedSlot(null);
@@ -169,7 +180,19 @@ export function ChartPreviewStage({
     }
     const approved = !mobile || localStorage.getItem(MOBILE_CONFIRMATION_KEY) === "1";
     setLoadApproved(approved);
-    setPhase(approved ? "preparing" : "confirm");
+    // Don't clobber an in-flight/ready player phase when only mobile media flips.
+    setPhase((current) => {
+      if (!approved) return "confirm";
+      if (
+        current === "loading-player"
+        || current === "loading-chart"
+        || current === "ready"
+        || current === "error"
+      ) {
+        return current;
+      }
+      return "preparing";
+    });
   }, [active, attempt, destroyPreview, mobile, source, sourceId]);
 
   useEffect(() => {
@@ -223,13 +246,22 @@ export function ChartPreviewStage({
   const selectedSlotRef = useRef(selectedSlot);
   selectedSlotRef.current = selectedSlot;
 
+  // Tear down when the host is no longer eligible to show a player.
   useEffect(() => {
-    if (!active || !ready || !manifest?.assets || !slotReady) return;
+    if (active && loadApproved && containerEl) return;
+    bootstrapGenRef.current += 1;
+    destroyPreview();
+  }, [active, containerEl, destroyPreview, loadApproved]);
+
+  useEffect(() => {
+    // First-load cold start is slow (SDK + WASM). Gate on the mounted container and
+    // loadApproved so Strict Mode / mobile-confirm remounts cannot leave a player
+    // attached to a detached node without ever calling load().
+    if (!active || !loadApproved || !ready || !manifest?.assets || !slotReady || !containerEl) {
+      return;
+    }
 
     const instanceKey = `${manifest.player_url}|${manifest.renderer_url}|${manifest.source_version}|${attempt}`;
-    // Only skip when this exact instance already finished loading a chart.
-    // Skipping earlier left a "player shell ready, chart never loaded" zombie after
-    // React Strict Mode / dependency churn cancelled an in-flight load().
     if (
       instanceKeyRef.current === instanceKey
       && previewRef.current
@@ -238,42 +270,34 @@ export function ChartPreviewStage({
       return;
     }
 
-    let cancelled = false;
+    const gen = ++bootstrapGenRef.current;
     let preview: MiaViewPreview | null = null;
     let unsubscribe: (() => void) | null = null;
+    let finished = false;
     const assets = manifest.assets;
     const playerUrl = manifest.player_url;
     const rendererUrl = manifest.renderer_url;
+    const container = containerEl;
     const timeout = window.setTimeout(() => {
-      if (cancelled) return;
+      if (gen !== bootstrapGenRef.current) return;
       setPhase("error");
       setError("播放器初始化超时，请重新加载预览");
       destroyPreview();
     }, PLAYER_READY_TIMEOUT_MS);
 
+    const stillCurrent = () => gen === bootstrapGenRef.current;
+
     const run = async () => {
       try {
-        // Wait until the player host node is actually mounted. The first ready
-        // render can run this effect before the ref is attached.
-        let container = containerRef.current;
-        for (let spin = 0; !container && spin < 30 && !cancelled; spin += 1) {
-          await new Promise<void>((resolve) => {
-            window.requestAnimationFrame(() => resolve());
-          });
-          container = containerRef.current;
-        }
-        if (cancelled || !container) {
-          if (!cancelled) {
-            setPhase("error");
-            setError("播放器容器未就绪，请重新加载预览");
-          }
-          return;
-        }
-
         setPhase("loading-player");
         destroyPreview();
+        if (!stillCurrent()) return;
         const createPreview = await loadMiaViewCreatePreview(playerUrl);
-        if (cancelled) return;
+        if (!stillCurrent()) return;
+        // Container must still be the live host; first-load races can replace the node.
+        if (containerRef.current !== container || !container.isConnected) {
+          throw new Error("播放器容器已失效，请重新加载预览");
+        }
         preview = createPreview(container, {
           rendererUrl,
           resolution: { ...PREVIEW_RESOLUTION },
@@ -281,18 +305,19 @@ export function ChartPreviewStage({
           diagnostics: false,
           theme: "dark",
         });
-        if (cancelled) {
+        if (!stillCurrent()) {
           preview.destroy();
           preview = null;
           return;
         }
         previewRef.current = preview;
         unsubscribe = preview.on("error", ({ message }) => {
+          if (!stillCurrent()) return;
           setPhase("error");
           setError(message || "播放器加载失败");
         });
         await preview.ready;
-        if (cancelled) return;
+        if (!stillCurrent()) return;
         setPhase("loading-chart");
         const difficulty = selectedSlotRef.current;
         if (difficulty === null) {
@@ -305,12 +330,21 @@ export function ChartPreviewStage({
           video: assets.video_url ?? undefined,
           difficulty,
         });
-        if (cancelled) return;
+        if (!stillCurrent()) return;
+        // Best-effort autoplay after the click that opened preview. May still be
+        // blocked if WASM boot outlived the user-gesture window.
+        try {
+          await preview.play();
+        } catch {
+          // Chart is loaded; user can press the in-player play button.
+        }
+        if (!stillCurrent()) return;
         instanceKeyRef.current = instanceKey;
         loadedDifficultyRef.current = difficulty;
+        finished = true;
         setPhase("ready");
       } catch (reason) {
-        if (cancelled) return;
+        if (!stillCurrent()) return;
         destroyPreview();
         setPhase("error");
         setError(reason instanceof Error ? reason.message : "播放器加载失败");
@@ -321,11 +355,12 @@ export function ChartPreviewStage({
 
     void run();
     return () => {
-      cancelled = true;
+      bootstrapGenRef.current += 1;
       window.clearTimeout(timeout);
       unsubscribe?.();
-      // Always tear down incomplete instances. A cancelled run that already
-      // created the SDK shell must not leave previewRef pointing at an empty player.
+      // Keep a finished player so dependency churn does not drop a successful first load.
+      // Host teardown (active/loadApproved/container) destroys via the effect above.
+      if (finished && previewRef.current === preview) return;
       if (preview && previewRef.current === preview) {
         preview.destroy();
         previewRef.current = null;
@@ -336,7 +371,7 @@ export function ChartPreviewStage({
         preview.destroy();
       }
     };
-  }, [active, attempt, destroyPreview, manifest, ready, slotReady]);
+  }, [active, attempt, containerEl, destroyPreview, loadApproved, manifest, ready, slotReady]);
 
   useEffect(() => {
     const preview = previewRef.current;
@@ -473,7 +508,7 @@ export function ChartPreviewStage({
         ) : showPlayer ? (
           <Box sx={{ position: "relative", width: "100%" }}>
             <Box
-              ref={containerRef}
+              ref={setContainerNode}
               data-testid="miaview-preview-root"
               title={`${title} MiaView 在线预览`}
               sx={{ width: "100%", "& > *": { width: "100% !important", maxWidth: "100%" } }}

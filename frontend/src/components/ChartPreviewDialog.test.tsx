@@ -45,6 +45,7 @@ function createFakePreview(overrides: Partial<MiaViewPreview> = {}): MiaViewPrev
   return {
     ready: Promise.resolve(),
     load: vi.fn().mockResolvedValue({ title: "测试歌曲" }),
+    play: vi.fn().mockResolvedValue({ playing: true }),
     selectDifficulty: vi.fn().mockResolvedValue({ title: "测试歌曲" }),
     destroy: vi.fn(),
     on: vi.fn().mockReturnValue(() => undefined),
@@ -122,6 +123,7 @@ describe("ChartPreviewStage", () => {
       video: undefined,
       difficulty: 4,
     });
+    await waitFor(() => expect(preview.play).toHaveBeenCalledTimes(1));
     expect(await screen.findByTitle("测试歌曲 MiaView 在线预览")).toBeInTheDocument();
   });
 
@@ -161,8 +163,38 @@ describe("ChartPreviewStage", () => {
 
     await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(second.load).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(second.play).toHaveBeenCalledTimes(1));
     expect(first.load).not.toHaveBeenCalled();
     expect(first.destroy).toHaveBeenCalled();
+  });
+
+  it("waits for the player host node before creating the first preview", async () => {
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    let resolveImport: ((value: CreateMiaViewPreview) => void) | undefined;
+    setMiaViewCreatePreviewLoader(
+      () => new Promise<CreateMiaViewPreview>((resolve) => {
+        resolveImport = resolve;
+      }),
+    );
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(await screen.findByTitle("测试歌曲 MiaView 在线预览")).toBeInTheDocument();
+    expect(createPreview).not.toHaveBeenCalled();
+    resolveImport?.(createPreview);
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(preview.load).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(preview.play).toHaveBeenCalledTimes(1));
   });
 
   it("requires mobile confirmation before requesting the manifest", async () => {
