@@ -28,18 +28,21 @@ type PreviewPhase =
   | "confirm"
   | "preparing"
   | "loading-player"
+  | "checking-assets"
   | "loading-chart"
   | "ready"
   | "error";
+
+type MiaViewResource = string | Blob | { url: string };
 
 /** MiaView SDK surface used by the stage; kept local so tests can mock createPreview. */
 export interface MiaViewPreview {
   ready: Promise<unknown>;
   load: (input: {
-    maidata: { url: string };
-    audio?: string;
-    cover?: string;
-    video?: string | null;
+    maidata: MiaViewResource;
+    audio?: MiaViewResource;
+    cover?: MiaViewResource;
+    video?: MiaViewResource | null;
     difficulty?: number;
   }) => Promise<unknown>;
   play: () => Promise<unknown>;
@@ -66,8 +69,21 @@ const PREVIEW_RESOLUTION = { width: 1080, height: 1080 } as const;
 const PHASE_LABELS: Partial<Record<PreviewPhase, string>> = {
   preparing: "准备预览素材",
   "loading-player": "加载播放器",
+  "checking-assets": "下载谱面和媒体素材",
   "loading-chart": "加载谱面和音乐",
 };
+
+async function fetchAssetText(url: string, signal: AbortSignal): Promise<string> {
+  const response = await fetch(url, { signal, credentials: "omit", cache: "no-store" });
+  if (!response.ok) throw new Error(`谱面下载失败 (${response.status})`);
+  return response.text();
+}
+
+async function fetchAssetBlob(url: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(url, { signal, credentials: "omit", cache: "no-store" });
+  if (!response.ok) throw new Error(`素材下载失败 (${response.status})`);
+  return response.blob();
+}
 
 async function importCreatePreview(sdkUrl: string): Promise<CreateMiaViewPreview> {
   const module = await import(/* @vite-ignore */ sdkUrl) as { createPreview?: CreateMiaViewPreview };
@@ -169,7 +185,8 @@ export function ChartPreviewStage({
       return;
     }
     const identity = `${source}:${sourceId ?? "none"}`;
-    if (activeIdentityRef.current !== identity) {
+    const identityChanged = activeIdentityRef.current !== identity;
+    if (identityChanged) {
       activeIdentityRef.current = identity;
       bootstrapGenRef.current += 1;
       destroyPreview();
@@ -180,11 +197,14 @@ export function ChartPreviewStage({
     }
     const approved = !mobile || localStorage.getItem(MOBILE_CONFIRMATION_KEY) === "1";
     setLoadApproved(approved);
-    // Don't clobber an in-flight/ready player phase when only mobile media flips.
+    // Don't clobber an in-flight/ready player when only mobile media flips.
+    // Chart identity changes must reset so a new chart does not keep a stale "ready".
     setPhase((current) => {
       if (!approved) return "confirm";
+      if (identityChanged) return "preparing";
       if (
         current === "loading-player"
+        || current === "checking-assets"
         || current === "loading-chart"
         || current === "ready"
         || current === "error"
@@ -225,7 +245,8 @@ export function ChartPreviewStage({
           setPhase("error");
           return;
         }
-        setPhase("loading-player");
+        // Bootstrap effect advances through checking-assets → loading-player → …
+        setPhase((current) => (current === "error" ? current : "checking-assets"));
       } catch (reason) {
         if (!controller.signal.aborted) {
           setPhase("error");
@@ -254,14 +275,29 @@ export function ChartPreviewStage({
   }, [active, containerEl, destroyPreview, loadApproved]);
 
   useEffect(() => {
-    // First-load cold start is slow (SDK + WASM). Gate on the mounted container and
-    // loadApproved so Strict Mode / mobile-confirm remounts cannot leave a player
-    // attached to a detached node without ever calling load().
-    if (!active || !loadApproved || !ready || !manifest?.assets || !slotReady || !containerEl) {
+    // First-load / first-open-of-a-chart is the flaky path: cold SDK+WASM plus
+    // cross-origin fetches from the renderer iframe. Prefetch chart media on the
+    // host origin (which already has R2 CORS) and pass Blobs/text into MiaView.
+    if (
+      !active
+      || !loadApproved
+      || !ready
+      || !manifest?.assets
+      || !slotReady
+      || !containerEl
+      || sourceId === null
+    ) {
       return;
     }
 
-    const instanceKey = `${manifest.player_url}|${manifest.renderer_url}|${manifest.source_version}|${attempt}`;
+    const instanceKey = [
+      source,
+      sourceId,
+      manifest.player_url,
+      manifest.renderer_url,
+      manifest.source_version,
+      attempt,
+    ].join("|");
     if (
       instanceKeyRef.current === instanceKey
       && previewRef.current
@@ -271,6 +307,7 @@ export function ChartPreviewStage({
     }
 
     const gen = ++bootstrapGenRef.current;
+    const assetAbort = new AbortController();
     let preview: MiaViewPreview | null = null;
     let unsubscribe: (() => void) | null = null;
     let finished = false;
@@ -289,12 +326,22 @@ export function ChartPreviewStage({
 
     const run = async () => {
       try {
+        setPhase("checking-assets");
+        const [maidata, audio, cover, video] = await Promise.all([
+          fetchAssetText(assets.maidata_url, assetAbort.signal),
+          fetchAssetBlob(assets.track_url, assetAbort.signal),
+          fetchAssetBlob(assets.background_url, assetAbort.signal),
+          assets.video_url
+            ? fetchAssetBlob(assets.video_url, assetAbort.signal)
+            : Promise.resolve(undefined),
+        ]);
+        if (!stillCurrent()) return;
+
         setPhase("loading-player");
         destroyPreview();
         if (!stillCurrent()) return;
         const createPreview = await loadMiaViewCreatePreview(playerUrl);
         if (!stillCurrent()) return;
-        // Container must still be the live host; first-load races can replace the node.
         if (containerRef.current !== container || !container.isConnected) {
           throw new Error("播放器容器已失效，请重新加载预览");
         }
@@ -318,21 +365,22 @@ export function ChartPreviewStage({
         });
         await preview.ready;
         if (!stillCurrent()) return;
+
         setPhase("loading-chart");
         const difficulty = selectedSlotRef.current;
         if (difficulty === null) {
           throw new Error("未选择预览难度");
         }
+        // Pass host-fetched bodies so the renderer never has to pull private R2
+        // signed URLs itself (that path was intermittently failing on first open).
         await preview.load({
-          maidata: { url: assets.maidata_url },
-          audio: assets.track_url,
-          cover: assets.background_url,
-          video: assets.video_url ?? undefined,
+          maidata,
+          audio,
+          cover,
+          video,
           difficulty,
         });
         if (!stillCurrent()) return;
-        // Best-effort autoplay after the click that opened preview. May still be
-        // blocked if WASM boot outlived the user-gesture window.
         try {
           await preview.play();
         } catch {
@@ -345,6 +393,7 @@ export function ChartPreviewStage({
         setPhase("ready");
       } catch (reason) {
         if (!stillCurrent()) return;
+        if (reason instanceof DOMException && reason.name === "AbortError") return;
         destroyPreview();
         setPhase("error");
         setError(reason instanceof Error ? reason.message : "播放器加载失败");
@@ -356,10 +405,9 @@ export function ChartPreviewStage({
     void run();
     return () => {
       bootstrapGenRef.current += 1;
+      assetAbort.abort();
       window.clearTimeout(timeout);
       unsubscribe?.();
-      // Keep a finished player so dependency churn does not drop a successful first load.
-      // Host teardown (active/loadApproved/container) destroys via the effect above.
       if (finished && previewRef.current === preview) return;
       if (preview && previewRef.current === preview) {
         preview.destroy();
@@ -371,7 +419,7 @@ export function ChartPreviewStage({
         preview.destroy();
       }
     };
-  }, [active, attempt, containerEl, destroyPreview, loadApproved, manifest, ready, slotReady]);
+  }, [active, attempt, containerEl, destroyPreview, loadApproved, manifest, ready, slotReady, source, sourceId]);
 
   useEffect(() => {
     const preview = previewRef.current;
