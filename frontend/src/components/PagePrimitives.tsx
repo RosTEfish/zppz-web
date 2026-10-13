@@ -114,12 +114,12 @@ export function CardGridSkeleton({ count = 8 }: { count?: number }) {
 
 export function PageHeader({ icon: Icon, title, meta, actions }: { icon: LucideIcon; title: string; meta?: string; actions?: ReactNode }) {
   return (
-    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3.5, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
       <Stack direction="row" spacing={1.5} sx={{ minWidth: 0, alignItems: "center" }}>
-        <Box sx={{ width: 42, height: 42, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark", display: "grid", placeItems: "center", flexShrink: 0 }}><Icon size={22} /></Box>
+        <Box sx={{ width: 42, height: 42, borderRadius: 1.5, bgcolor: "primary.light", color: "primary.dark", display: "grid", placeItems: "center", flexShrink: 0 }}><Icon size={22} /></Box>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h2">{title}</Typography>
-          {meta ? <Typography variant="body2" color="text.secondary">{meta}</Typography> : null}
+          {meta ? <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>{meta}</Typography> : null}
         </Box>
       </Stack>
       {actions ? <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>{actions}</Stack> : null}

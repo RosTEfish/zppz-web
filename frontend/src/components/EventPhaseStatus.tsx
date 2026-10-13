@@ -72,9 +72,13 @@ export function PhaseHeadline({ phases }: { phases: EventPhasesRead }) {
   const currentWindow = phases.active_phase ? phases.phases.find((item) => item.phase === phases.active_phase) : undefined;
   const target = phases.next_transition_at || currentWindow?.ends_at;
   return (
-    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" } }}>
-      <Chip color={phases.active_phase ? "primary" : "default"} label={phases.active_phase ? `当前：${phaseStatusLabel(phases, now)}` : phaseStatusLabel(phases, now)} sx={{ fontWeight: 750 }} />
-      {phases.phase_mode === "manual" ? <Chip color="warning" variant="outlined" label="管理员手动接管" /> : null}
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ alignItems: { sm: "center" }, flexWrap: "wrap", rowGap: 1 }}>
+      <Chip
+        color={phases.active_phase ? "primary" : "default"}
+        label={phases.active_phase ? `当前：${phaseStatusLabel(phases, now)}` : phaseStatusLabel(phases, now)}
+        sx={{ fontWeight: 700, borderRadius: 1, height: 28 }}
+      />
+      {phases.phase_mode === "manual" ? <Chip color="warning" variant="outlined" label="管理员手动接管" sx={{ borderRadius: 1, height: 28 }} /> : null}
       <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", color: "text.secondary" }}>
         <Clock3 size={16} aria-hidden="true" />
         <Typography variant="body2" aria-live="polite" aria-atomic="true"><Box component="span" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{formatCountdown(target, now)}</Box>{target ? ` · ${new Date(target).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}` : ""}</Typography>
@@ -90,7 +94,7 @@ export function PhaseTimeline({ phases }: { phases: EventPhasesRead }) {
   const referenceTime = phases.server_time ? new Date(phases.server_time).getTime() : Date.now();
   const activeGlow = rgbaString(hexToRgb(palette.main), 0.18);
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, overflowX: "auto", borderRadius: 0, bgcolor: "transparent" }}>
+    <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, overflowX: "auto", borderRadius: 1.5, bgcolor: "background.paper", height: "100%", boxSizing: "border-box" }}>
       <Typography variant="h2" sx={{ fontSize: "1.625rem", mb: 0.5 }}>赛事时间轴</Typography>
       <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: "0.14em" }}>Beijing Time</Typography>
       <Box sx={{ position: "relative", mt: 1.5 }}>

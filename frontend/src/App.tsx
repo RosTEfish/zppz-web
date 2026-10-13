@@ -99,7 +99,7 @@ function DesktopNavItem({ label, to, selected, preload }: { label: string; to: s
         display: "grid",
         placeItems: "center",
         fontSize: 14,
-        fontWeight: 600,
+        fontWeight: selected ? 700 : 600,
         color: selected ? "text.primary" : "text.secondary",
         textDecoration: "none",
         transition: "color 160ms ease",
@@ -113,13 +113,13 @@ function DesktopNavItem({ label, to, selected, preload }: { label: string; to: s
         "&::after": {
           content: '""',
           position: "absolute",
-          left: 10,
-          right: 10,
+          left: 12,
+          right: 12,
           bottom: 0,
           height: 2,
-          borderRadius: 2,
+          borderRadius: 1,
           backgroundColor: "primary.main",
-          opacity: selected ? 1 : 0.45,
+          opacity: selected ? 1 : 0.4,
           transform: selected ? "scaleX(1)" : "scaleX(0)",
           transition: "transform 200ms cubic-bezier(0.32, 0.72, 0, 1), opacity 160ms ease",
         },
@@ -366,7 +366,7 @@ function AppShell() {
           WebkitBackdropFilter: "blur(16px) saturate(1.3)",
         }}
       >
-        <Toolbar sx={{ gap: 1.5, minHeight: 72, px: { xs: 2, md: 3.5 } }}>
+        <Toolbar sx={{ gap: 1.25, minHeight: { xs: 64, md: 68 }, px: { xs: 2, md: 3.5 } }}>
           {mobile ? (
             <IconButton aria-label="打开导航" onClick={() => setDrawerOpen(true)} edge="start">
               <MenuIcon size={21} />
@@ -395,7 +395,7 @@ function AppShell() {
           </Box>
 
           {!mobile ? (
-            <Stack direction="row" spacing={0.5} sx={{ ml: 3, flex: 1, alignSelf: "stretch", alignItems: "stretch", minWidth: 0 }}>
+            <Stack direction="row" spacing={0.25} sx={{ ml: 2.5, flex: 1, alignSelf: "stretch", alignItems: "stretch", minWidth: 0 }}>
               {links.map(({ label, to, preload }) => {
                 return (
                   <DesktopNavItem key={to} label={label} to={to} selected={location.pathname === to} preload={preload} />
@@ -409,51 +409,72 @@ function AppShell() {
             <Box sx={{ flex: 1 }} />
           )}
 
-          {phases?.capabilities.submission ? (
-            <Chip size="small" color="success" label="投稿开放" sx={{ display: { xs: "none", sm: "inline-flex" } }} />
-          ) : (
-            <Chip size="small" variant="outlined" label="投稿未开放" sx={{ display: { xs: "none", sm: "inline-flex" } }} />
-          )}
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexShrink: 0 }}>
+            {phases?.capabilities.submission ? (
+              <Chip size="small" color="success" label="投稿开放" sx={{ display: { xs: "none", sm: "inline-flex" }, borderRadius: 1, height: 28 }} />
+            ) : (
+              <Chip
+                size="small"
+                variant="outlined"
+                label="投稿未开放"
+                sx={{
+                  display: { xs: "none", sm: "inline-flex" },
+                  borderRadius: 1,
+                  height: 28,
+                  borderColor: "divider",
+                  color: "text.secondary",
+                  bgcolor: "#F4F6F5",
+                  fontWeight: 600,
+                }}
+              />
+            )}
 
-          {!mobile ? (
-            isLoggedIn ? (
-              <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flexShrink: 0 }}>
+            {!mobile ? (
+              isLoggedIn ? (
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flexShrink: 0 }}>
+                  <Button
+                    component={ViewTransitionLink}
+                    to="/account"
+                    color="inherit"
+                    aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
+                    onPointerEnter={() => void loadAccountPage()}
+                    sx={{ fontWeight: 600, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+                  >
+                    {user?.display_name || user?.user_code || "账号"}
+                  </Button>
+                  <Button
+                    color="inherit"
+                    startIcon={<LogOut size={16} />}
+                    onClick={() => void logout().then(() => navigateWithViewTransition(navigate, "/"))}
+                    sx={{
+                      fontWeight: 600,
+                      color: "text.secondary",
+                      minWidth: 0,
+                      "&:hover": { color: "text.primary", bgcolor: "rgba(28, 35, 33, 0.04)" },
+                    }}
+                  >
+                    退出
+                  </Button>
+                </Stack>
+              ) : (
                 <Button
-                  component={ViewTransitionLink}
-                  to="/account"
                   color="inherit"
-                  aria-label={`${user?.display_name || user?.user_code || "账号"}，账号设置`}
-                  onPointerEnter={() => void loadAccountPage()}
-                  sx={{ fontWeight: 600, color: "text.secondary", "&:hover": { color: "text.primary" } }}
-                >
-                  {user?.display_name || user?.user_code || "账号"}
-                </Button>
-                <Button
-                  color="inherit"
-                  startIcon={<LogOut size={16} />}
-                  onClick={() => void logout().then(() => navigateWithViewTransition(navigate, "/"))}
+                  startIcon={<LogIn size={17} />}
+                  onPointerEnter={() => void loadAuthPage()}
+                  onClick={() => navigateWithViewTransition(navigate, "/login")}
                   sx={{
                     fontWeight: 600,
-                    color: "text.secondary",
-                    minWidth: 0,
-                    "&:hover": { color: "text.primary", bgcolor: "rgba(28, 35, 33, 0.04)" },
+                    color: "text.primary",
+                    borderRadius: 1,
+                    px: 1.5,
+                    "&:hover": { bgcolor: "rgba(28, 35, 33, 0.04)" },
                   }}
                 >
-                  退出
+                  登录
                 </Button>
-              </Stack>
-            ) : (
-              <Button
-                color="inherit"
-                startIcon={<LogIn size={17} />}
-                onPointerEnter={() => void loadAuthPage()}
-                onClick={() => navigateWithViewTransition(navigate, "/login")}
-                sx={{ fontWeight: 600 }}
-              >
-                登录
-              </Button>
-            )
-          ) : null}
+              )
+            ) : null}
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -526,11 +547,11 @@ function AppShell() {
 
 function SiteFooter() {
   return (
-    <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper", py: 2 }}>
+    <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper", py: { xs: 2.5, md: 3 } }}>
       <Container maxWidth="xl">
         <Stack
           direction={{ xs: "column", sm: "row" }}
-          spacing={{ xs: 0.75, sm: 2 }}
+          spacing={{ xs: 1, sm: 2.5 }}
           useFlexGap
           sx={{ alignItems: "center", justifyContent: "center", flexWrap: "wrap", textAlign: "center" }}
         >

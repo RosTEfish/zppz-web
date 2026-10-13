@@ -117,11 +117,11 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                 letterSpacing: "-0.01em",
               }}
             >
-              ZPPZ 
+              ZPPZ
             </Typography>
             <Typography
               sx={{
-                mt: 1,
+                mt: 0.75,
                 fontWeight: 600,
                 fontSize: { xs: 12, md: 14 },
                 letterSpacing: "0.18em",
@@ -130,14 +130,14 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
             >
               这谱谱这
             </Typography>
-            <Box aria-hidden="true" sx={{ mt: 1.5, width: 32, height: 2, borderRadius: 1, bgcolor: "primary.main", opacity: 0.55 }} />
+            <Box aria-hidden="true" sx={{ mt: 1.25, width: 32, height: 2, borderRadius: 1, bgcolor: "primary.main", opacity: 0.55 }} />
 
-            <Typography variant="h1" component="h1" sx={{ mt: 2.5, mb: 0 }}>
+            <Typography variant="h1" component="h1" sx={{ mt: 2.25, mb: 0 }}>
               {event.name}
             </Typography>
             <Typography
               sx={{
-                mt: 2,
+                mt: 1.75,
                 mb: 0,
                 maxWidth: 420,
                 fontWeight: 400,
@@ -150,7 +150,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
             </Typography>
 
             {phases ? (
-              <Box sx={{ mt: 2.5 }}>
+              <Box sx={{ mt: 2.25 }}>
                 <PhaseHeadline phases={phases} />
               </Box>
             ) : null}
@@ -159,7 +159,8 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
               <Box
                 sx={{
                   mt: 2,
-                  p: 1.5,
+                  px: 1.5,
+                  py: 1.25,
                   maxWidth: 480,
                   display: "flex",
                   gap: 1,
@@ -167,8 +168,9 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                   justifyContent: "space-between",
                   border: 1,
                   borderColor: "divider",
-                  bgcolor: "rgba(255,255,255,0.86)",
-                  backdropFilter: "blur(6px)",
+                  borderRadius: 1,
+                  bgcolor: "rgba(255,255,255,0.72)",
+                  backdropFilter: "blur(8px)",
                 }}
               >
                 <Typography
@@ -185,11 +187,11 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                 >
                   {announcementPreview(event.settings.announcement_text)}
                 </Typography>
-                <Button size="small" onClick={onOpenAnnouncement} sx={{ flexShrink: 0 }}>查看公告</Button>
+                <Button size="small" onClick={onOpenAnnouncement} sx={{ flexShrink: 0, fontWeight: 600 }}>查看公告</Button>
               </Box>
             ) : null}
 
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1.5, sm: 3 }} sx={{ mt: 3.5, alignItems: { sm: "center" } }}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1.5, sm: 2.5 }} sx={{ mt: 3, alignItems: { sm: "center" } }}>
               {!isLoggedIn ? (
                 <Button
                   variant="contained"
@@ -218,7 +220,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                   borderRadius: 0,
                   color: "text.primary",
                   borderBottom: "1px solid",
-                  borderColor: "rgba(28,35,33,0.35)",
+                  borderColor: "rgba(28,35,33,0.28)",
                   alignSelf: { xs: "flex-start", sm: "auto" },
                   "&:hover": { bgcolor: "transparent", color: "primary.main", borderColor: "primary.main" },
                 }}
@@ -248,24 +250,34 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
         ) : null}
       </Box>
 
-      <Box sx={{ maxWidth: 1280, mx: "auto", px: { xs: 2.5, md: 8 }, py: { xs: 5, md: 10 } }}>
+      <Box sx={{ maxWidth: 1280, mx: "auto", px: { xs: 2.5, md: 8 }, py: { xs: 6, md: 12 } }}>
         <Box
           sx={{
             display: "grid",
             gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) minmax(0, 2fr)" },
-            gap: { xs: 4, lg: 8 },
-            mb: { xs: 5, md: 8 },
+            gap: { xs: 4, lg: 6 },
+            mb: { xs: 6, md: 10 },
+            alignItems: "stretch",
           }}
         >
-          <Box>
+          <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
             <Typography variant="h2" sx={{ mb: 2.5 }}>当前阶段</Typography>
-            <Box sx={{ p: 3, border: 1, borderColor: "divider", borderRadius: 1.5, bgcolor: "background.subtle" }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, display: "block", mb: 1, color: "text.secondary" }}>下一步</Typography>
+            <Box
+              sx={{
+                p: { xs: 2.5, md: 3 },
+                border: 1,
+                borderColor: "divider",
+                borderRadius: 1.5,
+                bgcolor: "background.paper",
+                flex: 1,
+              }}
+            >
+              <Typography variant="caption" sx={{ fontWeight: 700, display: "block", mb: 1, color: "text.secondary", letterSpacing: "0.06em" }}>下一步</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.7 }}>{nextAction}</Typography>
               {phases ? <PhaseHeadline phases={phases} /> : null}
             </Box>
           </Box>
-          <Box>
+          <Box sx={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
             {phases ? <PhaseTimeline phases={phases} /> : null}
           </Box>
         </Box>
@@ -275,7 +287,8 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
           sx={{
             display: "grid",
             gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(3, minmax(0, 1fr))" },
-            gap: 2,
+            gap: { xs: 1.5, md: 2 },
+            alignItems: "stretch",
           }}
         >
           {stages.map(({ label, value, icon: Icon, to, open }) => (
@@ -283,16 +296,17 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
               key={label}
               variant="outlined"
               sx={{
-                borderRadius: 0,
+                height: "100%",
+                borderRadius: 1.5,
                 boxShadow: "none",
                 borderColor: "divider",
                 borderTop: open && to === "/submissions" && phases?.capabilities.submission ? "2px solid" : undefined,
                 borderTopColor: open && to === "/submissions" && phases?.capabilities.submission ? "primary.main" : undefined,
                 transition: "transform 240ms cubic-bezier(0.32, 0.72, 0, 1), border-color 200ms ease, box-shadow 240ms cubic-bezier(0.32, 0.72, 0, 1)",
                 "&:hover": {
-                  transform: "translateY(-3px)",
+                  transform: "translateY(-2px)",
                   borderColor: "rgba(28, 35, 33, 0.16)",
-                  boxShadow: "0 12px 24px -8px rgba(28, 35, 33, 0.08)",
+                  boxShadow: "0 2px 8px rgba(28, 35, 33, 0.04)",
                 },
                 "@media (prefers-reduced-motion: reduce)": {
                   transition: "none",
@@ -304,8 +318,9 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
                 component={ViewTransitionLink}
                 to={to}
                 sx={{
-                  p: { xs: 2.5, md: 3.5 },
-                  minHeight: { xs: 88, md: 168 },
+                  height: "100%",
+                  p: { xs: 2.5, md: 3 },
+                  minHeight: { xs: 88, md: 160 },
                   display: "flex",
                   flexDirection: { xs: "row", md: "column" },
                   alignItems: { xs: "center", md: "stretch" },

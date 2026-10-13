@@ -372,7 +372,7 @@ export default function ArchivePage() {
         )}
       />
       {batchError ? <Alert severity="error">{batchError}</Alert> : null}
-      <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 1.5 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
             <Library size={18} />
@@ -388,12 +388,13 @@ export default function ArchivePage() {
               setMode(value);
               clearSelection();
             }}
+            sx={{ "& .MuiToggleButton-root": { borderRadius: 1, px: 1.25 } }}
           >
             <ToggleButton value="edition"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Archive size={15} /><span>按届</span></Stack></ToggleButton>
             <ToggleButton value="submitter"><Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}><Users size={15} /><span>按谱师</span></Stack></ToggleButton>
           </ToggleButtonGroup>
         </Stack>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25, lineHeight: 1.65, maxWidth: 720 }}>
           浏览已归档届次的谱面；「按谱师」按投稿提交者归类。可用批量选择打包下载原始包。
         </Typography>
       </Paper>
