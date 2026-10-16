@@ -32,13 +32,8 @@ export const borderColor = {
   strong: "rgba(28, 35, 33, 0.16)",
 } as const;
 
-/** UI / body — OS stack only; no downloaded web fonts. */
-export const fontSans =
-  'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
-
-/** Display / brand — CJK-capable system serifs first; Georgia as last Latin fallback. */
-export const fontDisplay =
-  '"Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", Georgia, serif';
+const fontSans = '"Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
+const fontDisplay = '"Noto Serif SC", "Noto Sans SC", "Songti SC", serif';
 
 function buildShadows(palette: EventPalette) {
   const inkRgb = palette.shadowInk;
