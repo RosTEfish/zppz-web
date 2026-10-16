@@ -52,14 +52,16 @@
 
 ### Font Stack
 
-```
-UI / body: "Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif
-Display (h1–h3 / 品牌字): "Noto Serif SC", "Noto Sans SC", "Songti SC", serif
-```
+纯系统栈（不下载 web fonts；无 `@fontsource` / Google Fonts / `@font-face`）。常量：`fontSans` / `fontDisplay`（`theme.ts`）。
 
-依赖：`@fontsource/outfit`、`@fontsource/noto-sans-sc`、`@fontsource/noto-serif-sc`。字重经 `fonts.css` 异步加载。
+```
+UI / body (fontSans):
+  system-ui, -apple-system, "Segoe UI", "PingFang SC",
+  "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif
 
-加载字重（控制中文体积）：Outfit 400/600/700；Noto Sans SC 400/600/700；Noto Serif SC **仅 700**。勿再引入 Serif 900 / Outfit 800。
+Display / 品牌 (fontDisplay):
+  "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", Georgia, serif
+```
 
 ### Scale（MUI variant 映射）
 
@@ -76,7 +78,7 @@ Display (h1–h3 / 品牌字): "Noto Serif SC", "Noto Sans SC", "Songti SC", ser
 
 ### Rules
 
-1. 三档字重：400 读 / 600 UI / 700 宣告（衬线标题共用 700，避免再拉 Serif 900）。
+1. 三档字重：400 读 / 600 UI / 700 宣告（衬线标题共用 700；依赖系统字重，不拉远端字档）。
 2. 数字一律 tabular-nums。
 3. 品牌 eyebrow：玉绿短下划线（宽 ~32px 高 2px）。
 4. 中文文本不加负 letter-spacing。
@@ -205,5 +207,5 @@ sh4 = "0 8px 20px -8px rgba(23,23,23,0.10), 0 28px 56px -20px rgba(13,53,41,0.26
 1. 本期不做暗色模式（palette 单 light）。
 2. Admin DataGrid 密度保持紧凑，仅吃 theme 级样式，不逐列重排。
 3. 存量散落的硬编码 `rgba(23,107,82,…)` / `#176B52` sx 值：**被触碰到的文件顺手迁移到 token**，不做全局扫荡替换。
-4. 不新增运行时依赖；字体仅在确有必要时扩 @fontsource 字重，并评估中文 woff2 体积（每档约 1MB+）。
+4. 不新增运行时依赖；字体保持系统栈，勿再引入 `@fontsource` / 远端 woff2。
 5. React dev 工具（react-grab/react-scan/react-doctor）本期不安装：项目有严格 bundle-size 门禁与 CI，用户约束为最小侵入；如需后续单独接入。
