@@ -148,7 +148,10 @@ fi
 # Host-managed static files (e.g. BingSiteAuth.xml via nginx alias) live under
 # $app_dir/static and must survive releases. Create the directory as the deploy
 # user when missing so ownership never drifts to root from ad-hoc ops.
+# Keep o+rx on the app root and static/ so nginx can traverse to aliased files
+# even when the deploy user umask is restrictive (e.g. 077).
 mkdir -p "$incoming_dir" "$releases_dir" "$pip_cache_dir" "$app_dir/logs" "$app_dir/data" "$app_dir/static"
+chmod 755 "$app_dir" "$app_dir/static"
 if [ -f "$service_file" ]; then
   cp "$service_file" "$rollback_service_unit"
 fi
