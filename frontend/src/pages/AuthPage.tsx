@@ -12,6 +12,7 @@ import { useEventTheme } from "../contexts/EventThemeProvider";
 import { authSchema, type AuthFormValues } from "../forms/schemas";
 import { useEventBackgrounds } from "../hooks/useEventBackgrounds";
 import { navigateWithViewTransition } from "../navigation/viewTransition";
+import { fontDisplay } from "../theme";
 
 export default function AuthPage() {
   const [error, setError] = useState("");
@@ -168,7 +169,7 @@ export default function AuthPage() {
           <Stack direction="row" spacing={1.5} sx={{ mb: 2.25, alignItems: "center" }}>
             <BrandLogo size={40} borderRadius="12px" />
             <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700, lineHeight: 1.2 }}>ZPPZ </Typography>
+              <Typography sx={{ fontFamily: fontDisplay, fontWeight: 700, lineHeight: 1.2 }}>ZPPZ </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25, fontWeight: 600 }}>
                 这谱谱这 · 登录入口
               </Typography>
