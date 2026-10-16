@@ -75,7 +75,7 @@ restore_live_release() {
   for path in "$app_dir"/* "$app_dir"/.[!.]* "$app_dir"/..?*; do
     [ -e "$path" ] || [ -L "$path" ] || continue
     case "$path" in
-      "$deploy_state_dir"|"$venv_dir"|"$app_dir/venv"|"$app_dir/uploads"|"$app_dir/logs"|"$app_dir/data"|"$env_file"|"$legacy_database_path")
+      "$deploy_state_dir"|"$venv_dir"|"$app_dir/venv"|"$app_dir/uploads"|"$app_dir/logs"|"$app_dir/data"|"$app_dir/static"|"$env_file"|"$legacy_database_path")
         continue
         ;;
     esac
@@ -145,7 +145,13 @@ if [ ! -f "$archive_path" ]; then
   exit 1
 fi
 
-mkdir -p "$incoming_dir" "$releases_dir" "$pip_cache_dir" "$app_dir/logs" "$app_dir/data"
+# Host-managed static files (e.g. BingSiteAuth.xml via nginx alias) live under
+# $app_dir/static and must survive releases. Create the directory as the deploy
+# user when missing so ownership never drifts to root from ad-hoc ops.
+# Keep o+rx on the app root and static/ so nginx can traverse to aliased files
+# even when the deploy user umask is restrictive (e.g. 077).
+mkdir -p "$incoming_dir" "$releases_dir" "$pip_cache_dir" "$app_dir/logs" "$app_dir/data" "$app_dir/static"
+chmod 755 "$app_dir" "$app_dir/static"
 if [ -f "$service_file" ]; then
   cp "$service_file" "$rollback_service_unit"
 fi
@@ -306,6 +312,9 @@ find_prune_path_args=(
   -o -path "$app_dir/uploads" -o -path "$app_dir/uploads/*"
   -o -path "$app_dir/logs" -o -path "$app_dir/logs/*"
   -o -path "$app_dir/data" -o -path "$app_dir/data/*"
+  # Persistent host static assets (verification XML, etc.) — not part of the
+  # release tarball. Do not require the deploy user to overwrite this tree.
+  -o -path "$app_dir/static" -o -path "$app_dir/static/*"
 )
 
 find_skip_args=( "(" "${find_prune_path_args[@]}" ")" -prune )
@@ -326,8 +335,8 @@ fi
 
 # Keep a code-only snapshot so a failed dependency install, preparation step,
 # service restart, or health check does not leave the host on a half-written
-# release. Persistent data, uploads, logs, the virtualenv, and .env remain in
-# place and are deliberately excluded from this snapshot.
+# release. Persistent data, uploads, logs, host static files, the virtualenv,
+# and .env remain in place and are deliberately excluded from this snapshot.
 rollback_snapshot_excludes=()
 if [ "$skip_legacy_database" -eq 1 ]; then
   rollback_snapshot_excludes+=(--exclude='./backend/zppz_v2.db')
@@ -339,6 +348,7 @@ tar -C "$app_dir" \
   --exclude='./uploads' \
   --exclude='./logs' \
   --exclude='./data' \
+  --exclude='./static' \
   --exclude='./.env' \
   --exclude='./node_modules' \
   --exclude='./frontend/node_modules' \
@@ -355,9 +365,10 @@ if [ "$worker_unit_preexisting" -eq 1 ]; then
   sudo -n systemctl stop "$WORKER_SERVICE_NAME" >/dev/null 2>&1 || true
 fi
 
-# Copy the built release into the live application directory. Runtime data lives
-# outside the archive and is preserved in place.
-tar -C "$release_dir" -cf - . | tar --no-same-owner --no-same-permissions --delay-directory-restore --touch -C "$app_dir" -xf -
+# Copy the built release into the live application directory. Runtime data and
+# host-managed static files live outside the archive and are preserved in place.
+tar -C "$release_dir" --exclude='./static' -cf - . \
+  | tar --no-same-owner --no-same-permissions --delay-directory-restore --touch -C "$app_dir" -xf -
 
 "$PYTHON_BIN" -m venv "$venv_dir"
 
