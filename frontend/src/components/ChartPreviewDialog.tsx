@@ -20,6 +20,12 @@ import {
 } from "@mui/material";
 import { Download, Music2, Play, RefreshCw, Square, Wifi } from "lucide-react";
 import { api, type PreviewManifest } from "../api/v1";
+import {
+  fetchCappedBlob,
+  previewPlaybackProfile,
+  previewVideoSkipMessage,
+  readPreviewDeviceHints,
+} from "./previewPlayback";
 
 export type PreviewSource = "submission" | "guess" | "archive";
 
@@ -64,7 +70,6 @@ export type CreateMiaViewPreview = (
 
 const PLAYER_READY_TIMEOUT_MS = 90_000;
 const MOBILE_CONFIRMATION_KEY = "zppz-preview-mobile-confirmed";
-const PREVIEW_RESOLUTION = { width: 1080, height: 1080 } as const;
 
 const PHASE_LABELS: Partial<Record<PreviewPhase, string>> = {
   preparing: "准备预览素材",
@@ -327,15 +332,17 @@ export function ChartPreviewStage({
     const run = async () => {
       try {
         setPhase("checking-assets");
-        const [maidata, audio, cover, video] = await Promise.all([
+        const [maidata, audio, cover, videoResult] = await Promise.all([
           fetchAssetText(assets.maidata_url, assetAbort.signal),
           fetchAssetBlob(assets.track_url, assetAbort.signal),
           fetchAssetBlob(assets.background_url, assetAbort.signal),
           assets.video_url
-            ? fetchAssetBlob(assets.video_url, assetAbort.signal)
-            : Promise.resolve(undefined),
+            ? fetchCappedBlob(assets.video_url, assetAbort.signal)
+            : Promise.resolve({ blob: null, skipped: false }),
         ]);
         if (!stillCurrent()) return;
+        const video = videoResult.skipped ? undefined : videoResult.blob ?? undefined;
+        setWarning(videoResult.skipped ? previewVideoSkipMessage() : "");
 
         setPhase("loading-player");
         destroyPreview();
@@ -345,10 +352,11 @@ export function ChartPreviewStage({
         if (containerRef.current !== container || !container.isConnected) {
           throw new Error("播放器容器已失效，请重新加载预览");
         }
+        const playback = previewPlaybackProfile(readPreviewDeviceHints());
         preview = createPreview(container, {
           rendererUrl,
-          resolution: { ...PREVIEW_RESOLUTION },
-          maxFps: "unlimited",
+          resolution: playback.resolution,
+          maxFps: playback.maxFps,
           diagnostics: false,
           theme: "dark",
         });

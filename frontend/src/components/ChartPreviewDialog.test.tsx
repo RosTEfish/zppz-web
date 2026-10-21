@@ -7,6 +7,7 @@ import {
   type CreateMiaViewPreview,
   type MiaViewPreview,
 } from "./ChartPreviewDialog";
+import { PREVIEW_VIDEO_MAX_BYTES } from "./previewPlayback";
 
 
 const READY_MANIFEST: PreviewManifest = {
@@ -80,6 +81,7 @@ describe("ChartPreviewStage", () => {
     vi.restoreAllMocks();
     setMiaViewCreatePreviewLoader(null);
     window.matchMedia = matchMedia(false);
+    Reflect.deleteProperty(navigator, "deviceMemory");
   });
 
   it("does not request a manifest before preview activation", () => {
@@ -319,5 +321,205 @@ describe("ChartPreviewStage", () => {
     expect(await screen.findByRole("button", { name: "重新加载预览" })).toBeInTheDocument();
     expect(createPreview).not.toHaveBeenCalled();
     expect(screen.getByText(/谱面下载失败|素材下载失败/)).toBeInTheDocument();
+  });
+
+  it("uses 720p and 30 fps after the mobile confirmation", async () => {
+    window.matchMedia = matchMedia(true);
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "继续加载预览" }));
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(1));
+    expect(createPreview).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({
+        resolution: { width: 720, height: 720 },
+        maxFps: 30,
+      }),
+    );
+  });
+
+  it("uses 720p and 30 fps on a coarse pointer without the narrow-phone gate", async () => {
+    window.matchMedia = (query: string) => ({
+      matches: query.includes("pointer") && query.includes("coarse"),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    });
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("播放器首次加载约几十 MB")).not.toBeInTheDocument();
+    expect(createPreview).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({
+        resolution: { width: 720, height: 720 },
+        maxFps: 30,
+      }),
+    );
+  });
+
+  it("uses 720p and 30 fps when the device reports 4 GB of memory", async () => {
+    Object.defineProperty(navigator, "deviceMemory", { configurable: true, value: 4 });
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue(READY_MANIFEST);
+    mockAssetFetch();
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await waitFor(() => expect(createPreview).toHaveBeenCalledTimes(1));
+    expect(createPreview).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({
+        resolution: { width: 720, height: 720 },
+        maxFps: 30,
+      }),
+    );
+  });
+
+  it("skips an oversized preview video and still loads the chart", async () => {
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue({
+      ...READY_MANIFEST,
+      assets: {
+        ...READY_MANIFEST.assets!,
+        video_url: "https://assets.example/video.mp4?signature=1",
+      },
+    });
+    let videoPulls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("maidata")) {
+        return new Response("&title=测试歌曲\n&inote_4=\n", { status: 200, headers: { "Content-Type": "text/plain" } });
+      }
+      if (url.includes("video")) {
+        return new Response(new ReadableStream({
+          pull(controller) {
+            videoPulls += 1;
+            controller.enqueue(new Uint8Array([1]));
+          },
+        }), {
+          status: 200,
+          headers: {
+            "Content-Type": "video/mp4",
+            "Content-Length": String(PREVIEW_VIDEO_MAX_BYTES + 1),
+          },
+        });
+      }
+      if (url.includes("track") || url.includes("bg")) {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await waitFor(() => expect(preview.load).toHaveBeenCalledTimes(1));
+    const loadArg = vi.mocked(preview.load).mock.calls[0][0];
+    expect(loadArg.video).toBeUndefined();
+    expect(loadArg.audio).toEqual(expect.objectContaining({ size: 3 }));
+    expect(videoPulls).toBeLessThanOrEqual(2);
+    expect(await screen.findByText(/预览视频超过 40 MB/)).toBeInTheDocument();
+  });
+
+  it("passes an in-cap preview video through to the player", async () => {
+    vi.spyOn(api, "guessPreviewManifest").mockResolvedValue({
+      ...READY_MANIFEST,
+      assets: {
+        ...READY_MANIFEST.assets!,
+        video_url: "https://assets.example/video.mp4?signature=1",
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("maidata")) {
+        return new Response("&title=测试歌曲\n&inote_4=\n", { status: 200, headers: { "Content-Type": "text/plain" } });
+      }
+      if (url.includes("video")) {
+        return new Response(new Uint8Array([4, 5, 6, 7]), {
+          status: 200,
+          headers: { "Content-Type": "video/mp4", "Content-Length": "4" },
+        });
+      }
+      if (url.includes("track") || url.includes("bg")) {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const preview = createFakePreview();
+    const createPreview = vi.fn<CreateMiaViewPreview>().mockReturnValue(preview);
+    setMiaViewCreatePreviewLoader(async () => createPreview);
+
+    render(
+      <ChartPreviewStage
+        active
+        source="guess"
+        sourceId={9}
+        title="测试歌曲"
+        onDownload={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await waitFor(() => expect(preview.load).toHaveBeenCalledTimes(1));
+    const loadArg = vi.mocked(preview.load).mock.calls[0][0];
+    expect(loadArg.video).toEqual(expect.objectContaining({ size: 4, type: "video/mp4" }));
+    expect(screen.queryByText(/预览视频超过 40 MB/)).not.toBeInTheDocument();
   });
 });
