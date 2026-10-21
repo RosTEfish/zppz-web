@@ -1,6 +1,7 @@
 name: Deploy to Linux server
 
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -8,10 +9,15 @@ on:
 
 permissions:
   contents: read
+  # verify uploads the frontend build and chart validator for the deploy job.
+  actions: write
 
+# Pull requests validate on their own and must not queue behind production deploys.
+# Pushes and manual runs keep the existing non-cancelling production queue so an
+# older release cannot overtake a newer one.
 concurrency:
-  group: deploy-production
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.ref) || 'deploy-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -49,6 +55,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/zppz-chart-validate
+
       - name: Build chart validator
         run: |
           cargo test --manifest-path tools/zppz-chart-validate/Cargo.toml
@@ -81,15 +92,36 @@ jobs:
           python -m app.prepare
           python -m alembic current
 
+      # Same-run artifacts for the deploy job. Pull requests never deploy, and
+      # fork PRs cannot upload, so skip the upload there.
+      - name: Upload validated frontend
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Upload validated chart validator
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: chart-validator
+          path: backend/bin/zppz-chart-validate
+          if-no-files-found: error
+          retention-days: 5
+
   deploy:
     needs: verify
+    if: success() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/zppz' }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
       SERVICE_NAME: ${{ vars.DEPLOY_SERVICE_NAME || 'zppz-web' }}
       APP_PORT: ${{ vars.APP_PORT || '8000' }}
       KEEP_RELEASES: ${{ vars.KEEP_RELEASES || '5' }}
@@ -239,13 +271,6 @@ jobs:
           } > "$storage_config_path"
           echo "STORAGE_CONFIG_PATH=$storage_config_path" >> "$GITHUB_ENV"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
       - name: Setup Python for preview publisher
         if: env.PREVIEW_ENABLED == 'true'
         uses: actions/setup-python@v6
@@ -274,19 +299,21 @@ jobs:
           sed -i "s|^PREVIEW_PLAYER_URL=.*$|PREVIEW_PLAYER_URL=$PREVIEW_PLAYER_URL|" "$STORAGE_CONFIG_PATH"
           echo "PREVIEW_PLAYER_URL=$PREVIEW_PLAYER_URL" >> "$GITHUB_ENV"
 
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+      - name: Download validated frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Download validated chart validator
+        uses: actions/download-artifact@v4
+        with:
+          name: chart-validator
+          path: backend/bin
 
-      - name: Build chart validator for release
-        run: |
-          bash scripts/build_chart_validate.sh backend/bin
-          test -x backend/bin/zppz-chart-validate
+      # Artifact zip does not preserve the executable bit from the verify job.
+      - name: Restore chart validator permissions
+        run: chmod 755 backend/bin/zppz-chart-validate
 
       - name: Prepare release archive
         run: |
