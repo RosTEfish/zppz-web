@@ -62,6 +62,7 @@
 - Vite `manualChunks` groups react, @mui/material+@emotion, and router/SWR into stable vendor chunks; keep `@mui/x-*` out of `vendor-mui` so DataGrid and date-pickers stay lazy-loaded.
 - The render-blocking stylesheet stays minimal; font declarations ship as a separate non-blocking stylesheet (`fonts.css?url` injected in `main.tsx`).
 - Entry/chunk budgets are enforced by `npm run check:bundle` (500 KiB raw / 160 KiB gzip per chunk); run a build after adding eager dependencies.
+- Chinese body text uses the system sans stack in `fontSans`. `fonts.css` may load Outfit 400/600/700 and one Noto Serif SC 700 file (`chinese-simplified-700.css`) only. Do not reintroduce downloaded Noto Sans SC weights. The same check rejects emitted Noto Sans font files and any CJK woff2 set over 1.7 MB.
 
 ## Git Notes
 

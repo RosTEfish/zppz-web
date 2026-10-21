@@ -10,6 +10,7 @@ import { useEventTheme } from "../contexts/EventThemeProvider";
 import { useEventBackgrounds } from "../hooks/useEventBackgrounds";
 import { ViewTransitionLink } from "../navigation/ViewTransitionLink";
 import { navigateWithViewTransition } from "../navigation/viewTransition";
+import { fontDisplay } from "../theme";
 
 function announcementPreview(markdown: string) {
   const text = markdown
@@ -110,7 +111,7 @@ export default function HomePage({ onOpenAnnouncement }: { onOpenAnnouncement?: 
           >
             <Typography
               sx={{
-                fontFamily: '"Noto Serif SC", serif',
+                fontFamily: fontDisplay,
                 fontWeight: 700,
                 fontSize: { xs: "1.75rem", md: "2.25rem" },
                 lineHeight: 1,

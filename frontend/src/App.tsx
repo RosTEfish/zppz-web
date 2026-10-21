@@ -1,7 +1,7 @@
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppBar, Box, Button, Chip, Container, CssBaseline, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
-import { theme as fallbackTheme } from "./theme";
+import { fontDisplay, theme as fallbackTheme } from "./theme";
 import { Archive, Gauge, Home, LogIn, LogOut, Menu as MenuIcon, Music2, Sparkles, Upload, Vote } from "lucide-react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ViewTransitionLink } from "./navigation/ViewTransitionLink";
@@ -219,7 +219,7 @@ function AppShell() {
       <Toolbar sx={{ gap: 1.5, minHeight: 72 }}>
         <BrandLogo size={36} borderRadius={2} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap sx={{ fontFamily: '"Noto Serif SC", serif', fontWeight: 700 }}>ZPPZ </Typography>
+          <Typography noWrap sx={{ fontFamily: fontDisplay, fontWeight: 700 }}>ZPPZ </Typography>
           <Typography variant="caption" color="text.secondary" noWrap>{event?.name || "赛事平台"}</Typography>
         </Box>
       </Toolbar>
@@ -383,7 +383,7 @@ function AppShell() {
             <Typography
               noWrap
               sx={{
-                fontFamily: '"Noto Serif SC", serif',
+                fontFamily: fontDisplay,
                 fontWeight: 700,
                 fontSize: { xs: 16, md: 18 },
                 letterSpacing: "-0.01em",
