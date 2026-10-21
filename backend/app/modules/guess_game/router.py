@@ -12,7 +12,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
 from app.core.cache import ANONYMOUS_BOOTSTRAP_CACHE_CONTROL, set_public_api_cache
-from app.core.security import get_current_user, get_optional_user, require_role, user_payload
+from app.core.security import get_current_user, get_optional_user, public_user_payload, require_role, user_payload
 from app.db.session import get_db
 from app.models import (
     AdminGuessArchive,
@@ -395,7 +395,7 @@ def comments(chart_id: int, db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
     _visible_chart(db, event, chart_id)
     return [
-        {"id": item.id, "content": item.content, "user": user_payload(item.user), "created_at": item.created_at}
+        {"id": item.id, "content": item.content, "user": public_user_payload(item.user), "created_at": item.created_at}
         for item in list_comments(db, chart_id)
     ]
 
@@ -409,7 +409,7 @@ def create_comment(chart_id: int, payload: CommentCreate, user: User = Depends(g
     db.commit()
     db.refresh(item)
     item.user = user
-    return {"id": item.id, "content": item.content, "user": user_payload(user), "created_at": item.created_at}
+    return {"id": item.id, "content": item.content, "user": public_user_payload(user), "created_at": item.created_at}
 
 
 @router.get("/designer-guesses")

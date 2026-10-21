@@ -181,6 +181,8 @@ DB_MAX_OVERFLOW=5
 DB_POOL_TIMEOUT=30
 DB_POOL_RECYCLE=1800
 SLOW_REQUEST_MS=500
+SECURE_COOKIES=true
+TRUSTED_PROXIES=127.0.0.1,::1
 EOF
 fi
 cp "$env_file" "$rollback_env"
@@ -242,6 +244,17 @@ fi
 if LC_ALL=C grep -q $'\r' "$env_file"; then
   echo "Environment file contains unsupported carriage-return characters: $env_file" >&2
   exit 1
+fi
+
+# Existing production files predate these keys. Append only when absent so an
+# explicit SECURE_COOKIES=false is preserved.
+if ! grep -q '^SECURE_COOKIES=' "$env_file"; then
+  printf '\nSECURE_COOKIES=true\n' >> "$env_file"
+  echo "Set SECURE_COOKIES=true in $env_file"
+fi
+if ! grep -q '^TRUSTED_PROXIES=' "$env_file"; then
+  printf '\nTRUSTED_PROXIES=127.0.0.1,::1\n' >> "$env_file"
+  echo "Set TRUSTED_PROXIES=127.0.0.1,::1 in $env_file"
 fi
 
 # Older Docker-oriented configurations used /data, which is not writable for
@@ -391,7 +404,7 @@ if ! pip_with_index "$SERVER_PIP_INDEX_URL" -r "$app_dir/backend/requirements.tx
 fi
 "$venv_dir/bin/python" -m uvicorn --version
 service_workdir="$app_dir/backend"
-service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT --workers $WEB_CONCURRENCY"
+service_exec="$venv_dir/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $APP_PORT --workers $WEB_CONCURRENCY --no-proxy-headers"
 worker_exec="$venv_dir/bin/python -m app.worker_supervisor"
 
 # Run write-producing database preparation exactly once per deployment, before

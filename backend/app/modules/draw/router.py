@@ -9,20 +9,21 @@ from app.modules.common import serialize_song
 from app.modules.draw.service import draw_for_user, get_draw_results, run_draw
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import get_current_event
-from app.schemas import DrawAssignmentRead
+from app.schemas import AdminDrawAssignmentRead, DrawAssignmentRead
 
 
 router = APIRouter(prefix="/draw", tags=["draw"])
 admin_router = APIRouter(prefix="/admin/draw", tags=["admin-draw"])
 
 
-def serialize_assignment(item) -> dict:
-    from app.core.security import user_payload
+def serialize_assignment(item, *, include_private: bool = False) -> dict:
+    from app.core.security import public_user_payload, user_payload
 
+    assigned_to = item.assigned_to
     return {
         "id": item.id,
-        "assigned_to": user_payload(item.assigned_to),
-        "song": serialize_song(item.song),
+        "assigned_to": user_payload(assigned_to) if include_private else public_user_payload(assigned_to),
+        "song": serialize_song(item.song, include_private=include_private),
         "status": item.status,
         "draw_kind": item.draw_kind,
         "replaces_assignment_id": item.replaces_assignment_id,
@@ -40,14 +41,14 @@ def draw_my_songs(user: User = Depends(get_current_user), db: Session = Depends(
     return [serialize_assignment(item) for item in draw_for_user(db, user)]
 
 
-@admin_router.post("", response_model=list[DrawAssignmentRead])
+@admin_router.post("", response_model=list[AdminDrawAssignmentRead])
 def admin_run_draw(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> list[dict]:
-    return [serialize_assignment(item) for item in run_draw(db)]
+    return [serialize_assignment(item, include_private=True) for item in run_draw(db)]
 
 
-@admin_router.get("/results", response_model=list[DrawAssignmentRead])
+@admin_router.get("/results", response_model=list[AdminDrawAssignmentRead])
 def admin_draw_results(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> list[dict]:
-    return [serialize_assignment(item) for item in get_draw_results(db)]
+    return [serialize_assignment(item, include_private=True) for item in get_draw_results(db)]
 
 
 @admin_router.get("/stats")

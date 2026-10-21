@@ -22,6 +22,20 @@ ARCHIVE_UPLOAD_EXTENSIONS = {"zip", "7z", "rar"}
 DEV_SECRET_DEFAULTS = {"dev-only-secret-key-do-not-use-in-production"}
 
 logger = logging.getLogger(__name__)
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def resolve_secure_cookies() -> bool:
+    """Secure cookies in HTTPS deployments unless SECURE_COOKIES is explicit.
+
+    Local ``http://`` development stays unsigned when the variable is unset.
+    ``SECURE_COOKIES=false`` still opts out, including Docker Compose.
+    """
+    raw = os.getenv("SECURE_COOKIES")
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() in _TRUE_VALUES
+    public = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").strip().lower()
+    return public.startswith("https://")
 
 
 def parse_allowed_extensions(value: str | None) -> set[str]:
@@ -75,12 +89,24 @@ class Settings:
     # Empty by default: `python -m app.prepare` only seeds a default admin
     # account when an explicit password is provided. Never ship a known default.
     admin_seed_password = os.getenv("ADMIN_SEED_PASSWORD", "").strip()
-    secure_cookies = os.getenv("SECURE_COOKIES", "false").lower() in {"1", "true", "yes", "on"}
+    # secure_cookies and trusted_proxies are properties so deployments can
+    # change them via the environment without rebuilding the class body.
     ban_external_provider = os.getenv("BAN_EXTERNAL_PROVIDER", "disabled")
     ban_external_api_url = os.getenv("BAN_EXTERNAL_API_URL", "")
     ban_external_api_key = os.getenv("BAN_EXTERNAL_API_KEY", "")
     ban_external_timeout_ms = int(os.getenv("BAN_EXTERNAL_TIMEOUT_MS", "2000"))
     ban_external_cache_ttl_seconds = int(os.getenv("BAN_EXTERNAL_CACHE_TTL_SECONDS", "604800"))
+
+    @property
+    def secure_cookies(self) -> bool:
+        return resolve_secure_cookies()
+
+    @property
+    def trusted_proxies(self) -> str:
+        raw = os.getenv("TRUSTED_PROXIES")
+        if raw is None or not raw.strip():
+            return "127.0.0.1,::1"
+        return raw.strip()
 
     @property
     def r2_endpoint(self) -> str:

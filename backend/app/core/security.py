@@ -62,7 +62,23 @@ def issue_session(response: Response, db: Session, user: User) -> str:
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(get_settings().session_cookie_name, path="/")
+    settings = get_settings()
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        secure=settings.secure_cookies,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def revoke_request_session(db: Session, request: Request) -> None:
+    """Delete the presented server session so a copied cookie cannot be replayed."""
+    token = _extract_token(request)
+    if not token:
+        return
+    db.execute(delete(UserSession).where(UserSession.token_hash == hash_token(token)))
+    db.commit()
 
 
 def _extract_token(request: Request) -> str | None:
@@ -160,6 +176,12 @@ def require_role(*roles: str):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有权限执行此操作")
 
     return dependency
+
+
+def public_user_payload(user: User) -> dict:
+    """Name shown on public song, draw, and comment payloads."""
+    name = (user.display_name or "").strip() or user.user_code
+    return {"display_name": name}
 
 
 def user_payload(user: User) -> dict:

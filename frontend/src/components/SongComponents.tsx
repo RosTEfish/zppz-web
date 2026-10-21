@@ -3,7 +3,7 @@ import { Alert, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, Di
 import { Pencil, Save, Trash2 } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { SongPayload, SongRead } from "../api/v1";
+import { displayPersonName, type SongPayload, type SongRead } from "../api/v1";
 import { BanCheckPanel, canSubmitWithBanCheck, useBanCheck } from "./BanCheckPanel";
 import { songSchema, type SongFormValues } from "../forms/schemas";
 
@@ -64,7 +64,7 @@ export function SongTable({ songs, onEdit, onDelete, showSubmitter = false, sele
                 </TableCell>
                 <TableCell>{song.artist}</TableCell>
                 <TableCell><Chip size="small" label={song.song_type} /></TableCell>
-                {showSubmitter ? <TableCell>{song.submitter?.display_name || song.submitter?.user_code || "-"}</TableCell> : null}
+                {showSubmitter ? <TableCell>{displayPersonName(song.submitter, "-")}</TableCell> : null}
                 <TableCell>{song.remark || "-"}</TableCell>
                 {(onEdit || onDelete) ? (
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>

@@ -13,7 +13,7 @@ from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song
 from app.modules.events.service import assert_song_limit, get_current_event
 from app.modules.events.phase_policy import get_phase_status
-from app.schemas import BatchDeleteRequest, BatchDeleteResponse, SongCreate, SongRead
+from app.schemas import AdminSongRead, BatchDeleteRequest, BatchDeleteResponse, SongCreate, SongRead
 
 
 router = APIRouter(prefix="/song-pool", tags=["song-pool"])
@@ -83,7 +83,7 @@ def delete_my_song(song_id: int, user: User = Depends(get_current_user), db: Ses
     return {"message": "曲目已删除"}
 
 
-@admin_router.get("", response_model=list[SongRead])
+@admin_router.get("", response_model=list[AdminSongRead])
 def admin_list_songs(_: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> list[dict]:
     event = get_current_event(db)
     songs = db.scalars(
@@ -92,7 +92,7 @@ def admin_list_songs(_: User = Depends(require_role("admin", "pool_editor")), db
         .where(Song.event_id == event.id)
         .order_by(Song.created_at.desc())
     ).all()
-    return [serialize_song(song) for song in songs]
+    return [serialize_song(song, include_private=True) for song in songs]
 
 
 @admin_router.post("/batch-delete", response_model=BatchDeleteResponse)
@@ -132,7 +132,7 @@ def admin_batch_delete_songs(
     return {"deleted": len(songs), "message": f"已删除 {len(songs)} 首曲目"}
 
 
-@admin_router.put("/{song_id}", response_model=SongRead)
+@admin_router.put("/{song_id}", response_model=AdminSongRead)
 def admin_update_song(song_id: int, payload: SongCreate, _: User = Depends(require_role("admin", "pool_editor")), db: Session = Depends(get_db)) -> dict:
     event = get_current_event(db)
     song = db.scalar(select(Song).where(Song.id == song_id, Song.event_id == event.id))
@@ -143,7 +143,7 @@ def admin_update_song(song_id: int, payload: SongCreate, _: User = Depends(requi
         setattr(song, key, value)
     db.commit()
     db.refresh(song)
-    return serialize_song(song)
+    return serialize_song(song, include_private=True)
 
 
 @admin_router.delete("/{song_id}")

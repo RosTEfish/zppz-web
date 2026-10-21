@@ -29,6 +29,7 @@ services:
       ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-zppz-local-admin}
       CORS_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000
       SECURE_COOKIES: "false"
+      TRUSTED_PROXIES: "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
       WEB_CONCURRENCY: "2"
       OBJECT_STORAGE_BACKEND: local
       DB_POOL_SIZE: "5"

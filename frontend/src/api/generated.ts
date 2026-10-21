@@ -2195,6 +2195,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminDrawAssignmentRead */
+        AdminDrawAssignmentRead: {
+            assigned_to: components["schemas"]["UserRead"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Draw Kind
+             * @default initial
+             */
+            draw_kind: string;
+            /** Id */
+            id: number;
+            /** Replaces Assignment Id */
+            replaces_assignment_id?: number | null;
+            song: components["schemas"]["AdminSongRead"];
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+        };
         /** AdminGuessChartRead */
         AdminGuessChartRead: {
             /** Author */
@@ -2291,6 +2315,143 @@ export interface components {
             file_cleanup_warnings?: string[];
             /** Message */
             message: string;
+        };
+        /** AdminSongRead */
+        AdminSongRead: {
+            /** Artist */
+            artist: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Remark */
+            remark: string;
+            /** Song Name */
+            song_name: string;
+            /** Song Type */
+            song_type: string;
+            submitter?: components["schemas"]["UserRead"] | null;
+        };
+        /** AdminStoredFileRead */
+        AdminStoredFileRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** File Name */
+            file_name: string;
+            /** File Size */
+            file_size: number;
+            /** Has Readme */
+            has_readme?: boolean | null;
+            /** Id */
+            id: number;
+            /**
+             * Is Long Track
+             * @default false
+             */
+            is_long_track: boolean;
+            /**
+             * Preview Message
+             * @default
+             */
+            preview_message: string;
+            /** Preview Status */
+            preview_status?: ("processing" | "ready" | "unsupported" | "failed") | null;
+            /**
+             * Public Package Message
+             * @default
+             */
+            public_package_message: string;
+            /**
+             * Public Package Ready
+             * @default false
+             */
+            public_package_ready: boolean;
+            /**
+             * Public Package Status
+             * @default processing
+             * @enum {string}
+             */
+            public_package_status: "processing" | "ready" | "failed";
+            /** Review Note */
+            review_note: string;
+            /** Review Status */
+            review_status: string;
+            /**
+             * Source Kind
+             * @default
+             */
+            source_kind: string;
+            source_song?: components["schemas"]["AdminSongRead"] | null;
+            /**
+             * Track
+             * @default normal
+             */
+            track: string;
+            /** Track Duration Seconds */
+            track_duration_seconds?: number | null;
+            user?: components["schemas"]["UserRead"] | null;
+            /** Validation */
+            validation?: {
+                [key: string]: boolean;
+            };
+            /**
+             * Video Message
+             * @default
+             */
+            video_message: string;
+            /**
+             * Video Status
+             * @default none
+             * @enum {string}
+             */
+            video_status: "none" | "processing" | "ready" | "failed";
+        };
+        /** AdminSubmissionProcessingJobRead */
+        AdminSubmissionProcessingJobRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** File Name */
+            file_name: string;
+            /** File Size */
+            file_size: number;
+            /** Id */
+            id: string;
+            /** Intent Id */
+            intent_id?: string | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Replace Submission Id */
+            replace_submission_id?: number | null;
+            /** Source Song Id */
+            source_song_id?: number | null;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "uploaded" | "validating" | "accepted" | "preview_core" | "public_package" | "video" | "cleanup" | "complete";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "processing" | "completed" | "failed" | "cancelled";
+            submission?: components["schemas"]["AdminStoredFileRead"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** AdminSubmissionUploadIntentCreate */
         AdminSubmissionUploadIntentCreate: {
@@ -2693,7 +2854,7 @@ export interface components {
         };
         /** DrawAssignmentRead */
         DrawAssignmentRead: {
-            assigned_to: components["schemas"]["UserRead"];
+            assigned_to: components["schemas"]["PublicUserRead"];
             /**
              * Created At
              * Format: date-time
@@ -2944,7 +3105,7 @@ export interface components {
             created_at: string;
             /** Id */
             id: number;
-            user: components["schemas"]["UserRead"];
+            user: components["schemas"]["PublicUserRead"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2975,7 +3136,7 @@ export interface components {
         /** PaginatedStoredFilesRead */
         PaginatedStoredFilesRead: {
             /** Items */
-            items: components["schemas"]["StoredFileRead"][];
+            items: components["schemas"]["AdminStoredFileRead"][];
             /** Limit */
             limit: number;
             /** Offset */
@@ -3158,6 +3319,17 @@ export interface components {
             /** Track Duration Seconds */
             track_duration_seconds?: number | null;
         };
+        /**
+         * PublicUserRead
+         * @description Identity exposed by public song, draw, submission, and comment payloads.
+         */
+        PublicUserRead: {
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /**
@@ -3218,7 +3390,7 @@ export interface components {
             song_name: string;
             /** Song Type */
             song_type: string;
-            submitter?: components["schemas"]["UserRead"] | null;
+            submitter?: components["schemas"]["PublicUserRead"] | null;
         };
         /** StoredFileRead */
         StoredFileRead: {
@@ -3280,7 +3452,7 @@ export interface components {
             track: string;
             /** Track Duration Seconds */
             track_duration_seconds?: number | null;
-            user?: components["schemas"]["UserRead"] | null;
+            user?: components["schemas"]["PublicUserRead"] | null;
             /** Validation */
             validation?: {
                 [key: string]: boolean;
@@ -3767,7 +3939,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DrawAssignmentRead"][];
+                    "application/json": components["schemas"]["AdminDrawAssignmentRead"][];
                 };
             };
         };
@@ -3787,7 +3959,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DrawAssignmentRead"][];
+                    "application/json": components["schemas"]["AdminDrawAssignmentRead"][];
                 };
             };
         };
@@ -4269,7 +4441,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SongRead"][];
+                    "application/json": components["schemas"]["AdminSongRead"][];
                 };
             };
         };
@@ -4381,7 +4553,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SongRead"];
+                    "application/json": components["schemas"]["AdminSongRead"];
                 };
             };
             /** @description Validation Error */
@@ -4595,7 +4767,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmissionProcessingJobRead"][];
+                    "application/json": components["schemas"]["AdminSubmissionProcessingJobRead"][];
                 };
             };
         };
@@ -4646,7 +4818,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmissionProcessingJobRead"];
+                    "application/json": components["schemas"]["AdminSubmissionProcessingJobRead"];
                 };
             };
             /** @description Validation Error */
@@ -4677,7 +4849,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmissionProcessingJobRead"];
+                    "application/json": components["schemas"]["AdminSubmissionProcessingJobRead"];
                 };
             };
             /** @description Validation Error */
@@ -4836,7 +5008,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StoredFileRead"];
+                    "application/json": components["schemas"]["AdminStoredFileRead"];
                 };
             };
             /** @description Validation Error */
@@ -4867,7 +5039,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmissionProcessingJobRead"];
+                    "application/json": components["schemas"]["AdminSubmissionProcessingJobRead"];
                 };
             };
             /** @description Validation Error */
