@@ -53,13 +53,16 @@
 ### Font Stack
 
 ```
-UI / body: "Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif
-Display (h1–h3 / 品牌字): "Noto Serif SC", "Noto Sans SC", "Songti SC", serif
+UI / body (fontSans):
+  "Outfit", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+  "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", sans-serif
+Display (h1–h3 / 品牌字, fontDisplay):
+  "Noto Serif SC", "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", "Source Han Serif SC", serif
 ```
 
-依赖：`@fontsource/outfit`、`@fontsource/noto-sans-sc`、`@fontsource/noto-serif-sc`。字重经 `fonts.css` 异步加载。
+依赖：`@fontsource/outfit`、`@fontsource/noto-serif-sc`。字重经 `fonts.css` 异步加载。正文中文不下载 webfont，走上面的系统黑体栈（`"Noto Sans SC"` 只作为本机已安装字体名，没有对应的 `@font-face`）。
 
-加载字重（控制中文体积）：Outfit 400/600/700；Noto Sans SC 400/600/700；Noto Serif SC **仅 700**。勿再引入 Serif 900 / Outfit 800。
+加载字重（控制中文体积）：Outfit 400/600/700；Noto Serif SC **仅 700** 的 `chinese-simplified` 单文件。勿再引入 Noto Sans SC 的远端字重、Serif 900、Outfit 800，也不要把衬线改成 `700.css` 的 unicode-range 切片（切片合计大于这一份单文件，而曲名标题使用 h1–h3，密集页面会把切片都拉下来）。
 
 ### Scale（MUI variant 映射）
 
@@ -76,7 +79,7 @@ Display (h1–h3 / 品牌字): "Noto Serif SC", "Noto Sans SC", "Songti SC", ser
 
 ### Rules
 
-1. 三档字重：400 读 / 600 UI / 700 宣告（衬线标题共用 700，避免再拉 Serif 900）。
+1. 三档字重：400 读 / 600 UI / 700 宣告。拉丁由 Outfit 承担；中文正文用系统黑体的对应字重；衬线标题只下载 700。
 2. 数字一律 tabular-nums。
 3. 品牌 eyebrow：玉绿短下划线（宽 ~32px 高 2px）。
 4. 中文文本不加负 letter-spacing。
@@ -205,5 +208,5 @@ sh4 = "0 8px 20px -8px rgba(23,23,23,0.10), 0 28px 56px -20px rgba(13,53,41,0.26
 1. 本期不做暗色模式（palette 单 light）。
 2. Admin DataGrid 密度保持紧凑，仅吃 theme 级样式，不逐列重排。
 3. 存量散落的硬编码 `rgba(23,107,82,…)` / `#176B52` sx 值：**被触碰到的文件顺手迁移到 token**，不做全局扫荡替换。
-4. 不新增运行时依赖；字体仅在确有必要时扩 @fontsource 字重，并评估中文 woff2 体积（每档约 1MB+）。
+4. 不新增运行时依赖。中文 webfont 只保留一份 Noto Serif SC 700；`npm run check:bundle` 拒绝再打出 Noto Sans 字体文件，并把这份 CJK woff2 限制在 1.7 MB 以内。
 5. React dev 工具（react-grab/react-scan/react-doctor）本期不安装：项目有严格 bundle-size 门禁与 CI，用户约束为最小侵入；如需后续单独接入。

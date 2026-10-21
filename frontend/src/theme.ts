@@ -32,8 +32,13 @@ export const borderColor = {
   strong: "rgba(28, 35, 33, 0.16)",
 } as const;
 
-const fontSans = '"Outfit", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
-const fontDisplay = '"Noto Serif SC", "Noto Sans SC", "Songti SC", serif';
+/** Latin webfont, then OS Chinese sans. Noto Sans SC is a local face name, not a downloaded file. */
+export const fontSans =
+  '"Outfit", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", sans-serif';
+
+/** One downloaded serif weight, then OS serifs so missing glyphs stay in the heading voice. */
+export const fontDisplay =
+  '"Noto Serif SC", "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", "Source Han Serif SC", serif';
 
 function buildShadows(palette: EventPalette) {
   const inkRgb = palette.shadowInk;

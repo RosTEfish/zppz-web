@@ -1,5 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const root = resolve(import.meta.dirname, "..");
@@ -49,3 +49,38 @@ console.log("JavaScript chunk report (raw / gzip):");
 for (const chunk of chunkReport) {
   console.log(`  ${chunk.source}: ${format(chunk.bytes)} / ${format(chunk.gzipBytes)}`);
 }
+
+async function walk(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...await walk(path));
+    else files.push(path);
+  }
+  return files;
+}
+
+const distDir = resolve(root, "dist");
+const fontFiles = (await walk(distDir)).filter((file) => /\.(?:woff2|woff)$/i.test(file));
+const sansFonts = fontFiles.filter((file) => /noto-sans/i.test(file));
+if (sansFonts.length) {
+  throw new Error(`Noto Sans webfonts must not be emitted: ${sansFonts.join(", ")}`);
+}
+
+const cjkWoff2 = [];
+for (const file of fontFiles) {
+  if (!file.endsWith(".woff2") || !/noto-serif|chinese-simplified/i.test(file)) continue;
+  const contents = await readFile(file);
+  cjkWoff2.push({ file, bytes: contents.byteLength });
+}
+const cjkBytes = cjkWoff2.reduce((sum, item) => sum + item.bytes, 0);
+const cjkLimit = Math.round(1.7 * 1024 * 1024);
+if (cjkWoff2.length !== 1 || cjkBytes > cjkLimit) {
+  throw new Error(
+    `CJK woff2 must be a single Noto Serif SC file within ${format(cjkLimit)}; `
+    + `found ${cjkWoff2.length} file(s), ${format(cjkBytes)}`
+    + (cjkWoff2.length ? `: ${cjkWoff2.map((item) => item.file).join(", ")}` : ""),
+  );
+}
+console.log(`CJK woff2 ${format(cjkBytes)} is within the ${format(cjkLimit)} budget`);

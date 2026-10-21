@@ -1,12 +1,12 @@
 /* 字体声明表：与主样式表分离，由 main.tsx 以非阻塞方式异步加载。
-   字重刻意收窄：中文全量 woff2 单文件约 1.1–1.5MB，每多一档都是冷启动成本。
+   正文字体走系统中文栈，避免每位访客下载三档简体黑体（每档约 1.1MB）。
+   标题只保留一档衬线：Noto Serif SC 700 的简体单文件（约 1.5MB）。
+   不要改用 unicode-range 切片入口（700.css）：切片合计约 3.3MB，曲名标题使用 h1–h3，
+   密集页面的下载量会超过这一份单文件。也不要把正文字重加回远端 woff2。
    - Outfit：400 / 600 / 700（拉丁 UI）
-   - Noto Sans SC：400 / 600 / 700（正文与 UI）
-   - Noto Serif SC：仅 700（标题/品牌；h1 不再用 900） */
+   - Noto Serif SC：仅 700（标题/品牌）
+   勿再引入 Serif 900 或 Outfit 800。 */
 @import "@fontsource/outfit/400.css";
 @import "@fontsource/outfit/600.css";
 @import "@fontsource/outfit/700.css";
-@import "@fontsource/noto-sans-sc/chinese-simplified-400.css";
-@import "@fontsource/noto-sans-sc/chinese-simplified-600.css";
-@import "@fontsource/noto-sans-sc/chinese-simplified-700.css";
 @import "@fontsource/noto-serif-sc/chinese-simplified-700.css";
