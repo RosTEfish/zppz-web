@@ -2,7 +2,7 @@ import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { Chip, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { DataGrid, type GridColDef, type GridPaginationModel, type GridRowSelectionModel } from "@mui/x-data-grid";
 import { Download, Eye, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import { api, formatDuration, formatMB, formatTime, type StoredFileRead } from "../../api/v1";
+import { api, displayPersonName, formatDuration, formatMB, formatTime, type StoredFileRead } from "../../api/v1";
 import { dataGridZhCN } from "../../components/dataGridLocale";
 
 interface SubmissionDataGridProps {
@@ -42,7 +42,7 @@ export function SubmissionDataGrid({
 }: SubmissionDataGridProps) {
   const columns = useMemo<GridColDef<StoredFileRead>[]>(() => [
     { field: "file_name", headerName: "曲目 / 文件", minWidth: 300, flex: 1.4, sortable: false, renderCell: ({ row }) => <Stack sx={{ justifyContent: "center", height: "100%", minWidth: 0 }}><Typography sx={{ fontWeight: 650 }}>{row.source_song?.song_name || "未关联曲目"}</Typography><Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{row.file_name} · {formatMB(row.file_size)}{row.has_readme ? " · 含 README" : ""}</Typography>{row.preview_status ? <Typography variant="caption" color={row.preview_status === "ready" ? "success.main" : row.preview_status === "failed" || row.preview_status === "unsupported" ? "warning.main" : "text.secondary"}>预览：{row.preview_status === "ready" ? "就绪" : row.preview_message || "准备中"}</Typography> : null}<Typography variant="caption" color={row.public_package_status === "failed" ? "error.main" : "text.secondary"}>公开包：{row.public_package_status === "ready" ? "就绪" : row.public_package_status === "failed" ? row.public_package_message || "生成失败" : "准备中"} · 视频：{row.video_status === "ready" ? "就绪" : row.video_status === "failed" ? "失败，使用静态背景" : row.video_status === "processing" ? "准备中" : "无"}</Typography></Stack> },
-    { field: "user", headerName: "投稿人", minWidth: 130, flex: 0.6, sortable: false, valueGetter: (_value, row) => row.user?.display_name || row.user?.user_code || "-" },
+    { field: "user", headerName: "投稿人", minWidth: 130, flex: 0.6, sortable: false, valueGetter: (_value, row) => displayPersonName(row.user, "-") },
     { field: "source_kind", headerName: "来源", width: 90, valueGetter: (_value, row) => row.track === "exhibition" ? "场外" : row.source_kind === "self" ? "自选" : "抽中" },
     { field: "track", headerName: "赛道", width: 90, renderCell: ({ row }) => <Chip size="small" color={row.track === "j" ? "secondary" : row.track === "exhibition" ? "info" : "default"} label={row.track === "j" ? "J" : row.track === "exhibition" ? "场外" : "普通"} /> },
     { field: "track_duration_seconds", headerName: "时长", width: 90, valueFormatter: (value) => formatDuration(value as number | null | undefined) },

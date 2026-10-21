@@ -1,3 +1,15 @@
+export function displayPersonName(
+  person: { display_name?: string | null } | null | undefined,
+  fallback = "",
+): string {
+  const name = person?.display_name?.trim();
+  if (name) return name;
+  if (person && "user_code" in person && typeof person.user_code === "string" && person.user_code.trim()) {
+    return person.user_code.trim();
+  }
+  return fallback;
+}
+
 export function formatMB(size: number): string {
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }

@@ -17,6 +17,12 @@ class ApiMessage(BaseModel):
     message: str
 
 
+class PublicUserRead(BaseModel):
+    """Identity exposed by public song, draw, submission, and comment payloads."""
+
+    display_name: str = ""
+
+
 class UserRead(BaseModel):
     id: int
     user_code: str
@@ -310,15 +316,19 @@ class SongRead(BaseModel):
     artist: str
     song_type: str
     remark: str
-    submitter: UserRead | None = None
+    submitter: PublicUserRead | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
+class AdminSongRead(SongRead):
+    submitter: UserRead | None = None
+
+
 class DrawAssignmentRead(BaseModel):
     id: int
-    assigned_to: UserRead
+    assigned_to: PublicUserRead
     song: SongRead
     status: str = "active"
     draw_kind: str = "initial"
@@ -326,6 +336,11 @@ class DrawAssignmentRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AdminDrawAssignmentRead(DrawAssignmentRead):
+    assigned_to: UserRead
+    song: AdminSongRead
 
 
 class StoredFileRead(BaseModel):
@@ -348,14 +363,19 @@ class StoredFileRead(BaseModel):
     video_status: Literal["none", "processing", "ready", "failed"] = "none"
     video_message: str = ""
     source_song: SongRead | None = None
-    user: UserRead | None = None
+    user: PublicUserRead | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
+class AdminStoredFileRead(StoredFileRead):
+    source_song: AdminSongRead | None = None
+    user: UserRead | None = None
+
+
 class PaginatedStoredFilesRead(BaseModel):
-    items: list[StoredFileRead]
+    items: list[AdminStoredFileRead]
     total: int
     limit: int
     offset: int
@@ -408,6 +428,10 @@ class SubmissionProcessingJobRead(BaseModel):
     submission: StoredFileRead | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class AdminSubmissionProcessingJobRead(SubmissionProcessingJobRead):
+    submission: AdminStoredFileRead | None = None
 
 
 class SubmissionTargetRead(BaseModel):
@@ -642,7 +666,7 @@ class CommentCreate(BaseModel):
 class GuessCommentRead(BaseModel):
     id: int
     content: str
-    user: UserRead
+    user: PublicUserRead
     created_at: datetime
 
     model_config = {"from_attributes": True}

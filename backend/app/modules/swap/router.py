@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user, require_role, user_payload
+from app.core.security import get_current_user, public_user_payload, require_role, user_payload
 from app.db.session import get_db
 from app.models import DrawAssignment, Submission, SwapRequest, SwapRound, User
 from app.modules.common import serialize_song
@@ -21,19 +21,24 @@ router = APIRouter(prefix="/swap", tags=["swap"])
 admin_router = APIRouter(prefix="/admin/swap", tags=["admin-swap"])
 
 
-def _assignment_payload(row: DrawAssignment | None, *, include_assignee: bool = False) -> dict | None:
+def _assignment_payload(
+    row: DrawAssignment | None,
+    *,
+    include_assignee: bool = False,
+    include_private: bool = False,
+) -> dict | None:
     if not row:
         return None
     payload = {
         "id": row.id,
-        "song": serialize_song(row.song),
+        "song": serialize_song(row.song, include_private=include_private),
         "status": row.status,
         "draw_kind": row.draw_kind,
         "replaces_assignment_id": row.replaces_assignment_id,
         "created_at": row.created_at,
     }
-    if include_assignee:
-        payload["assigned_to"] = user_payload(row.assigned_to)
+    if include_assignee and row.assigned_to:
+        payload["assigned_to"] = user_payload(row.assigned_to) if include_private else public_user_payload(row.assigned_to)
     return payload
 
 
@@ -67,8 +72,16 @@ def _roll_payload(request: SwapRequest | None, *, include_user: bool = False) ->
             {
                 "id": item.id,
                 "position": item.position,
-                "original": _assignment_payload(item.original_assignment, include_assignee=include_user),
-                "replacement": _assignment_payload(item.replacement_assignment, include_assignee=include_user),
+                "original": _assignment_payload(
+                    item.original_assignment,
+                    include_assignee=include_user,
+                    include_private=include_user,
+                ),
+                "replacement": _assignment_payload(
+                    item.replacement_assignment,
+                    include_assignee=include_user,
+                    include_private=include_user,
+                ),
             }
             for item in request.items
         ],

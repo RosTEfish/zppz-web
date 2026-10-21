@@ -7,7 +7,7 @@ import type { Identity } from "../identity";
 export { apiRequest } from "./base";
 export { ApiError } from "./client";
 export type { components as OpenApiComponents, paths as OpenApiPaths } from "./generated";
-export { formatDuration, formatMB, formatTime } from "./format";
+export { displayPersonName, formatDuration, formatMB, formatTime } from "./format";
 export { submissionContentType } from "./uploads";
 export type { SubmissionUploadOptions, SubmissionUploadProgress } from "./uploads";
 
@@ -21,6 +21,8 @@ export type EventPhasesRead = components["schemas"]["EventPhasesRead"];
 export type EventPhasesUpdate = components["schemas"]["EventPhasesUpdate"];
 
 export type UserRead = components["schemas"]["UserRead"];
+export type PublicUserRead = components["schemas"]["PublicUserRead"];
+export type AdminStoredFileRead = components["schemas"]["AdminStoredFileRead"];
 export type EventRead = components["schemas"]["EventRead"];
 export type EventSettingsRead = components["schemas"]["EventSettingsRead"];
 
@@ -103,7 +105,7 @@ export type SubmissionTargetsResponse = components["schemas"]["SubmissionTargets
 
 export interface DrawAssignmentRead {
   id: number;
-  assigned_to: UserRead;
+  assigned_to: PublicUserRead;
   song: SongRead;
   created_at: string;
   status?: "active" | "returned" | "replaced";
@@ -277,7 +279,7 @@ export interface PreviewManifest {
 export interface GuessCommentRead {
   id: number;
   content: string;
-  user: UserRead;
+  user: PublicUserRead;
   created_at: string;
 }
 

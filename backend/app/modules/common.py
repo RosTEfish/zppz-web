@@ -5,24 +5,33 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import user_payload
+from app.core.security import public_user_payload, user_payload
 from app.models import GuessChart, GuessVote, PreviewBundle, Song, Submission
 from app.modules.guess_game.vote_quota import love_vote_bucket, resolve_love_vote_bucket
 
 
-def serialize_song(song: Song) -> dict:
+def _visible_user(user, *, include_private: bool) -> dict:
+    return user_payload(user) if include_private else public_user_payload(user)
+
+
+def serialize_song(song: Song, *, include_private: bool = False) -> dict:
     return {
         "id": song.id,
         "song_name": song.song_name,
         "artist": song.artist,
         "song_type": song.song_type,
         "remark": song.remark,
-        "submitter": user_payload(song.submitter) if song.submitter else None,
+        "submitter": _visible_user(song.submitter, include_private=include_private) if song.submitter else None,
         "created_at": song.created_at,
     }
 
 
-def serialize_submission(item: Submission, preview_bundle: PreviewBundle | None = None) -> dict:
+def serialize_submission(
+    item: Submission,
+    preview_bundle: PreviewBundle | None = None,
+    *,
+    include_private: bool = False,
+) -> dict:
     return {
         "id": item.id,
         "file_name": item.file_name,
@@ -47,13 +56,13 @@ def serialize_submission(item: Submission, preview_bundle: PreviewBundle | None 
         "preview_message": preview_bundle.error_message if preview_bundle else "",
         "video_status": preview_bundle.video_status if preview_bundle else "none",
         "video_message": preview_bundle.video_error_message if preview_bundle else "",
-        "source_song": serialize_song(item.source_song) if item.source_song else None,
-        "user": user_payload(item.user) if item.user else None,
+        "source_song": serialize_song(item.source_song, include_private=include_private) if item.source_song else None,
+        "user": _visible_user(item.user, include_private=include_private) if item.user else None,
         "created_at": item.created_at,
     }
 
 
-def serialize_submissions(db: Session, items: Sequence[Submission]) -> list[dict]:
+def serialize_submissions(db: Session, items: Sequence[Submission], *, include_private: bool = False) -> list[dict]:
     if not items:
         return []
     ids = [item.id for item in items]
@@ -67,7 +76,7 @@ def serialize_submissions(db: Session, items: Sequence[Submission]) -> list[dict
         ).all()
     }
     return [
-        serialize_submission(item, preview_by_source.get(item.id))
+        serialize_submission(item, preview_by_source.get(item.id), include_private=include_private)
         for item in items
     ]
 

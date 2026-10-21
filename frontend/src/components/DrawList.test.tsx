@@ -16,7 +16,7 @@ const rows = [{
     created_at: "2026-08-02T00:00:00Z",
   },
   created_at: "2026-08-02T01:00:00Z",
-}] as DrawAssignmentRead[];
+}] as unknown as DrawAssignmentRead[];
 
 describe("DrawList", () => {
   afterEach(cleanup);

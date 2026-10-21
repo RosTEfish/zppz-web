@@ -114,7 +114,12 @@ def _record_stage(
     db.commit()
 
 
-def serialize_processing_jobs(db: Session, jobs: list[SubmissionProcessingJob]) -> list[dict]:
+def serialize_processing_jobs(
+    db: Session,
+    jobs: list[SubmissionProcessingJob],
+    *,
+    include_private: bool = False,
+) -> list[dict]:
     """Serialize a batch of jobs with a constant number of queries.
 
     The per-job payload touches the upload intent, the result submission (plus its
@@ -168,7 +173,9 @@ def serialize_processing_jobs(db: Session, jobs: list[SubmissionProcessingJob]) 
         intent = intents.get(job.upload_intent_id) if job.upload_intent_id else None
         submission = submissions_by_id.get(job.result_submission_id) if job.result_submission_id else None
         preview_bundle = previews.get(job.result_submission_id) if job.result_submission_id else None
-        submission_payload = serialize_submission(submission, preview_bundle) if submission else None
+        submission_payload = (
+            serialize_submission(submission, preview_bundle, include_private=include_private) if submission else None
+        )
         file_name = intent.file_name if intent else (submission_payload or {}).get("file_name", "投稿资源")
         file_size = intent.file_size if intent else int((submission_payload or {}).get("file_size", 0))
         if job.status == "failed":
@@ -194,8 +201,8 @@ def serialize_processing_jobs(db: Session, jobs: list[SubmissionProcessingJob]) 
     return payloads
 
 
-def serialize_processing_job(db: Session, job: SubmissionProcessingJob) -> dict:
-    return serialize_processing_jobs(db, [job])[0]
+def serialize_processing_job(db: Session, job: SubmissionProcessingJob, *, include_private: bool = False) -> dict:
+    return serialize_processing_jobs(db, [job], include_private=include_private)[0]
 
 
 def enqueue_upload_job(db: Session, intent: SubmissionUploadIntent) -> SubmissionProcessingJob:

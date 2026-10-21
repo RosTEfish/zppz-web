@@ -59,7 +59,8 @@ webhook_worker_pid=$!
 "$ZPPZ_PYTHON_BIN" -m uvicorn app.main:app \
   --host 127.0.0.1 \
   --port "$ZPPZ_APP_PORT" \
-  --workers "$ZPPZ_WEB_CONCURRENCY" &
+  --workers "$ZPPZ_WEB_CONCURRENCY" \
+  --no-proxy-headers &
 web_pid=$!
 
 # Any process exiting is unhealthy. Stop its siblings and let systemd restart

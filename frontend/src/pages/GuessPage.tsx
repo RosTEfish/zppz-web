@@ -2,7 +2,7 @@ import { type ComponentProps, memo, type ReactNode, useCallback, useEffect, useM
 import { Alert, Box, Button, Card, CardActionArea, CardContent, CardMedia, Checkbox, Chip, Dialog, DialogContent, DialogTitle as MuiDialogTitle, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { useSnackbar } from "notistack";
 import { CheckCheck, ClipboardList, Clock3, Download, Eye, Heart, MessageSquare, Music2, SlidersHorizontal, Sparkles, Vote, X } from "lucide-react";
-import { api, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
+import { api, displayPersonName, formatDuration, formatTime, type DesignerGuessOverview, type GuessChartRead, type GuessCommentRead, type LoveVoteQuotaRead } from "../api/v1";
 import { ChartPreviewStage } from "../components/ChartPreviewDialog";
 import { chartLevelAccent, getChartLevelSlot } from "../components/chartLevelStyle";
 import { DownloadPreparationDialog } from "../components/DownloadPreparationDialog";
@@ -457,7 +457,7 @@ function GuessDetailDialog({ chart, designerGuesses, candidateLabels, voteQuota,
             {comments.length ? comments.map((item) => (
               <Paper key={item.id} variant="outlined" sx={{ p: 1.5, bgcolor: "background.paper" }}>
                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.content}</Typography>
-                <Typography variant="caption" color="text.secondary">{item.user.display_name || item.user.user_code} · {formatTime(item.created_at)}</Typography>
+                <Typography variant="caption" color="text.secondary">{displayPersonName(item.user)} · {formatTime(item.created_at)}</Typography>
               </Paper>
             )) : <Typography variant="body2" color="text.secondary">还没有评论。</Typography>}
           </Stack>

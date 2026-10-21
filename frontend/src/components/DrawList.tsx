@@ -14,7 +14,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import { formatTime, type DrawAssignmentRead } from "../api/v1";
+import { displayPersonName, formatTime, type DrawAssignmentRead } from "../api/v1";
 
 export function DrawList({ rows, showAssignee = true }: { rows: DrawAssignmentRead[]; showAssignee?: boolean }) {
   const theme = useTheme();
@@ -39,7 +39,7 @@ export function DrawList({ rows, showAssignee = true }: { rows: DrawAssignmentRe
               </Typography>
               {showAssignee ? (
                 <Typography variant="body2">
-                  被抽取人：{row.assigned_to.display_name || row.assigned_to.user_code}
+                  被抽取人：{displayPersonName(row.assigned_to)}
                 </Typography>
               ) : null}
               <Typography variant="caption" color="text.secondary">{formatTime(row.created_at)}</Typography>
@@ -71,7 +71,7 @@ export function DrawList({ rows, showAssignee = true }: { rows: DrawAssignmentRe
               <TableCell><Chip size="small" label={row.song.song_type} /></TableCell>
               <TableCell sx={{ maxWidth: 320, overflowWrap: "anywhere" }}>{row.song.remark || "-"}</TableCell>
               {showAssignee ? (
-                <TableCell>{row.assigned_to.display_name || row.assigned_to.user_code}</TableCell>
+                <TableCell>{displayPersonName(row.assigned_to)}</TableCell>
               ) : null}
               <TableCell>{formatTime(row.created_at)}</TableCell>
             </TableRow>

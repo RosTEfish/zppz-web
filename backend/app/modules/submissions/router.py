@@ -71,6 +71,8 @@ from app.schemas import (
     BatchDeleteRequest,
     BatchDeleteResponse,
     DownloadPreparation,
+    AdminStoredFileRead,
+    AdminSubmissionProcessingJobRead,
     PaginatedStoredFilesRead,
     StoredFileRead,
     SubmissionTargetsResponse,
@@ -923,7 +925,7 @@ def _confirm_and_enqueue_intent(
         )
     )
     if existing:
-        return serialize_processing_job(db, existing)
+        return serialize_processing_job(db, existing, include_private=bool(intent.is_admin))
     if intent.status != "pending" or intent.expires_at < datetime.utcnow():
         if intent.status == "pending":
             intent.status = "expired"
@@ -946,7 +948,7 @@ def _confirm_and_enqueue_intent(
         job = enqueue_upload_job(db, intent)
     except ActiveProcessingJobConflict:
         _reject_intent(db, intent, "同一投稿目标已有后台任务，请等待完成后重试", 409)
-    return serialize_processing_job(db, job)
+    return serialize_processing_job(db, job, include_private=bool(intent.is_admin))
 
 
 @router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionProcessingJobRead)
@@ -1272,7 +1274,7 @@ def admin_list_submissions(
     items = list(db.scalars(stmt).all())
     _backfill_readme_flags(db, items)
     return {
-        "items": serialize_submissions(db, items),
+        "items": serialize_submissions(db, items, include_private=True),
         "total": int(total),
         "limit": limit,
         "offset": offset,
@@ -1309,7 +1311,7 @@ def create_admin_submission_upload_intent(
     return _intent_response(intent)
 
 
-@admin_router.post("/upload-intents/{intent_id}/complete", response_model=SubmissionProcessingJobRead)
+@admin_router.post("/upload-intents/{intent_id}/complete", response_model=AdminSubmissionProcessingJobRead)
 def complete_admin_submission_upload_intent(
     intent_id: str,
     admin: User = Depends(require_role("admin", "pool_editor")),
@@ -1321,7 +1323,7 @@ def complete_admin_submission_upload_intent(
     return _confirm_and_enqueue_intent(db, intent, enforce_phase=False)
 
 
-@admin_router.get("/upload-intents/{intent_id}/status", response_model=SubmissionProcessingJobRead)
+@admin_router.get("/upload-intents/{intent_id}/status", response_model=AdminSubmissionProcessingJobRead)
 def admin_submission_upload_intent_status(
     intent_id: str,
     admin: User = Depends(require_role("admin", "pool_editor")),
@@ -1339,10 +1341,10 @@ def admin_submission_upload_intent_status(
     )
     if not job:
         raise HTTPException(status_code=409, detail="上传文件尚未确认入队")
-    return serialize_processing_job(db, job)
+    return serialize_processing_job(db, job, include_private=True)
 
 
-@admin_router.get("/processing-jobs", response_model=list[SubmissionProcessingJobRead])
+@admin_router.get("/processing-jobs", response_model=list[AdminSubmissionProcessingJobRead])
 def admin_submission_processing_jobs(
     _: User = Depends(require_role("admin", "pool_editor")),
     db: Session = Depends(get_db),
@@ -1350,7 +1352,11 @@ def admin_submission_processing_jobs(
     from app.modules.submissions.processing import list_visible_jobs, serialize_processing_jobs
 
     event = get_current_event(db)
-    return serialize_processing_jobs(db, list_visible_jobs(db, event_id=event.id, include_all_users=True))
+    return serialize_processing_jobs(
+        db,
+        list_visible_jobs(db, event_id=event.id, include_all_users=True),
+        include_private=True,
+    )
 
 
 @admin_router.delete("/upload-intents/{intent_id}", status_code=204)
@@ -1379,7 +1385,7 @@ def cancel_admin_submission_upload_intent(
         db.commit()
 
 
-@admin_router.post("/{submission_id}/resources/rebuild", response_model=SubmissionProcessingJobRead)
+@admin_router.post("/{submission_id}/resources/rebuild", response_model=AdminSubmissionProcessingJobRead)
 def rebuild_submission_resources(
     submission_id: int,
     admin: User = Depends(require_role("admin", "pool_editor")),
@@ -1409,7 +1415,7 @@ def rebuild_submission_resources(
     )
     if not can_rebuild:
         raise HTTPException(status_code=409, detail="当前投稿资源没有需要重建的失败项")
-    return serialize_processing_job(db, enqueue_resource_rebuild(db, row, admin.id))
+    return serialize_processing_job(db, enqueue_resource_rebuild(db, row, admin.id), include_private=True)
 
 
 @admin_router.post("/batch-delete", response_model=BatchDeleteResponse)
@@ -1452,7 +1458,7 @@ def admin_batch_delete_submissions(
     return {"deleted": len(rows), "message": f"已删除 {len(rows)} 份投稿"}
 
 
-@admin_router.post("/{submission_id}/replace", response_model=StoredFileRead, deprecated=True)
+@admin_router.post("/{submission_id}/replace", response_model=AdminStoredFileRead, deprecated=True)
 def admin_replace_submission(
     submission_id: int,
     background_tasks: BackgroundTasks,
@@ -1483,7 +1489,7 @@ def admin_replace_submission(
         is_admin=True,
     )
     _put_legacy_upload(intent, file, db)
-    return serialize_submissions(db, [_complete_intent(intent, admin, db, background_tasks)])[0]
+    return serialize_submissions(db, [_complete_intent(intent, admin, db, background_tasks)], include_private=True)[0]
 
 
 @admin_router.delete("/{submission_id}")
