@@ -1,4 +1,5 @@
-FROM node:22-alpine AS build
+# 22.23.4 is the October 21, 2026 Node.js security release (CVE-2026-111497).
+FROM node:22.23.4-alpine AS build
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY frontend/package*.json ./
