@@ -2744,36 +2744,24 @@ export interface components {
         };
         /** Body_admin_import_charts_api_v1_admin_guess_game_charts_import_post */
         Body_admin_import_charts_api_v1_admin_guess_game_charts_import_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_admin_replace_submission_api_v1_admin_submissions__submission_id__replace_post */
         Body_admin_replace_submission_api_v1_admin_submissions__submission_id__replace_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Track */
             track?: string | null;
         };
         /** Body_import_banlist_api_v1_admin_banlist_import_post */
         Body_import_banlist_api_v1_admin_banlist_import_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_import_songs_api_v1_admin_song_pool_import_csv_post */
         Body_import_songs_api_v1_admin_song_pool_import_csv_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_replace_submission_api_v1_submissions__submission_id__replace_post */
@@ -2783,10 +2771,7 @@ export interface components {
              * @default false
              */
             acknowledge_ban_warning: boolean;
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Track */
             track?: string | null;
@@ -2798,10 +2783,7 @@ export interface components {
              * @default false
              */
             acknowledge_ban_warning: boolean;
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Song Id */
             song_id?: number | null;
@@ -3639,6 +3621,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -5123,7 +5109,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": null;
+                    "application/json": unknown;
                 };
             };
         };
@@ -5145,7 +5131,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": null;
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -5174,7 +5160,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": null;
+                    "application/json": unknown;
                 };
             };
         };
@@ -7739,7 +7725,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": null;
+                    "application/json": unknown;
                 };
             };
         };
@@ -7759,7 +7745,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": null;
+                    "application/json": unknown;
                 };
             };
         };

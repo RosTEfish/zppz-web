@@ -163,7 +163,7 @@ def _roll_for_user_once(
     if user.identity != "participant":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有参赛者可以换曲")
     if not assignment_ids or len(set(assignment_ids)) != len(assignment_ids):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请选择不重复的当前曲目")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="请选择不重复的当前曲目")
 
     event = get_current_event(db)
     phase = get_phase_status(db, event)

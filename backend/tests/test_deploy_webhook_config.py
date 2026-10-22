@@ -34,12 +34,12 @@ def test_validation_runs_on_pull_requests_and_deploy_reuses_artifacts():
     assert "secrets.DEPLOY_PORT" not in workflow
     assert "github.event_name != 'pull_request'" in workflow
     assert "success() && github.event_name != 'pull_request'" in workflow
-    assert "Swatinem/rust-cache@v2" in workflow
+    assert "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2" in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "actions/download-artifact@v4" in workflow
     assert workflow.count("npm run build") == 1
     assert workflow.count("build_chart_validate.sh") == 1
-    assert workflow.count("dtolnay/rust-toolchain@stable") == 1
+    assert workflow.count("dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable") == 1
     assert "cargo test --manifest-path tools/zppz-chart-validate/Cargo.toml" in workflow
 
 

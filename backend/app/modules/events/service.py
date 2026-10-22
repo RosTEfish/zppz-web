@@ -149,7 +149,7 @@ def _utc_aware(value: datetime) -> datetime:
 
 def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime, datetime]]:
     if len(payload.phases) > len(PHASES):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Too many phase windows")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Too many phase windows")
     names: set[str] = set()
     rows: list[tuple[str, datetime, datetime]] = []
     for item in payload.phases:
@@ -157,12 +157,12 @@ def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime
         ends_at = _utc_naive(item.ends_at)
         if item.phase in names:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Duplicate phase window: {item.phase}",
             )
         if starts_at >= ends_at:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Invalid time window for phase: {item.phase}",
             )
         names.add(item.phase)
@@ -171,7 +171,7 @@ def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime
     for previous, current in zip(rows, rows[1:]):
         if current[1] < previous[2]:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Phase windows overlap: {previous[0]} and {current[0]}",
             )
     return rows
