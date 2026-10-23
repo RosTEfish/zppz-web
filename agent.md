@@ -41,7 +41,7 @@
 - Service command:
   - `uvicorn app.main:app --host 127.0.0.1 --port 8000`
 - If deploy reports port `8000` already in use, inspect stale `uvicorn app.main:app` processes on the server before restarting.
-- Keep `bcrypt==4.0.1` pinned with `passlib==1.7.4`; newer bcrypt versions can break passlib startup.
+- Password hashing uses `pwdlib[argon2,bcrypt]` (Argon2id for new hashes). Legacy plain bcrypt and passlib `$bcrypt-sha256$` hashes are verified at login and rewritten to Argon2id. Do not reintroduce `passlib` or pin `bcrypt==4.0.1`; pwdlib's bcrypt extra requires `bcrypt>=4.1.2`.
 
 ## UI Notes
 

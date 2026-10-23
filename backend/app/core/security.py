@@ -1,11 +1,18 @@
-from datetime import datetime, timedelta
+import base64
 import hashlib
+import hmac
+import re
 import secrets
+from datetime import datetime, timedelta
 from threading import Lock
 from time import monotonic
 
+import bcrypt
 from fastapi import Depends, HTTPException, Request, Response, status
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
+from pwdlib.hashers.argon2 import Argon2Hasher
+from pwdlib.hashers.bcrypt import BcryptHasher
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -14,7 +21,20 @@ from app.db.session import get_db
 from app.models import Role, User, UserSession
 
 
-pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
+# Argon2id is the current hasher. BcryptHasher only verifies legacy $2a$/$2b$/$2y$ hashes.
+password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
+# passlib 1.7.4 bcrypt_sha256. v=2 HMACs the password with the bcrypt salt string;
+# v=1 uses plain SHA-256. Both standard-base64 the 32-byte digest (44 bytes, with "=")
+# and then bcrypt it. Hex was considered and rejected: 64 hex chars sit in bcrypt's
+# poorly mixed tail. See passlib.handlers.bcrypt.bcrypt_sha256.
+_BCRYPT_SHA256_V2_RE = re.compile(
+    r"^\$bcrypt-sha256\$v=(?P<version>\d+),t=(?P<ident>2b),r=(?P<rounds>\d{1,2})"
+    r"\$(?P<salt>[^$]{22})\$(?P<digest>[^$]{31})$"
+)
+_BCRYPT_SHA256_V1_RE = re.compile(
+    r"^\$bcrypt-sha256\$(?P<ident>2[ab]),(?P<rounds>\d{1,2})\$(?P<salt>[^$]{22})\$(?P<digest>[^$]{31})$"
+)
+_BCRYPT_FINAL_SALT_CHARS = ".Oeu"
 _session_cleanup_lock = Lock()
 _last_session_cleanup = 0.0
 _SESSION_CLEANUP_INTERVAL_SECONDS = 15 * 60
@@ -27,11 +47,79 @@ SONG_POOL_IDENTITIES = frozenset({"participant", "audience"})
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return password_hash.hash(password)
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
-    return pwd_context.verify(password, stored_hash)
+    if stored_hash.startswith("$bcrypt-sha256$"):
+        return _verify_passlib_bcrypt_sha256(password, stored_hash)
+    try:
+        return password_hash.verify(password, stored_hash)
+    except UnknownHashError:
+        return False
+
+
+def verify_and_update_password(password: str, stored_hash: str) -> tuple[bool, str | None]:
+    """Return whether the password matches, and an Argon2id hash when the stored hash is legacy."""
+    if stored_hash.startswith("$bcrypt-sha256$"):
+        if not _verify_passlib_bcrypt_sha256(password, stored_hash):
+            return False, None
+        return True, hash_password(password)
+    try:
+        return password_hash.verify_and_update(password, stored_hash)
+    except UnknownHashError:
+        return False, None
+
+
+def _verify_passlib_bcrypt_sha256(password: str, stored_hash: str) -> bool:
+    parsed = _parse_passlib_bcrypt_sha256(stored_hash)
+    if parsed is None:
+        return False
+    version, ident, rounds, salt, digest = parsed
+    prehashed = _passlib_bcrypt_sha256_secret(password, version=version, salt=salt)
+    if prehashed is None:
+        return False
+    embedded = f"${ident}${rounds:02d}${salt}{digest}".encode("ascii")
+    try:
+        return bcrypt.checkpw(prehashed, embedded)
+    except (ValueError, TypeError):
+        return False
+
+
+def _parse_passlib_bcrypt_sha256(stored_hash: str) -> tuple[int, str, int, str, str] | None:
+    match = _BCRYPT_SHA256_V2_RE.fullmatch(stored_hash)
+    version = 2
+    if match is None:
+        match = _BCRYPT_SHA256_V1_RE.fullmatch(stored_hash)
+        version = 1
+    if match is None:
+        return None
+    if version == 2 and int(match.group("version")) != 2:
+        return None
+    rounds_text = match.group("rounds")
+    if len(rounds_text) > 1 and rounds_text.startswith("0"):
+        return None
+    rounds = int(rounds_text)
+    if not 4 <= rounds <= 31:
+        return None
+    return version, match.group("ident"), rounds, match.group("salt"), match.group("digest")
+
+
+def _passlib_bcrypt_sha256_secret(password: str, *, version: int, salt: str) -> bytes | None:
+    secret = password.encode("utf-8")
+    if b"\x00" in secret:
+        return None
+    if version == 1:
+        digest = hashlib.sha256(secret).digest()
+    else:
+        try:
+            salt_bytes = salt.encode("ascii")
+        except UnicodeEncodeError:
+            return None
+        if salt[-1] not in _BCRYPT_FINAL_SALT_CHARS:
+            return None
+        digest = hmac.new(salt_bytes, secret, hashlib.sha256).digest()
+    return base64.b64encode(digest)
 
 
 def hash_token(token: str) -> str:
