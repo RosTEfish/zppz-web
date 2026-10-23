@@ -200,7 +200,14 @@ export default function AuthPage() {
           <Stack spacing={2}>
             <TextField label="账号" {...register("user_code")} error={Boolean(errors.user_code)} helperText={errors.user_code?.message} autoComplete="username" />
             {mode === "register" ? <TextField label="QQ" {...register("qq_id")} error={Boolean(errors.qq_id)} helperText={errors.qq_id?.message} /> : null}
-            <TextField label="密码" type="password" {...register("password")} error={Boolean(errors.password)} helperText={errors.password?.message} autoComplete={mode === "login" ? "current-password" : "new-password"} />
+            <TextField
+              label="密码"
+              type="password"
+              {...register("password")}
+              error={Boolean(errors.password)}
+              helperText={errors.password?.message ?? (mode === "login" ? "遗忘密码可找RosTEfish重置。" : undefined)}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+            />
             {mode === "register" ? <>
               {registrationClosed ? <Alert severity="warning">报名阶段已结束，新注册账号将分配为访客身份。</Alert> : null}
               <Controller
