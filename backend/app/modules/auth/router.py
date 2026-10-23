@@ -15,6 +15,7 @@ from app.core.security import (
     sync_identity_role,
     USER_IDENTITIES,
     user_payload,
+    verify_and_update_password,
     verify_password,
 )
 from app.db.session import get_db
@@ -92,9 +93,15 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     client_ip, enforce_ip_budget = _client_context(request)
     _reject_if_limited(login_retry_after(client_ip, payload.user_code, enforce_ip_budget=enforce_ip_budget))
     user = db.scalar(select(User).where(User.user_code == payload.user_code))
-    if not user or not verify_password(payload.password, user.password_hash):
+    valid, updated_hash = (
+        verify_and_update_password(payload.password, user.password_hash) if user is not None else (False, None)
+    )
+    if not user or not valid:
         record_login_failure(client_ip, payload.user_code, enforce_ip_budget=enforce_ip_budget)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号或密码不正确")
+    if updated_hash:
+        user.password_hash = updated_hash
+        db.commit()
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已停用")
     clear_login_failures(client_ip, payload.user_code)

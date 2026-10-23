@@ -48,6 +48,36 @@ function phases(activePhase: "registration" | "guess", registrationEnded: boolea
   };
 }
 
+describe("Auth login page", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the password-reset hint on login and hides it on register", async () => {
+    window.history.pushState({}, "", "/login");
+    mockApi(async (path) => {
+      if (path.endsWith("/bootstrap")) {
+        return json({
+          event: eventPayload,
+          user: null,
+          phases: { event_id: 1, timezone: "Asia/Shanghai", next_transition_at: null, phase_snapshots: [], ...phases("registration", false) },
+          guess_availability: { available: false },
+        });
+      }
+      if (path.endsWith("/assets/backgrounds")) return json([]);
+      return json({ detail: "not found" }, 404);
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "赛事账号" }, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByText("遗忘密码可找RosTEfish重置。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    expect(screen.queryByText("遗忘密码可找RosTEfish重置。")).not.toBeInTheDocument();
+  });
+});
+
 describe("Auth registration page", () => {
   afterEach(() => {
     cleanup();
