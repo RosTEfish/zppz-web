@@ -111,6 +111,12 @@ html[data-vt="to-app"] .zppz-page {
   }
 }
 
+@keyframes zppz-page-cover {
+  from {
+    transform: translateY(12px);
+  }
+}
+
 html:active-view-transition {
   overflow-x: clip;
 }
@@ -166,6 +172,46 @@ html[data-vt="to-page"]::view-transition-new(zppz-page) {
   ::view-transition-old(zppz-page),
   ::view-transition-new(zppz-page) {
     animation: none !important;
+  }
+}
+
+/* mobile-page-switch
+   Narrow layouts (the drawer shell, below the md breakpoint) switch between
+   pages whose heights differ by more than the viewport. The default
+   view-transition group animates that height while old/new snapshots stay
+   at their intrinsic size and overflow: visible, so the outgoing page paints
+   below the incoming one. Snap the group to the incoming box, clip it, and
+   keep only the incoming snapshot visible. Desktop keeps the crossfade. */
+@media (max-width: 899.95px) {
+  html[data-vt="to-page"]::view-transition-group(zppz-page) {
+    animation: none;
+    overflow: clip;
+    background-color: #fafbfa;
+  }
+
+  html[data-vt="to-page"]::view-transition-image-pair(zppz-page) {
+    overflow: clip;
+  }
+
+  html[data-vt="to-page"]::view-transition-old(zppz-page),
+  html[data-vt="to-page"]::view-transition-new(zppz-page) {
+    height: 100%;
+    width: 100%;
+    inset: 0;
+    object-fit: none;
+    object-position: top left;
+    overflow: clip;
+    mix-blend-mode: normal;
+    background-color: #fafbfa;
+  }
+
+  html[data-vt="to-page"]::view-transition-new(zppz-page) {
+    animation: zppz-page-cover 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  html[data-vt="to-page"]::view-transition-old(zppz-page) {
+    animation: none;
+    opacity: 0;
   }
 }
 
