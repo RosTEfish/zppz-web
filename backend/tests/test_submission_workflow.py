@@ -1,7 +1,7 @@
 import asyncio
 import re
 import shutil
-from datetime import datetime, timedelta
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
@@ -13,6 +13,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -194,7 +195,7 @@ def test_worker_claim_is_exclusive_and_recovers_expired_lease(client: TestClient
             source_storage_path="pending/lease.zip",
             status="queued",
             stage="uploaded",
-            next_attempt_at=datetime.utcnow(),
+            next_attempt_at=utc_now_naive(),
         )
         db.add(job)
         db.commit()
@@ -205,7 +206,7 @@ def test_worker_claim_is_exclusive_and_recovers_expired_lease(client: TestClient
         assert claim_next_job(second) is None
         job = second.get(SubmissionProcessingJob, "lease-job")
         assert job is not None
-        job.lease_until = datetime.utcnow() - timedelta(seconds=1)
+        job.lease_until = utc_now_naive() - timedelta(seconds=1)
         second.commit()
     with SessionLocal() as recovered:
         assert claim_next_job(recovered) == "lease-job"
@@ -505,7 +506,7 @@ def test_user_can_cancel_stuck_validating_job_and_reupload(client: TestClient, m
         assert job is not None
         job.status = "processing"
         job.stage = "validating"
-        job.lease_until = datetime.utcnow() + timedelta(minutes=20)
+        job.lease_until = utc_now_naive() + timedelta(minutes=20)
         db.commit()
 
     cancelled = client.post(f"/api/v1/submissions/processing-jobs/{job_id}/cancel")

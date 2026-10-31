@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -11,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from starlette.requests import Request
 
+from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -104,7 +104,7 @@ def _seed_queue_and_webhooks() -> None:
             ("queued", None),
             ("processing", None),
             ("failed", None),
-            ("failed", datetime.utcnow()),
+            ("failed", utc_now_naive()),
             ("completed", None),
         ]
         for index, (status, superseded_at) in enumerate(jobs):

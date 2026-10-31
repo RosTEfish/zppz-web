@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -74,7 +75,7 @@ def create_single_swap_case(client: TestClient, player_code: str) -> int:
         db.flush()
         assignment = DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=original.id)
         db.add(assignment)
-        now = datetime.utcnow()
+        now = utc_now_naive()
         db.add(EventPhase(event_id=event.id, phase="submission_2", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
         event.settings.phase_mode = "manual"
         event.settings.manual_phase = "submission_2"
@@ -170,7 +171,7 @@ def test_submission_buffer_capabilities_and_public_interactions(client: TestClie
         candidate = db.scalar(select(User).where(User.user_code == "buffer-candidate"))
         assert event and event.settings and candidate
         db.add(GuessAuthorCandidate(event_id=event.id, user_id=candidate.id, display_id="P01"))
-        now = datetime.utcnow()
+        now = utc_now_naive()
         db.add(
             EventPhase(
                 event_id=event.id,
@@ -457,7 +458,7 @@ def test_guess_history_stays_visible_and_comments_stay_open_after_guess_deadline
                 guessed_user_id=candidate.id,
             )
         )
-        now = datetime.utcnow()
+        now = utc_now_naive()
         db.add(
             EventPhase(
                 event_id=event.id,
@@ -536,7 +537,7 @@ def test_swap_finalize_is_idempotent_and_never_returns_same_or_self_submitted_so
         assignment = DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=original.id)
         assignment_b = DrawAssignment(event_id=event.id, assigned_to_id=player.id, song_id=original_b.id)
         db.add_all([assignment, assignment_b])
-        now = datetime.utcnow()
+        now = utc_now_naive()
         db.add(EventPhase(event_id=event.id, phase="submission_2", starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1)))
         event.settings.phase_mode = "manual"
         event.settings.manual_phase = "submission_2"

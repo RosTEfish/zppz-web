@@ -6,7 +6,7 @@ Revises: 0015_preview_bundles
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 
@@ -16,6 +16,11 @@ revision = "0016_submission_processing_jobs"
 down_revision = "0015_preview_bundles"
 branch_labels = None
 depends_on = None
+
+
+def _naive_utc_now() -> datetime:
+    # Column is TIMESTAMP WITHOUT TIME ZONE. Alembic does not import the app clock.
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _columns(table: str) -> set[str]:
@@ -98,8 +103,8 @@ def upgrade() -> None:
             sa.Column("error_code", sa.String(length=64), nullable=False, server_default=""),
             sa.Column("error_message", sa.String(length=500), nullable=False, server_default=""),
             sa.Column("stage_timings_json", sa.Text(), nullable=False, server_default="{}"),
-            sa.Column("created_at", sa.DateTime(), nullable=False, default=datetime.utcnow),
-            sa.Column("updated_at", sa.DateTime(), nullable=False, default=datetime.utcnow),
+            sa.Column("created_at", sa.DateTime(), nullable=False, default=_naive_utc_now),
+            sa.Column("updated_at", sa.DateTime(), nullable=False, default=_naive_utc_now),
             sa.CheckConstraint("job_type IN ('upload', 'resources_rebuild')", name="ck_submission_job_type"),
             sa.CheckConstraint(
                 "status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')",

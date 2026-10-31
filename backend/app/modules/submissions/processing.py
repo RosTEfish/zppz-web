@@ -5,7 +5,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
@@ -16,6 +16,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.time import utc_now_naive
 from app.db.session import SessionLocal
 from app.models import (
     Event,
@@ -102,7 +103,7 @@ def _record_stage(
     if job.status != "processing":
         raise ProcessingJobCancelled
     job.stage = stage
-    job.lease_until = datetime.utcnow() + timedelta(seconds=LEASE_SECONDS)
+    job.lease_until = utc_now_naive() + timedelta(seconds=LEASE_SECONDS)
     if started is not None:
         values = _timings(job)
         metric = metric_name or stage
@@ -212,7 +213,7 @@ def enqueue_upload_job(db: Session, intent: SubmissionUploadIntent) -> Submissio
     )
     if existing:
         return existing
-    now = datetime.utcnow()
+    now = utc_now_naive()
     target_conditions = []
     if intent.replace_submission_id is not None:
         target_conditions.append(
@@ -289,7 +290,7 @@ def enqueue_resource_rebuild(db: Session, row: Submission, user_id: int) -> Subm
         source_version=Path(row.storage_path).stem,
         status="queued",
         stage="accepted",
-        next_attempt_at=datetime.utcnow(),
+        next_attempt_at=utc_now_naive(),
     )
     row.public_package_status = "processing"
     row.public_package_message = ""
@@ -351,7 +352,7 @@ def cancel_processing_job(db: Session, job: SubmissionProcessingJob) -> Submissi
     if job.result_submission_id is not None or job.stage not in {"uploaded", "validating"}:
         raise HTTPException(status_code=409, detail="投稿已进入后续处理，无法取消，请等待完成或联系管理员")
     job.status = "cancelled"
-    job.finished_at = datetime.utcnow()
+    job.finished_at = utc_now_naive()
     job.lease_until = None
     job.next_attempt_at = None
     job.error_code = "cancelled_by_user"
@@ -363,14 +364,14 @@ def cancel_processing_job(db: Session, job: SubmissionProcessingJob) -> Submissi
             intent.error_message = job.error_message
             enqueue_storage_deletion(db, intent.object_key)
     # Keep the cancelled job out of the participant job list, but leave an audit trail.
-    job.superseded_at = datetime.utcnow()
+    job.superseded_at = utc_now_naive()
     db.flush()
     drain_storage_deletions(db)
     return job
 
 
 def claim_next_job(db: Session) -> str | None:
-    now = datetime.utcnow()
+    now = utc_now_naive()
     candidate = db.scalar(
         select(SubmissionProcessingJob.id)
         .where(
@@ -530,7 +531,7 @@ def _promote_submission(
     job.result_submission_id = row.id
     job.source_storage_path = final_source
     job.source_version = Path(final_source).stem
-    job.accepted_at = datetime.utcnow()
+    job.accepted_at = utc_now_naive()
     job.stage = "accepted"
     db.commit()
     if old_source and old_source != final_source:
@@ -728,7 +729,7 @@ def _fail_job(
     current.status = "failed"
     current.error_code = error_code
     current.error_message = error_message
-    current.finished_at = datetime.utcnow()
+    current.finished_at = utc_now_naive()
     current.lease_until = None
     current.next_attempt_at = None
     if delete_upload_object and current.upload_intent_id:
@@ -835,7 +836,7 @@ def process_job(job_id: str) -> None:
             drain_storage_deletions(db)
             job.status = "completed"
             job.stage = "complete"
-            job.finished_at = datetime.utcnow()
+            job.finished_at = utc_now_naive()
             job.lease_until = None
             job.next_attempt_at = None
             job.error_code = ""
@@ -859,7 +860,7 @@ def process_job(job_id: str) -> None:
                 attempt_index = max(current.attempts - 1, 0)
                 if current.attempts <= len(RETRY_DELAYS):
                     current.status = "queued"
-                    current.next_attempt_at = datetime.utcnow() + timedelta(
+                    current.next_attempt_at = utc_now_naive() + timedelta(
                         seconds=RETRY_DELAYS[min(attempt_index, len(RETRY_DELAYS) - 1)]
                     )
                     current.error_code = "temporary_processing_error"
@@ -886,7 +887,7 @@ def process_next_job() -> bool:
 
 
 def cleanup_expired_upload_intents() -> int:
-    now = datetime.utcnow()
+    now = utc_now_naive()
     with SessionLocal() as db:
         rows = list(
             db.scalars(

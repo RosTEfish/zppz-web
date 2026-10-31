@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.security import require_role
+from app.core.time import utc_now, utc_now_naive
 from app.db.session import get_db
 from app.models import User, WebhookDelivery, WebhookEndpoint, WebhookEventAsset, WebhookIntegration
 from app.modules.object_storage import get_object_store
@@ -106,7 +105,7 @@ def admin_revoke_integration(
 ):
     integration = _active_integration(db, integration_id)
     integration.is_active = False
-    integration.revoked_at = datetime.utcnow()
+    integration.revoked_at = utc_now_naive()
     endpoint = db.scalar(select(WebhookEndpoint).where(WebhookEndpoint.integration_id == integration.id))
     if endpoint:
         endpoint.status = "revoked"
@@ -194,6 +193,6 @@ def webhook_cover_asset(
         "Content-Encoding": "identity",
     }
     if store.backend == "r2":
-        url = store.create_inline_url(asset.object_key, asset.content_type, min(max(expires - int(datetime.utcnow().timestamp()), 60), 3600))
+        url = store.create_inline_url(asset.object_key, asset.content_type, min(max(expires - int(utc_now().timestamp()), 60), 3600))
         return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
     return StreamingResponse(store.chunks(asset.object_key, info.size), media_type=asset.content_type, headers=headers)

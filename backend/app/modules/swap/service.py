@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import random
-from datetime import UTC, datetime
+from datetime import datetime
 from secrets import token_hex
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.time import as_utc, utc_now
 from app.models import (
     DrawAssignment,
     Event,
@@ -305,10 +306,4 @@ def _roll_for_user_once(
 
 def _round_is_open(round_row: SwapRound) -> bool:
     end = round_row.roll_ends_at or round_row.ends_at
-    return _utc_naive(end) > datetime.utcnow()
-
-
-def _utc_naive(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
+    return as_utc(end) > utc_now()

@@ -1,6 +1,5 @@
 import hashlib
 from collections import Counter
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +10,7 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from app import models  # noqa: F401
+from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -88,7 +88,7 @@ def create_legacy_ban_import(db, raw: bytes) -> BanImport:
         issue_count=len(issues),
         preview_json='{"issues":[]}',
         uploaded_by_id=admin.id if admin else None,
-        published_at=datetime.utcnow(),
+        published_at=utc_now_naive(),
     )
     db.add(record)
     db.flush()
@@ -117,7 +117,7 @@ def create_legacy_ban_import(db, raw: bytes) -> BanImport:
                 normalized_artist=normalize_text("Legacy Artist"),
                 source="admin",
                 confirmed_by_id=admin.id if admin else None,
-                confirmed_at=datetime.utcnow(),
+                confirmed_at=utc_now_naive(),
             )
         )
     db.commit()

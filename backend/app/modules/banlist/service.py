@@ -5,7 +5,6 @@ import json
 import unicodedata
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
 from io import BytesIO
 from threading import Lock
 from typing import Protocol
@@ -17,6 +16,7 @@ from rapidfuzz import fuzz
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.time import utc_now_naive
 from app.models import BanAlias, BanEntry, BanImport
 
 MAX_BAN_FILE_BYTES = 10 * 1024 * 1024
@@ -278,7 +278,7 @@ def publish_ban_import(db: Session, import_id: int) -> BanImport:
         raise HTTPException(status_code=409, detail="没有可发布的 Ban 曲目")
     db.execute(update(BanImport).where(BanImport.status == "published").values(status="superseded"))
     record.status = "published"
-    record.published_at = datetime.utcnow()
+    record.published_at = utc_now_naive()
     db.commit()
     db.refresh(record)
     invalidate_ban_cache()

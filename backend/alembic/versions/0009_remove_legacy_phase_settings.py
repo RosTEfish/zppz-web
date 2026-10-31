@@ -53,6 +53,7 @@ def upgrade() -> None:
         )
         phases = sa.table("event_phases", sa.column("event_id", sa.Integer()))
         no_schedule = ~sa.exists(sa.select(1).where(phases.c.event_id == settings.c.event_id))
+        # TIMESTAMP WITHOUT TIME ZONE. Kept local so this revision does not import the app clock.
         now_utc = datetime.now(UTC).replace(tzinfo=None)
         migrated_phase = sa.case(
             (settings.c.submissions_open.is_(True), "submission_1"),

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.time import as_utc, utc_now
 from app.models import Event, GuessChart
 
 PHASES = (
@@ -69,12 +70,6 @@ POST_GUESS_CAPABILITIES = PhaseCapabilities(normal_submission_public=True)
 ALWAYS_PUBLIC_CHART_SOURCE_TYPES = frozenset({"admin", "j", "exhibition"})
 
 
-def _utc_naive(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
 def _load_current_event(db: Session) -> Event | None:
     return db.scalar(
         select(Event)
@@ -97,7 +92,7 @@ def registration_window_closed(
     registration = next((row for row in event.phases if row.phase == "registration"), None)
     if registration is None:
         return False
-    return _utc_naive(registration.ends_at) <= _utc_naive(now or datetime.now(UTC))
+    return as_utc(registration.ends_at) <= (as_utc(now) if now is not None else utc_now())
 
 
 def get_phase_status(
@@ -108,20 +103,20 @@ def get_phase_status(
 ) -> PhaseStatus:
     """Return the authoritative phase and capabilities for an event.
 
-    Scheduled timestamps and the default clock are compared as naive UTC values so
-    the policy behaves consistently on SQLite and PostgreSQL. An automatic event with
-    no schedule is always in registration.
+    Scheduled timestamps are stored as naive UTC and compared as timezone-aware
+    UTC so the policy behaves consistently on SQLite and PostgreSQL. An automatic
+    event with no schedule is always in registration.
     """
 
     event = event or _load_current_event(db)
     if event is None or event.settings is None:
         return PhaseStatus("registration", CAPABILITIES["registration"])
 
-    current_time = _utc_naive(now or datetime.now(UTC))
+    current_time = as_utc(now) if now is not None else utc_now()
     settings = event.settings
     rows = sorted(
         (
-            (row, _utc_naive(row.starts_at), _utc_naive(row.ends_at))
+            (row, as_utc(row.starts_at), as_utc(row.ends_at))
             for row in event.phases
             if row.phase in PHASES
         ),
@@ -151,8 +146,6 @@ def get_phase_status(
         if boundary > current_time
     ]
     next_transition = min(future_boundaries) if future_boundaries else None
-    if next_transition is not None:
-        next_transition = next_transition.replace(tzinfo=UTC)
     if active_phase is not None:
         capabilities = CAPABILITIES[active_phase]
     elif any(row.phase == "guess" and ends_at <= current_time for row, _, ends_at in rows):

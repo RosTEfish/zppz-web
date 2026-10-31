@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user, require_role
+from app.core.time import utc_now_naive
 from app.db.session import get_db
 from app.models import BanEntry, BanImport, User
 from app.modules.banlist.service import (
@@ -119,7 +119,7 @@ def add_ban_alias(payload: BanAliasCreate, user: User = Depends(require_role("ad
         )
         db.add(alias)
     alias.confirmed_by_id = user.id
-    alias.confirmed_at = datetime.utcnow()
+    alias.confirmed_at = utc_now_naive()
     alias.source = "admin"
     db.commit()
     return {"message": "Ban 曲别名已确认", "entry_id": entry.id}

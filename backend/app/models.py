@@ -5,7 +5,6 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -17,12 +16,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.time import UtcDateTime, utc_now_naive
 from app.db.session import Base
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False
+    )
 
 
 class UserRole(Base):
@@ -66,7 +68,7 @@ class UserSession(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
 
     user: Mapped[User] = relationship()
 
@@ -114,8 +116,8 @@ class EventPhase(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
     phase: Mapped[str] = mapped_column(String(30), nullable=False)
-    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
 
     event: Mapped[Event] = relationship(back_populates="phases")
 
@@ -128,8 +130,8 @@ class EventPhaseSnapshot(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
     original_phase: Mapped[str] = mapped_column(String(30), nullable=False)
-    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     migration_revision: Mapped[str] = mapped_column(String(64), nullable=False)
 
@@ -162,7 +164,7 @@ class BanImport(Base, TimestampMixin):
     issue_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     preview_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
     uploaded_by: Mapped[User | None] = relationship()
     entries: Mapped[list[BanEntry]] = relationship(back_populates="ban_import", cascade="all, delete-orphan")
@@ -203,7 +205,7 @@ class BanAlias(Base, TimestampMixin):
     normalized_artist: Mapped[str] = mapped_column(String(200), nullable=False)
     source: Mapped[str] = mapped_column(String(20), default="admin", nullable=False)
     confirmed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
     entry: Mapped[BanEntry] = relationship(back_populates="aliases")
     confirmed_by: Mapped[User | None] = relationship()
@@ -262,13 +264,13 @@ class SwapRound(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False)
     round_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    roll_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    starts_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    roll_ends_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     round_kind: Mapped[str] = mapped_column(String(20), default="continuous", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
     random_seed: Mapped[str] = mapped_column(String(128), nullable=False)
-    finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finalized_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
     event: Mapped[Event] = relationship(back_populates="swap_rounds")
     requests: Mapped[list[SwapRequest]] = relationship(back_populates="round", cascade="all, delete-orphan")
@@ -430,7 +432,7 @@ class SubmissionUploadIntent(Base, TimestampMixin):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
     error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, index=True, nullable=False)
 
 
 class SubmissionProcessingJob(Base, TimestampMixin):
@@ -499,11 +501,11 @@ class SubmissionProcessingJob(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)
     stage: Mapped[str] = mapped_column(String(24), default="uploaded", nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     error_message: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     stage_timings_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
@@ -584,16 +586,16 @@ class WebhookIntegration(Base, TimestampMixin):
     secret_generation: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    last_test_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
 class WebhookSystemState(Base, TimestampMixin):
     __tablename__ = "webhook_system_states"
 
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
-    baseline_completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    last_publication_scan_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    baseline_completed_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    last_publication_scan_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     last_visibility_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
@@ -608,11 +610,11 @@ class WebhookEndpoint(Base, TimestampMixin):
     subscribed_events_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     schema_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
-    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     last_error: Mapped[str] = mapped_column(String(500), default="", nullable=False)
 
 
@@ -630,8 +632,8 @@ class ChartPublicationState(Base, TimestampMixin):
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     source_version: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
-    first_published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    last_published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    first_published_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    last_published_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
 
 
 class WebhookEvent(Base, TimestampMixin):
@@ -678,11 +680,11 @@ class WebhookDelivery(Base, TimestampMixin):
     endpoint_id: Mapped[str] = mapped_column(ForeignKey("webhook_endpoints.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_error: Mapped[str] = mapped_column(String(500), default="", nullable=False)
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
 class GuessVote(Base, TimestampMixin):
