@@ -74,6 +74,12 @@ Thumbs.db
 .temp/
 .test-data/
 
+# Playwright smoke server and reports
+.e2e/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
 # Rust / chart validator build artifacts
 tools/zppz-chart-validate/target/
 backend/bin/*
