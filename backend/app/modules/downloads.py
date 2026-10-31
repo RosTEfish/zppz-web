@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import HTTPException
@@ -12,13 +12,12 @@ from zipstream import ZIP_STORED, ZipStream
 
 from app.core.config import get_settings
 
-
 DOWNLOAD_HEADERS = {
     "Cache-Control": "private, no-store",
     "Content-Encoding": "identity",
     "X-Accel-Buffering": "no",
 }
-DOWNLOAD_TOKEN_PATTERN = r"^[a-f0-9]{32}$"
+DOWNLOAD_TOKEN_PATTERN = r"^[a-f0-9]{32}$"  # noqa: S105
 DOWNLOAD_COOKIE_PREFIX = "zppz_download_"
 DOWNLOAD_CONFIRMATION_SECONDS = 300
 

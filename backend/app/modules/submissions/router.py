@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from pathlib import Path
 import shutil
 import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -31,26 +31,26 @@ from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song, serialize_submissions
 from app.modules.downloads import (
     DOWNLOAD_TOKEN_PATTERN,
-    content_disposition,
     DownloadEntry,
     PreparedZip,
+    content_disposition,
     file_download_response,
     parse_csv_ids,
     prepare_streaming_zip,
     safe_download_name,
 )
 from app.modules.draw.service import ensure_global_draw
-from app.modules.events.service import get_current_event
 from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.service import get_current_event
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     ParsedArchive,
+    archive_has_readme,
     build_public_package,
     delete_cover_paths,
     delete_source_charts,
-    parse_stored_archive,
     parse_archive,
-    archive_has_readme,
+    parse_stored_archive,
     sync_parsed_source,
     write_public_package,
 )
@@ -67,21 +67,20 @@ from app.modules.submissions.service import (
     validate_upload_metadata,
 )
 from app.schemas import (
+    AdminStoredFileRead,
+    AdminSubmissionProcessingJobRead,
     AdminSubmissionUploadIntentCreate,
     BatchDeleteRequest,
     BatchDeleteResponse,
     DownloadPreparation,
-    AdminStoredFileRead,
-    AdminSubmissionProcessingJobRead,
     PaginatedStoredFilesRead,
     StoredFileRead,
+    SubmissionProcessingJobRead,
     SubmissionTargetsResponse,
     SubmissionTrackUpdate,
-    SubmissionProcessingJobRead,
     SubmissionUploadIntentCreate,
     SubmissionUploadIntentRead,
 )
-
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 admin_router = APIRouter(prefix="/admin/submissions", tags=["admin-submissions"])
@@ -297,7 +296,7 @@ def _backfill_readme_flags(db: Session, rows: list[Submission]) -> None:
             with materialized_object(row.storage_path, suffix) as path:
                 row.has_readme = archive_has_readme(path)
             changed = True
-        except Exception:
+        except Exception:  # noqa: S112
             continue
     if changed:
         db.commit()
@@ -613,7 +612,7 @@ def submission_targets(user: User = Depends(get_current_user), db: Session = Dep
     )
     by_song_id = {row.source_song_id: row for row in submissions if row.source_song_id is not None}
     submission_payloads = {
-        row.id: payload for row, payload in zip(submissions, serialize_submissions(db, submissions))
+        row.id: payload for row, payload in zip(submissions, serialize_submissions(db, submissions), strict=False)
     }
     return {
         "is_open": get_phase_status(db, event).can("submission"),
@@ -754,7 +753,7 @@ def _complete_intent(
     ):
         try:
             get_object_store().delete(intent.object_key)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         if intent.status == "pending":
             intent.status = "expired"
@@ -878,7 +877,7 @@ def _complete_intent(
                 for key in created_keys:
                     try:
                         store.delete(key)
-                    except Exception:
+                    except Exception:  # noqa: S110
                         pass
                 raise
     except ArchiveParseError as exc:
@@ -890,7 +889,7 @@ def _complete_intent(
             db.commit()
         try:
             store.delete(intent.object_key)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

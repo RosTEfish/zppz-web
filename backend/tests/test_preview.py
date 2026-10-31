@@ -1,6 +1,6 @@
-from io import BytesIO
 import re
 import shutil
+from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest

@@ -20,7 +20,6 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import Role, User, UserSession
 
-
 # Argon2id is the current hasher. BcryptHasher only verifies legacy $2a$/$2b$/$2y$ hashes.
 password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
 # passlib 1.7.4 bcrypt_sha256. v=2 HMACs the password with the bcrypt salt string;

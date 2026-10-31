@@ -46,6 +46,9 @@ dist/
 .mcp.json
 .codegraph/
 coverage/
+.coverage
+.coverage.*
+htmlcov/
 *.tsbuildinfo
 .vite/
 .vite-cache/

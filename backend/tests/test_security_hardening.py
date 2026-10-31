@@ -18,7 +18,6 @@ from app.main import app  # noqa: E402
 from app.models import Event, UserSession  # noqa: E402
 from app.modules.auth import rate_limit  # noqa: E402
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

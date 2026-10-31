@@ -81,7 +81,8 @@ jobs:
         working-directory: backend
         run: |
           python -m ruff check app tests alembic
-          python -m pytest -q
+          # Line-coverage floor is tool.coverage.report.fail_under in backend/pyproject.toml.
+          python -m pytest -q --cov=app --cov-report=term-missing:skip-covered
 
       - name: Verify deployment preparation
         working-directory: backend

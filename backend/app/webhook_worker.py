@@ -8,7 +8,6 @@ from app.core.config import get_settings
 from app.core.observability import init_error_tracking
 from app.modules.webhooks.service import cleanup_expired_assets, materialize_publication_events, process_next_delivery
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 _stopping = False

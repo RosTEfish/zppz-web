@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import logging
 import os
-from pathlib import Path
 import shutil
 import signal
 import subprocess
 import sys
+from dataclasses import replace
+from pathlib import Path
 
 from app.modules.guess_game.importer import (
     ArchiveParseError,
@@ -75,7 +75,7 @@ def prepare_archive_with_rust(
         str(destination),
     ]
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603
             command,
             check=False,
             capture_output=True,
@@ -154,7 +154,7 @@ def ensure_built_for_tests() -> Path | None:
     cargo = shutil.which("cargo")
     if not cargo:
         return None
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603
         [cargo, "build", "--release"],
         cwd=crate,
         capture_output=True,

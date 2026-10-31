@@ -26,6 +26,10 @@
 - Requirements: `backend/requirements.txt`.
 - Local run command from `backend/`:
   - `uvicorn app.main:app --reload --port 8000`
+- Lint and the coverage gate, from `backend/` after `pip install -r requirements-dev.txt`:
+  - `python -m ruff check app tests alembic`
+  - `python -m pytest -q --cov=app --cov-report=term-missing:skip-covered`
+- The line-coverage floor is `fail_under` in `backend/pyproject.toml`. Ruff selects `F`, `E`, `I`, `B`, `UP`, and `S`, with `E501` and `S101` ignored. mypy is not in CI yet.
 - Permission bootstrap/sync logic is in `backend/app/db/bootstrap.py`.
 - Chart archive sandbox: `tools/zppz-chart-validate` (Rust). Build with `bash scripts/build_chart_validate.sh`. When `backend/bin/zppz-chart-validate` exists, upload validation uses that killable subprocess for `.zip`/`.7z`; `.rar` stays on the Python path.
 

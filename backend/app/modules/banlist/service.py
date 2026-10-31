@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import BanAlias, BanEntry, BanImport
 
-
 MAX_BAN_FILE_BYTES = 10 * 1024 * 1024
 # Keep the automatic check tolerant of small title typos and stylized
 # characters while still requiring a strong artist match.
@@ -248,7 +247,7 @@ def create_ban_import(db: Session, file_name: str, raw: bytes, uploaded_by_id: i
         key = (item.round_label, normalized_song_name, normalized_artist)
         pending_aliases.append((entry, key, list(previous_aliases.get(key, []))))
     db.flush()
-    for entry, key, aliases in pending_aliases:
+    for entry, _key, aliases in pending_aliases:
         db.add_all(
             [
                 BanAlias(

@@ -3,17 +3,28 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
 import pytest
-from fastapi.testclient import TestClient
 import sqlalchemy as sa
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from alembic import command
+from alembic.config import Config
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, EventPhase, EventSetting, Song, Submission, SwapExcludedSong, SwapRequest, SwapRound, User
+from app.models import (
+    DrawAssignment,
+    Event,
+    EventPhase,
+    EventSetting,
+    Song,
+    Submission,
+    SwapExcludedSong,
+    SwapRequest,
+    SwapRound,
+    User,
+)
 
 
 @pytest.fixture(autouse=True)

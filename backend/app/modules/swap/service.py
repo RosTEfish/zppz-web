@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import random
+from datetime import UTC, datetime
 from secrets import token_hex
 
 from fastapi import HTTPException, status
@@ -311,4 +311,4 @@ def _round_is_open(round_row: SwapRound) -> bool:
 def _utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)

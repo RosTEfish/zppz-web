@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 import logging
-from pathlib import Path
 import re
+from pathlib import Path
 
 from starlette.requests import Request
 
@@ -12,7 +12,6 @@ from app.core.metrics import record_http_response
 from app.core.security import get_optional_user
 from app.db.session import SessionLocal
 from app.modules.events.phase_policy import get_phase_status
-
 
 logger = logging.getLogger("app.observability")
 _SENSITIVE_KEY = re.compile(
@@ -74,7 +73,7 @@ def _scrub_headers(headers):
         scrubbed = []
         for item in headers:
             sensitive = (
-                isinstance(item, (list, tuple))
+                isinstance(item, list | tuple)
                 and len(item) == 2
                 and isinstance(item[0], str)
                 and _SENSITIVE_KEY.search(item[0])

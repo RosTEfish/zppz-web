@@ -5,12 +5,12 @@ Revises: 0001_initial
 Create Date: 2026-07-03
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0002_submission_targets"
 down_revision = "0001_initial"

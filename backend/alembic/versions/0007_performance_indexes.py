@@ -5,9 +5,9 @@ Revises: 0006_event_phases_swaps
 Create Date: 2026-07-13
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0007_performance_indexes"
 down_revision = "0006_event_phases_swaps"

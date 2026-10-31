@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-import shutil
-import tempfile
-from typing import Iterator
 
 import boto3
 from botocore.config import Config

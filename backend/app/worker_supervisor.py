@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 
-
 SUBMISSION_WORKER_COUNT = 2
 children: list[subprocess.Popen] = []
 
@@ -29,13 +28,13 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     children.extend(
-        subprocess.Popen(
+        subprocess.Popen(  # noqa: S603
             [sys.executable, "-m", "app.worker"],
             env=_submission_worker_env(index),
         )
         for index in range(SUBMISSION_WORKER_COUNT)
     )
-    children.append(subprocess.Popen([sys.executable, "-m", "app.webhook_worker"]))
+    children.append(subprocess.Popen([sys.executable, "-m", "app.webhook_worker"]))  # noqa: S603
     while True:
         for child in children:
             status = child.poll()

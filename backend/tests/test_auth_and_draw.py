@@ -1,7 +1,7 @@
+import json
 import os
 from collections import Counter
 from datetime import datetime, timedelta
-import json
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["ADMIN_SEED_PASSWORD"] = "change-me-please"
@@ -13,8 +13,8 @@ from sqlalchemy import select  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.db.bootstrap import seed_defaults, sync_permissions_file  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
-from app.manage import set_owner  # noqa: E402
 from app.main import app  # noqa: E402
+from app.manage import set_owner  # noqa: E402
 from app.models import DrawAssignment, Event, EventPhase, Role, Song, User  # noqa: E402
 from app.modules.events.service import get_current_event  # noqa: E402
 

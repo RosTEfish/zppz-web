@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -15,7 +15,6 @@ from app.modules.events.phase_policy import SUBMISSION_PHASES, get_phase_status
 from app.modules.events.service import get_current_event
 from app.modules.swap.service import active_assignments_for_user, get_swap_rounds, roll_for_user
 from app.schemas import SwapSelectionUpdate
-
 
 router = APIRouter(prefix="/swap", tags=["swap"])
 admin_router = APIRouter(prefix="/admin/swap", tags=["admin-swap"])
@@ -125,7 +124,7 @@ def _my_payload(db: Session, user: User, round_row: SwapRound | None = None, las
             )
         ).all()
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     is_round_open = round_row is None or (
         round_row.status == "open" and _utc_naive(_round_end(round_row)) > _utc_naive(now)
     )
@@ -175,7 +174,7 @@ def _audit_payload(rounds: list[SwapRound]) -> dict:
 def _utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 @router.get("/me")

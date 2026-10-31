@@ -1,6 +1,6 @@
-from pathlib import Path
 import struct
 import zipfile
+from pathlib import Path
 
 import pytest
 

@@ -1,7 +1,7 @@
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
-import os
 
 # Load the local `.env` file (if any) before reading settings so that a
 # contributor can `cp .env.example .env` and run without exporting variables.

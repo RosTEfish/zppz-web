@@ -5,9 +5,9 @@ Revises: 0019_submission_has_readme
 Create Date: 2026-09-27
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0020_love_vote_bucket_override"
 down_revision = "0019_submission_has_readme"

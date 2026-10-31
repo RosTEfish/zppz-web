@@ -5,9 +5,9 @@ Revises: 0004_guess_chart_designer
 Create Date: 2026-07-04
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0005_guess_game_visibility"
 down_revision = "0004_guess_chart_designer"

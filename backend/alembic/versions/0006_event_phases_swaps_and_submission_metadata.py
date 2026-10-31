@@ -5,9 +5,9 @@ Revises: 0005_guess_game_visibility
 Create Date: 2026-07-13
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0006_event_phases_swaps"
 down_revision = "0005_guess_game_visibility"

@@ -13,7 +13,6 @@ from app.db.session import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User  # noqa: E402
 
-
 # Generated with passlib 1.7.4, the hasher that produced stored passwords.
 # v=2: HMAC-SHA256 keyed by the 22-character bcrypt salt, standard Base64, then bcrypt.
 # v=1: SHA-256 of the UTF-8 password, standard Base64, then bcrypt.

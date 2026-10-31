@@ -9,7 +9,6 @@ from math import ceil
 from threading import Lock
 from time import monotonic
 
-
 AUTH_WINDOW_SECONDS = 15 * 60
 LOGIN_FAILURE_LIMIT = 8
 LOGIN_IP_FAILURE_LIMIT = 40

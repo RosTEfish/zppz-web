@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0016_submission_processing_jobs"
 down_revision = "0015_preview_bundles"

@@ -6,10 +6,8 @@ Create Date: 2026-05-22
 """
 
 from alembic import op
-
-from app.db.session import Base
 from app import models  # noqa: F401
-
+from app.db.session import Base
 
 revision = "0001_initial"
 down_revision = None

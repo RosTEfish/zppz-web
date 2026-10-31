@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import ipaddress
 import json
 import logging
 import mimetypes
-from pathlib import Path
 import secrets
 import socket
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -42,7 +42,6 @@ from app.modules.events.phase_policy import apply_chart_visibility_filter, chart
 from app.modules.events.service import get_current_event
 from app.modules.object_storage import get_object_store
 
-
 logger = logging.getLogger(__name__)
 SUPPORTED_EVENTS = ("chart.published", "chart.updated")
 DELIVERY_STATUSES = ("pending", "retrying", "delivering")
@@ -56,7 +55,7 @@ def _json(value: object) -> str:
 
 
 def _utc_iso(value: datetime) -> str:
-    return value.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
 
 
 def issue_integration_token() -> str:
@@ -201,7 +200,7 @@ def validate_callback_url(url: str) -> str:
 
 
 def _signed_headers(integration: WebhookIntegration, event_id: str, body: bytes) -> dict[str, str]:
-    timestamp = int(datetime.now(timezone.utc).timestamp())
+    timestamp = int(datetime.now(UTC).timestamp())
     signature = sign_payload(derive_webhook_secret(integration), timestamp, body)
     return {
         "Content-Type": "application/json",
@@ -698,7 +697,7 @@ def _asset_signature(asset_id: str, endpoint_id: str, expires: int) -> str:
 
 
 def asset_url(asset: WebhookEventAsset, endpoint_id: str) -> tuple[str, int]:
-    expires = int(datetime.now(timezone.utc).timestamp()) + get_settings().webhook_asset_url_ttl_seconds
+    expires = int(datetime.now(UTC).timestamp()) + get_settings().webhook_asset_url_ttl_seconds
     signature = _asset_signature(asset.id, endpoint_id, expires)
     url = (
         f"{get_settings().public_base_url}{get_settings().api_prefix}/integrations/webhook-assets/{asset.id}"
@@ -708,7 +707,7 @@ def asset_url(asset: WebhookEventAsset, endpoint_id: str) -> tuple[str, int]:
 
 
 def validate_asset_signature(asset_id: str, endpoint_id: str, expires: int, signature: str) -> None:
-    now = int(datetime.now(timezone.utc).timestamp())
+    now = int(datetime.now(UTC).timestamp())
     if expires < now:
         raise HTTPException(status_code=403, detail="Cover URL has expired")
     expected = _asset_signature(asset_id, endpoint_id, expires)

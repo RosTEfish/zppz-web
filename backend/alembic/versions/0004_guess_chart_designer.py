@@ -5,9 +5,9 @@ Revises: 0003_schema_repair
 Create Date: 2026-07-04
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0004_guess_chart_designer"
 down_revision = "0003_schema_repair"

@@ -1,17 +1,19 @@
+import hashlib
 from collections import Counter
 from datetime import datetime
-import hashlib
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from openpyxl import Workbook
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
+from sqlalchemy import select
 
 from app import models  # noqa: F401
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
+from app.main import app
 from app.models import BanAlias, BanEntry, BanImport, Event, Song, User
 from app.modules.banlist.service import (
     BAN_PARSER_VERSION,
@@ -21,8 +23,6 @@ from app.modules.banlist.service import (
     similarity,
 )
 from app.prepare import seed_bundled_banlist
-from sqlalchemy import select
-from app.main import app
 
 
 @pytest.fixture(autouse=True)

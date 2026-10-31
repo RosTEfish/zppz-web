@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.client_ip import client_ip_budget_applies, resolve_client_ip
 from app.core.config import get_settings
 from app.core.security import (
+    USER_IDENTITIES,
     clear_session_cookie,
     ensure_roles,
     get_current_session,
@@ -13,7 +14,6 @@ from app.core.security import (
     issue_session,
     revoke_request_session,
     sync_identity_role,
-    USER_IDENTITIES,
     user_payload,
     verify_and_update_password,
     verify_password,
@@ -32,7 +32,6 @@ from app.modules.auth.rate_limit import (
 )
 from app.modules.events.phase_policy import get_phase_status, registration_window_closed
 from app.schemas import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest, UpdateProfileRequest
-
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

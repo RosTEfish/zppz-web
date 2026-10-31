@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from base64 import urlsafe_b64decode, urlsafe_b64encode
-from datetime import datetime, timedelta
 import hashlib
 import hmac
 import json
 import logging
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
@@ -17,15 +17,14 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models import AdminGuessArchive, GuessChart, PreviewBundle, Submission
 from app.modules.guess_game.importer import (
-    ArchiveParseError,
     COVER_CONTENT_TYPES,
+    ArchiveParseError,
     ParsedArchive,
     extract_public_files,
     parse_archive,
 )
 from app.modules.object_storage import get_object_store, materialized_object
 from app.modules.submissions.service import enqueue_storage_deletion
-
 
 logger = logging.getLogger(__name__)
 ASSET_FIELDS = ("maidata_key", "track_key", "background_key", "video_key")

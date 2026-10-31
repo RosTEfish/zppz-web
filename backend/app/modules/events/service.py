@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
 import logging
 import re
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -138,13 +138,13 @@ def rotate_current_event(db: Session, payload: EventRotateRequest) -> tuple[Even
 def _utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _utc_aware(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime, datetime]]:
@@ -168,7 +168,7 @@ def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime
         names.add(item.phase)
         rows.append((item.phase, starts_at, ends_at))
     rows.sort(key=lambda row: (row[1], row[2]))
-    for previous, current in zip(rows, rows[1:]):
+    for previous, current in zip(rows, rows[1:], strict=False):
         if current[1] < previous[2]:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -190,7 +190,7 @@ def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
         "phase_mode": event.settings.phase_mode,
         "manual_phase": event.settings.manual_phase,
         "timezone": "Asia/Shanghai",
-        "server_time": datetime.now(timezone.utc),
+        "server_time": datetime.now(UTC),
         "phases": [
             {
                 "id": row.id,

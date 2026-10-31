@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -27,7 +39,7 @@ class Role(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     label: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    users: Mapped[list["User"]] = relationship(secondary="user_roles", back_populates="roles")
+    users: Mapped[list[User]] = relationship(secondary="user_roles", back_populates="roles")
 
 
 class User(Base, TimestampMixin):
@@ -67,11 +79,11 @@ class Event(Base, TimestampMixin):
     slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
 
-    settings: Mapped["EventSetting"] = relationship(back_populates="event", uselist=False, cascade="all, delete-orphan")
-    phases: Mapped[list["EventPhase"]] = relationship(
+    settings: Mapped[EventSetting] = relationship(back_populates="event", uselist=False, cascade="all, delete-orphan")
+    phases: Mapped[list[EventPhase]] = relationship(
         back_populates="event", cascade="all, delete-orphan", order_by="EventPhase.starts_at"
     )
-    swap_rounds: Mapped[list["SwapRound"]] = relationship(
+    swap_rounds: Mapped[list[SwapRound]] = relationship(
         back_populates="event", cascade="all, delete-orphan", order_by="SwapRound.round_number"
     )
 
@@ -153,7 +165,7 @@ class BanImport(Base, TimestampMixin):
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     uploaded_by: Mapped[User | None] = relationship()
-    entries: Mapped[list["BanEntry"]] = relationship(back_populates="ban_import", cascade="all, delete-orphan")
+    entries: Mapped[list[BanEntry]] = relationship(back_populates="ban_import", cascade="all, delete-orphan")
 
 
 class BanEntry(Base, TimestampMixin):
@@ -173,7 +185,7 @@ class BanEntry(Base, TimestampMixin):
     normalized_artist: Mapped[str] = mapped_column(String(200), nullable=False)
 
     ban_import: Mapped[BanImport] = relationship(back_populates="entries")
-    aliases: Mapped[list["BanAlias"]] = relationship(back_populates="entry", cascade="all, delete-orphan")
+    aliases: Mapped[list[BanAlias]] = relationship(back_populates="entry", cascade="all, delete-orphan")
 
 
 class BanAlias(Base, TimestampMixin):
@@ -236,7 +248,7 @@ class DrawAssignment(Base, TimestampMixin):
 
     assigned_to: Mapped[User] = relationship(foreign_keys=[assigned_to_id])
     song: Mapped[Song] = relationship()
-    replaces_assignment: Mapped["DrawAssignment | None"] = relationship(
+    replaces_assignment: Mapped[DrawAssignment | None] = relationship(
         remote_side="DrawAssignment.id", foreign_keys=[replaces_assignment_id]
     )
 
@@ -259,7 +271,7 @@ class SwapRound(Base, TimestampMixin):
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     event: Mapped[Event] = relationship(back_populates="swap_rounds")
-    requests: Mapped[list["SwapRequest"]] = relationship(back_populates="round", cascade="all, delete-orphan")
+    requests: Mapped[list[SwapRequest]] = relationship(back_populates="round", cascade="all, delete-orphan")
 
 
 class SwapRequest(Base, TimestampMixin):
@@ -273,7 +285,7 @@ class SwapRequest(Base, TimestampMixin):
 
     round: Mapped[SwapRound] = relationship(back_populates="requests")
     user: Mapped[User] = relationship()
-    items: Mapped[list["SwapRequestItem"]] = relationship(
+    items: Mapped[list[SwapRequestItem]] = relationship(
         back_populates="request", cascade="all, delete-orphan", order_by="SwapRequestItem.position"
     )
 

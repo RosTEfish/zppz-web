@@ -5,8 +5,8 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults, upgrade_schema
-from app.models import BanImport, User
 from app.db.session import SessionLocal
+from app.models import BanImport, User
 from app.modules.assets.sync import sync_bundled_assets
 from app.modules.banlist.service import BAN_PARSER_VERSION, create_ban_import
 from app.modules.submissions.service import drain_storage_deletions

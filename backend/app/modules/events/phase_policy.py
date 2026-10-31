@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Event, GuessChart
-
 
 PHASES = (
     "registration",
@@ -73,7 +72,7 @@ ALWAYS_PUBLIC_CHART_SOURCE_TYPES = frozenset({"admin", "j", "exhibition"})
 def _utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _load_current_event(db: Session) -> Event | None:
@@ -98,7 +97,7 @@ def registration_window_closed(
     registration = next((row for row in event.phases if row.phase == "registration"), None)
     if registration is None:
         return False
-    return _utc_naive(registration.ends_at) <= _utc_naive(now or datetime.now(timezone.utc))
+    return _utc_naive(registration.ends_at) <= _utc_naive(now or datetime.now(UTC))
 
 
 def get_phase_status(
@@ -118,7 +117,7 @@ def get_phase_status(
     if event is None or event.settings is None:
         return PhaseStatus("registration", CAPABILITIES["registration"])
 
-    current_time = _utc_naive(now or datetime.now(timezone.utc))
+    current_time = _utc_naive(now or datetime.now(UTC))
     settings = event.settings
     rows = sorted(
         (
@@ -153,7 +152,7 @@ def get_phase_status(
     ]
     next_transition = min(future_boundaries) if future_boundaries else None
     if next_transition is not None:
-        next_transition = next_transition.replace(tzinfo=timezone.utc)
+        next_transition = next_transition.replace(tzinfo=UTC)
     if active_phase is not None:
         capabilities = CAPABILITIES[active_phase]
     elif any(row.phase == "guess" and ends_at <= current_time for row, _, ends_at in rows):

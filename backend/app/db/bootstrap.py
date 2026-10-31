@@ -2,18 +2,17 @@ import json
 import logging
 from pathlib import Path
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.core.config import get_settings
 from app.core.security import OWNER_ROLE, USER_IDENTITIES, ensure_roles, hash_password
 from app.db.session import Base, engine
 from app.models import Event, EventSetting, User
-
 
 GUESS_CHART_METADATA_VERSION = 1
 logger = logging.getLogger(__name__)
