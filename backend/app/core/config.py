@@ -102,6 +102,22 @@ class Settings:
         return resolve_secure_cookies()
 
     @property
+    def sentry_dsn(self) -> str:
+        return os.getenv("SENTRY_DSN", "").strip()
+
+    @property
+    def sentry_environment(self) -> str:
+        return os.getenv("SENTRY_ENVIRONMENT", "").strip()
+
+    @property
+    def sentry_release(self) -> str:
+        return os.getenv("SENTRY_RELEASE", "").strip()
+
+    @property
+    def metrics_token(self) -> str:
+        return os.getenv("METRICS_TOKEN", "").strip()
+
+    @property
     def trusted_proxies(self) -> str:
         raw = os.getenv("TRUSTED_PROXIES")
         if raw is None or not raw.strip():
