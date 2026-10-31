@@ -12,7 +12,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
-sevenz-rust2 = "0.19"
+sevenz-rust2 = "0.24"
 
 [dev-dependencies]
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
