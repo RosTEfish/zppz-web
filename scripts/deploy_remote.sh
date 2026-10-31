@@ -479,7 +479,7 @@ elif install_unit_file "$worker_unit_candidate" "$worker_service_file" 2>/dev/nu
   worker_unit_created=1
   worker_service_mode="separate"
 else
-  echo "::warning::No passwordless permission to create $worker_service_file; running both submission Workers inside the Web service cgroup." >&2
+  echo "::warning::No passwordless permission to create $worker_service_file; running the submission Worker inside the Web service cgroup." >&2
 fi
 rm -f -- "$worker_unit_candidate"
 
@@ -584,10 +584,11 @@ if [ "$worker_service_mode" = "separate" ]; then
     exit 1
   fi
 fi
-# Anchor at the command end so app.worker_supervisor is not counted.
+# ser1 (~1.6G RAM) runs one submission worker. Anchor at the command end so
+# app.worker_supervisor is not counted.
 submission_workers="$(pgrep -u "$RUN_USER" -fc -- '-m app\.worker$' || true)"
-if [ "${submission_workers:-0}" -ne 2 ]; then
-  echo "Expected 2 submission workers, found ${submission_workers:-0}." >&2
+if [ "${submission_workers:-0}" -ne 1 ]; then
+  echo "Expected 1 submission worker, found ${submission_workers:-0}." >&2
   systemctl --no-pager --full status "$SERVICE_NAME" >&2 || true
   journalctl -u "$SERVICE_NAME" --no-pager -n 160 >&2 || true
   if [ "$worker_service_mode" = "separate" ]; then

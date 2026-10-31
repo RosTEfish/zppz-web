@@ -42,6 +42,7 @@
 - A successful local implementation is not complete if CI/CD cannot carry it to production automatically. Final verification for deployment-affecting work must include the relevant GitHub Actions commands and the ordering `verify -> upload -> prepare/migrate -> restart -> health check`.
 - Manual server commands may be documented only as recovery procedures, not as the normal deployment path.
 - The server systemd service is `zppz-web.service`. The worker unit, when installed, is `zppz-web-worker.service`.
+- Production runs one submission worker (`python -m app.worker`) plus `app.webhook_worker`. ser1 has about 1.6G RAM; do not start a second submission worker from `scripts/run_web_with_worker.sh` or `app.worker_supervisor`. Deploy asserts that count.
 - Optional observability is env-gated. `SENTRY_DSN` empty disables Sentry. `GET /api/v1/admin/metrics` is Prometheus text for an admin session or `METRICS_TOKEN` bearer. The cleanup submission worker logs `contest_signals` JSON. Values live in `$DEPLOY_PATH/.env` (default `/opt/zppz/.env`); do not put a DSN in git or the GitHub Actions storage env.
 - Service command:
   - `uvicorn app.main:app --host 127.0.0.1 --port 8000`

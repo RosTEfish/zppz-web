@@ -5,8 +5,9 @@ set -Eeuo pipefail
 : "${ZPPZ_APP_PORT:?ZPPZ_APP_PORT is required}"
 : "${ZPPZ_WEB_CONCURRENCY:?ZPPZ_WEB_CONCURRENCY is required}"
 
+# ser1 has about 1.6G RAM. One submission worker is the production count
+# (a second app.worker costs about 100M). webhook_worker stays as-is.
 worker_pid=""
-worker_pid_2=""
 webhook_worker_pid=""
 web_pid=""
 
@@ -18,9 +19,6 @@ stop_children() {
   if [ -n "$worker_pid" ]; then
     kill -TERM "$worker_pid" >/dev/null 2>&1 || true
   fi
-  if [ -n "$worker_pid_2" ]; then
-    kill -TERM "$worker_pid_2" >/dev/null 2>&1 || true
-  fi
   if [ -n "$webhook_worker_pid" ]; then
     kill -TERM "$webhook_worker_pid" >/dev/null 2>&1 || true
   fi
@@ -29,9 +27,6 @@ stop_children() {
   fi
   if [ -n "$worker_pid" ]; then
     wait "$worker_pid" >/dev/null 2>&1 || true
-  fi
-  if [ -n "$worker_pid_2" ]; then
-    wait "$worker_pid_2" >/dev/null 2>&1 || true
   fi
   if [ -n "$webhook_worker_pid" ]; then
     wait "$webhook_worker_pid" >/dev/null 2>&1 || true
@@ -50,8 +45,6 @@ trap 'stop_children; exit 143' TERM INT
 
 SUBMISSION_WORKER_CLEANUP=1 start_submission_worker
 worker_pid=$!
-SUBMISSION_WORKER_CLEANUP=0 start_submission_worker
-worker_pid_2=$!
 
 "$ZPPZ_PYTHON_BIN" -m app.webhook_worker &
 webhook_worker_pid=$!
@@ -66,7 +59,7 @@ web_pid=$!
 # Any process exiting is unhealthy. Stop its siblings and let systemd restart
 # the complete cgroup so a dead Worker can never go unnoticed.
 set +e
-wait -n "$worker_pid" "$worker_pid_2" "$webhook_worker_pid" "$web_pid"
+wait -n "$worker_pid" "$webhook_worker_pid" "$web_pid"
 status=$?
 set -e
 stop_children
