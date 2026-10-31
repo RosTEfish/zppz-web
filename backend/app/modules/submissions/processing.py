@@ -445,7 +445,7 @@ def _promote_submission(
     event: Event,
 ) -> tuple[Submission, str | None, str | None]:
     # Import locally to avoid coupling API route import order to the worker.
-    from app.modules.submissions.router import (
+    from app.modules.submissions.support import (
         _demote_existing_j_track,
         _eligible_song,
         _sync_and_commit,
