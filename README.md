@@ -57,6 +57,14 @@ docker compose up --build
 
 默认前端入口：`http://localhost:8080`
 
+API 与 worker 镜像以用户 `app`（uid/gid `1000`）运行。新建的 `zppz-data` 卷会继承镜像内 `/data` 的属主，四个后端服务共用该卷，因此都可以写入。若这个卷是以前以 root 运行的容器创建的，需要在更新镜像后一次性修正权限：
+
+```bash
+docker compose run --rm --no-deps --user root --entrypoint chown api -R 1000:1000 /data
+```
+
+生产环境的 systemd 部署（`scripts/deploy_remote.sh`）不运行该镜像。数据目录仍是部署用户拥有的 `$DEPLOY_PATH/data`（默认 `/opt/zppz/data`），不需要执行上面的 `chown`。
+
 ## 部署
 
 外部 Bot 的谱面发布/更新推送采用多接收方 Webhook；接入流程、签名和事件格式见 [Webhook 接入手册](docs/webhook-integration.md)。

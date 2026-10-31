@@ -295,6 +295,16 @@ def test_public_comments_hide_qq_and_roles(client: TestClient):
     _assert_public_person(listed.json()[0]["user"])
 
 
+def test_backend_image_runs_as_non_root():
+    dockerfile = (REPO_ROOT / "backend/Dockerfile").read_text(encoding="utf-8")
+    user_line = "\nUSER app\n"
+    assert user_line in dockerfile
+    assert dockerfile.rindex(user_line) < dockerfile.rindex("\nCMD ")
+    assert "useradd" in dockerfile and "--uid 1000" in dockerfile
+    assert "mkdir -p /data" in dockerfile
+    assert "chown -R app:app /app /data /home/app" in dockerfile
+
+
 def test_nginx_and_deploy_defaults_cover_production():
     nginx = (REPO_ROOT / "infra/nginx/default.conf").read_text(encoding="utf-8")
     headers = (REPO_ROOT / "infra/nginx/security-headers.conf").read_text(encoding="utf-8")
