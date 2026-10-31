@@ -1,0 +1,96 @@
+# Host nginx snippet for precompressed Vite assets.
+# 主机 Nginx 预压缩静态资源片段（给运维合并进现有 HTTPS 站点，不要整文件覆盖线上 vhost）。
+#
+# NOT loaded by the Docker image. frontend/Dockerfile copies default.conf only.
+# nginx:1.27-alpine has gzip_static and does not ship ngx_brotli. Enabling
+# brotli_static here before the module exists makes `nginx -t` fail.
+# Docker 镜像不会 include 本文件。官方镜像只有 gzip_static，没有 ngx_brotli。
+# 模块未安装时打开 brotli_static，`nginx -t` 会失败。
+#
+# Ops / 运维, after a deploy that ships frontend/dist/**/*.gz and *.br:
+# 1. Install ngx_brotli if `nginx -V` 2>&1 does not show ngx_http_brotli_static_module.
+#    Project: https://github.com/google/ngx_brotli
+#    Need ngx_http_brotli_static_module (precompressed .br). The filter module
+#    (ngx_http_brotli_filter_module) is optional and only for on-the-fly fallback.
+#    Stock distro nginx does not include these. Do not add zstd in this change.
+#    需要 static 模块才能发 .br。filter 模块只负责实时压缩，可选。不要加 zstd。
+#    Typical dynamic load, in the main nginx.conf outside http { }:
+#      load_module modules/ngx_http_brotli_static_module.so;
+#      # load_module modules/ngx_http_brotli_filter_module.so;
+# 2. Serve $DEPLOY_PATH/frontend/dist from disk (default /opt/zppz/frontend/dist).
+#    gzip_static and brotli_static only see files nginx itself opens. They do
+#    nothing for responses proxied from uvicorn on 127.0.0.1:8000.
+#    Keep /api/ and /health proxied. Hashed /assets/ can be try_files off disk.
+#    deploy_remote.sh chmod's frontend/ to a+x and frontend/dist to a+rX so the
+#    nginx user can read the tree even when the deploy umask is 077.
+#    静态文件必须由 Nginx 直接读磁盘。反代给 uvicorn 时这两个指令不会生效。
+# 3. Merge the directives below into the existing TLS server, `nginx -t`, reload
+#    after the release that contains the siblings (not before).
+# 4. Prefer Brotli when the client accepts it, otherwise gzip.
+#    ngx_brotli is documented to win when both static modules are on and the
+#    request sends Accept-Encoding: br. Some builds run gzip_static's content
+#    handler first, so a client that accepts both still gets gzip. If that
+#    happens, load ngx_http_brotli_static_module so its handler runs before
+#    gzip_static (a load_module line is usually last and therefore first to
+#    run), then reload and test again.
+#    curl -sI -H 'Accept-Encoding: br, gzip' https://www.przppz.club/assets/<file>.js
+#      -> Content-Encoding: br
+#    curl -sI -H 'Accept-Encoding: gzip' https://www.przppz.club/assets/<file>.js
+#      -> Content-Encoding: gzip
+#    Use brotli_static on; never always (always sends .br to clients that
+#    did not ask for br). Same for gzip_static: on, not always.
+#
+# .gz is gzip level 9 and .br is Brotli quality 11, written by
+# frontend/scripts/precompress-dist.mjs during CI verify (the artifact the
+# deploy job ships) and during the frontend image build.
+# 生产发布包里的 frontend/dist 在 CI 验证阶段就会带上 .gz 和 .br。
+
+# --- merge from here into the TLS server { } ---
+
+gzip on;
+gzip_vary on;
+gzip_comp_level 6;
+gzip_min_length 256;
+gzip_proxied any;
+gzip_types
+  application/javascript
+  application/json
+  application/manifest+json
+  application/xml
+  image/svg+xml
+  text/css
+  text/plain
+  text/xml;
+gzip_static on;
+
+# Requires ngx_http_brotli_static_module. Remove this line only if the module
+# cannot be installed; .gz via gzip_static still works as the fallback.
+# 未安装 ngx_brotli 之前不要启用下一行。只开 gzip_static 时仍可回退 .gz。
+brotli_static on;
+
+# Optional on-the-fly Brotli for files without a .br sibling. Requires the
+# filter module. Precompressed .br is already quality 11; do not raise
+# brotli_comp_level to 11 on the request path.
+# brotli on;
+# brotli_comp_level 6;
+# brotli_min_length 256;
+# brotli_types application/javascript application/json application/manifest+json application/wasm application/xml image/svg+xml text/css text/plain text/xml;
+
+# Example locations, adjusted to the real root and the existing proxy headers.
+# Hashed assets are immutable. index.html must stay revalidated.
+# API 继续反代本机 uvicorn，不要改成静态根目录。
+#
+#   root /opt/zppz/frontend/dist;
+#
+#   location /assets/ {
+#     try_files $uri =404;
+#     add_header Cache-Control "public, max-age=31536000, immutable" always;
+#   }
+#
+#   location /api/ {
+#     proxy_pass http://127.0.0.1:8000;
+#   }
+#
+#   location / {
+#     try_files $uri $uri/ /index.html;
+#   }

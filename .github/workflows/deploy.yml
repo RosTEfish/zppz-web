@@ -98,6 +98,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 5
 
+      # Same dist tree the deploy job uploads. Host nginx serves the .gz/.br
+      # siblings with gzip_static / brotli_static; see infra/nginx/precompressed.conf.sample.
+      - name: Precompress frontend assets
+        working-directory: frontend
+        run: npm run precompress
+
       - name: Verify backend
         working-directory: backend
         run: |
@@ -346,6 +352,15 @@ jobs:
           test -x backend/bin/zppz-chart-validate
           test -f frontend/dist/robots.txt
           test -f frontend/dist/llms.txt
+          test -s frontend/dist/index.html.gz
+          test -s frontend/dist/index.html.br
+          asset_js="$(find frontend/dist/assets -type f -name '*.js' -size +255c -print -quit)"
+          if [ -z "$asset_js" ]; then
+            echo "::error::frontend/dist/assets has no JavaScript file to precompress."
+            exit 1
+          fi
+          test -s "${asset_js}.gz"
+          test -s "${asset_js}.br"
           ban_workbook="$(find banlist -maxdepth 1 -type f -iname '*.xlsx' -print -quit)"
           if [ -z "$ban_workbook" ]; then
             echo "::error::No Ban-list workbook was included in the release."

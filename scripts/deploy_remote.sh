@@ -396,6 +396,15 @@ fi
 tar -C "$release_dir" --exclude='./static' -cf - . \
   | tar --no-same-owner --no-same-permissions --delay-directory-restore --touch -C "$app_dir" -xf -
 
+# Host nginx reads precompressed .gz/.br siblings from frontend/dist as a
+# different user. --no-same-permissions applies the deploy umask (often 077),
+# which would hide that tree. Traverse frontend/ without making the source
+# tree listable, and make dist world-readable.
+if [ -d "$app_dir/frontend/dist" ]; then
+  chmod a+x "$app_dir/frontend"
+  chmod -R a+rX "$app_dir/frontend/dist"
+fi
+
 "$PYTHON_BIN" -m venv "$venv_dir"
 
 pip_with_index() {

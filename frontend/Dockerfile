@@ -6,8 +6,7 @@ COPY frontend/package*.json ./
 RUN npm ci --registry "${NPM_CONFIG_REGISTRY}"
 COPY frontend ./
 RUN npm run build \
-  && find dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.svg' -o -name '*.json' -o -name '*.webmanifest' \) \
-    -exec gzip -9 -k {} \;
+  && npm run precompress
 
 FROM nginx:1.27-alpine
 COPY infra/nginx/default.conf /etc/nginx/conf.d/default.conf

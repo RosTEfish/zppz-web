@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "vite --configLoader runner --port=3000 --host=0.0.0.0",
     "build": "vite build --configLoader runner && npm run check:bundle",
+    "precompress": "node scripts/precompress-dist.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "generate:api": "node scripts/generate-api.mjs",
