@@ -47,7 +47,16 @@ cd frontend && npm install && npm test
 
 # 前端静态检查与构建
 cd frontend && npm run lint && npm run build
+
+# 浏览器冒烟（Playwright）。先构建前端，再安装浏览器。`npm run test:e2e` 等同 `npx playwright test`。
+cd frontend && npm install && npm run build && npx playwright install chromium && npm run test:e2e
 ```
+
+浏览器冒烟只打开首页、登录页，并用 `python -m app.prepare` 种下的管理员进入账号页。API 金路径仍在 `backend/tests/test_golden_paths.py`。MiaView 预览播放器不在这套测试里。
+
+`npm run test:e2e` 会运行 `scripts/e2e_server.sh`：在仓库根目录 `.e2e/` 里建临时 SQLite，执行 `prepare`，再由 FastAPI 托管已经构建的 `frontend/dist`，默认地址是 `http://127.0.0.1:8765`。不需要生产密钥或 R2。解释器优先用 `backend/.venv`，否则用 `python` 或 `python3`。Linux CI 用 `npx playwright install --with-deps chromium` 安装系统依赖。
+
+CI 每次新建数据库。本地如果 `http://127.0.0.1:8765/health` 已经可访问，Playwright 会复用该进程，不会重新执行 `prepare`。管理员默认是 `admin` / `e2e-admin-password`（只存在于冒烟库），可以用 `E2E_ADMIN_CODE`、`E2E_ADMIN_PASSWORD`、`E2E_PORT` 覆盖。
 
 ## Docker Compose
 
@@ -69,7 +78,7 @@ docker compose run --rm --no-deps --user root --entrypoint chown api -R 1000:100
 
 外部 Bot 的谱面发布/更新推送采用多接收方 Webhook；接入流程、签名和事件格式见 [Webhook 接入手册](docs/webhook-integration.md)。
 
-推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。Pull request 会跑同一套验证（后端 ruff、pytest 与 75% 行覆盖率门槛、Rust 测试、前端类型检查、测试、构建和包体预算），但不会部署；部署任务直接使用这次验证产出的前端 `dist` 和谱面校验器，不再第二次编译。`DEPLOY_PORT` 读取 Actions Variable，未配置时使用 22。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源、检查 R2 读写权限，然后重启 systemd 服务并执行健康检查。R2 检查或健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
+推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。Pull request 会跑同一套验证（后端 ruff、pytest 与 75% 行覆盖率门槛、Rust 测试、前端类型检查、测试、构建、包体预算，以及 Playwright 浏览器冒烟），但不会部署；部署任务直接使用这次验证产出的前端 `dist` 和谱面校验器，不再第二次编译。浏览器冒烟复用这次构建的 `frontend/dist`，并用临时 SQLite 起本地 API，不读取生产密钥。`DEPLOY_PORT` 读取 Actions Variable，未配置时使用 22。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源、检查 R2 读写权限，然后重启 systemd 服务并执行健康检查。R2 检查或健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
 
 生产部署要求在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
 
