@@ -39,15 +39,23 @@ def test_combined_launcher_starts_one_cleanup_submission_worker(tmp_path: Path) 
         start_new_session=True,
     )
     try:
+        # nice/ionice makes the submission worker reach the log later than uvicorn.
+        # Stop only after each child has logged, or the kill drops the worker line.
         deadline = time.monotonic() + 5
         text = ""
         while time.monotonic() < deadline:
             text = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-            if "-m uvicorn" in text:
+            lines = [line for line in text.splitlines() if line]
+            has_submission = any(line.startswith("-m app.worker ") for line in lines)
+            has_webhook = any(line.startswith("-m app.webhook_worker ") for line in lines)
+            has_uvicorn = any("-m uvicorn" in line for line in lines)
+            if has_submission and has_webhook and has_uvicorn:
                 break
             time.sleep(0.05)
         else:
-            raise AssertionError(f"launcher did not reach uvicorn: {text!r}")
+            raise AssertionError(
+                f"launcher did not start the submission worker, webhook worker, and uvicorn: {text!r}"
+            )
     finally:
         os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=5)
