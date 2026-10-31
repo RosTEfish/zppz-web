@@ -1,4 +1,25 @@
 import "@testing-library/jest-dom/vitest";
+
+class NoopEventSource {
+  onopen: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  constructor(_url: string) {}
+  addEventListener() {}
+  removeEventListener() {}
+  close() {}
+  dispatchEvent() {
+    return false;
+  }
+}
+
+if (typeof globalThis.EventSource === "undefined") {
+  Object.defineProperty(globalThis, "EventSource", {
+    configurable: true,
+    writable: true,
+    value: NoopEventSource,
+  });
+}
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { testServer } from "./testServer";
 

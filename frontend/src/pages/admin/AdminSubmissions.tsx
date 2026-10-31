@@ -25,7 +25,7 @@ export default function AdminSubmissions() {
   const trackKey = [...tracks].sort().join(",");
   const files = useApiResource(queryKeys.submissions.admin(trackKey, PAGE_SIZE, offset), () => api.adminSubmissions(tracks, PAGE_SIZE, offset));
   const jobs = useApiResource(queryKeys.submissions.adminJobs, api.adminSubmissionProcessingJobs, true, {
-    refreshInterval: (current) => current?.some((job) => job.status === "queued" || job.status === "processing") ? 3000 : 0,
+    refreshInterval: (current) => current?.some((job) => job.status === "queued" || job.status === "processing") ? 60_000 : 0,
     refreshWhenHidden: false,
   });
   const [selected, setSelected] = useState<Set<number>>(new Set());

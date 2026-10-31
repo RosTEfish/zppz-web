@@ -7,6 +7,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { ViewTransitionLink } from "./navigation/ViewTransitionLink";
 import { navigateWithViewTransition } from "./navigation/viewTransition";
 import { SWRConfig } from "swr";
+import { DomainEventsProvider } from "./realtime/DomainEventsProvider";
 import BrandLogo from "./components/BrandLogo";
 import { LoadingBlock } from "./components/PagePrimitives";
 import HomePageSkeleton from "./components/HomePageSkeleton";
@@ -140,19 +141,21 @@ function App() {
     <ThemeProvider theme={fallbackTheme}>
       <CssBaseline />
       <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, revalidateOnFocus: false }}>
-        <BrowserRouter>
-          <BootstrapProvider>
-            <AuthProvider>
-              <ConfigProvider>
-                <EventThemeProvider>
-                  <DeferredInteractionProviders>
-                    <AppShell />
-                  </DeferredInteractionProviders>
-                </EventThemeProvider>
-              </ConfigProvider>
-            </AuthProvider>
-          </BootstrapProvider>
-        </BrowserRouter>
+        <DomainEventsProvider>
+          <BrowserRouter>
+            <BootstrapProvider>
+              <AuthProvider>
+                <ConfigProvider>
+                  <EventThemeProvider>
+                    <DeferredInteractionProviders>
+                      <AppShell />
+                    </DeferredInteractionProviders>
+                  </EventThemeProvider>
+                </ConfigProvider>
+              </AuthProvider>
+            </BootstrapProvider>
+          </BrowserRouter>
+        </DomainEventsProvider>
       </SWRConfig>
     </ThemeProvider>
   );

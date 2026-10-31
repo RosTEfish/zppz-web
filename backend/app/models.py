@@ -724,6 +724,27 @@ class GuessAuthorCandidate(Base, TimestampMixin):
     user: Mapped[User] = relationship()
 
 
+class DomainEvent(Base):
+    """Durable fan-out row for site SSE.
+
+    API processes and workers share the database, including the production
+    SQLite deployment (``WEB_CONCURRENCY=1``) and the Compose Postgres deployment
+    (``WEB_CONCURRENCY=2``). Publishers insert a row in the same transaction as
+    the change. SSE handlers tail ``id``. Nothing here depends on LISTEN/NOTIFY
+    or Redis.
+    """
+
+    __tablename__ = "domain_events"
+    __table_args__ = (Index("ix_domain_events_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    topic: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    subject_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now_naive, nullable=False)
+
+
 class GuessAuthorGuess(Base, TimestampMixin):
     __tablename__ = "guess_author_guesses"
     __table_args__ = (UniqueConstraint("chart_id", "user_id", name="uq_author_guess_chart_user"),)

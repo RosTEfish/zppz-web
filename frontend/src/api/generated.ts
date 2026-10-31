@@ -1287,6 +1287,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Domain Events
+         * @description Tail contest, draw, guess, swap, and submission-job changes.
+         *
+         *     Anonymous clients receive public events (phase changes, guess state).
+         *     A presented session that is missing or expired is rejected. Logged-in
+         *     clients also receive authenticated events, and their own job events.
+         *     Admins receive every participant's job events.
+         */
+        get: operations["domain_events_api_v1_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events/current": {
         parameters: {
             query?: never;
@@ -5960,6 +5985,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventPhasesRead"];
+                };
+            };
+        };
+    };
+    domain_events_api_v1_events_get: {
+        parameters: {
+            query?: {
+                after?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent Events stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
