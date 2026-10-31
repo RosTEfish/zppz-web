@@ -36,7 +36,7 @@ from app.modules.downloads import DownloadEntry, prepare_streaming_zip
 from app.modules.submissions import processing as submission_processing
 from app.modules.submissions import service as submission_service
 from app.modules.submissions.processing import claim_next_job, process_job
-from app.modules.submissions.router import _complete_intent
+from app.modules.submissions.upload import _complete_intent
 
 
 def png_cover_bytes() -> bytes:
