@@ -124,8 +124,8 @@ def serialize_processing_jobs(
 
     The per-job payload touches the upload intent, the result submission (plus its
     source_song/user/roles) and the submission's PreviewBundle. Preloading all of those
-    in three IN-batched queries keeps the active-job poll (which runs every 3s) from
-    degrading to O(jobs) round trips.
+    in three IN-batched queries keeps job-list reads (SSE revalidation, plus a slow
+    safety poll while work is in flight) from degrading to O(jobs) round trips.
     """
     jobs = list(jobs)
     if not jobs:

@@ -50,3 +50,13 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def _install_realtime_outbox() -> None:
+    # Imported lazily so models can import Base while this module is still loading.
+    from app.modules.realtime.outbox import install_domain_event_hooks
+
+    install_domain_event_hooks()
+
+
+_install_realtime_outbox()

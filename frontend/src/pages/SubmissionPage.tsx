@@ -121,21 +121,16 @@ function SubmissionPageContent() {
   );
   const hasActiveJobs = activeJobIds.size > 0;
 
-  // Poll only the job list while work is in flight; the targets/submissions/availability
-  // views only change when a job actually finishes, so refreshing them here every 3s was
-  // wasted work (and re-rendered the whole grid).
+  // SSE revalidates this list as the worker advances the job. The minute interval
+  // only covers a missed event while work is still in flight.
   useEffect(() => {
     if (!hasActiveJobs) return;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
       void processingJobs.reload();
     };
-    const timer = window.setInterval(refresh, 3000);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
-    };
+    const timer = window.setInterval(refresh, 60_000);
+    return () => window.clearInterval(timer);
   }, [hasActiveJobs, processingJobs.reload]);
 
   // When any job transitions from active to terminal, refresh the data that depends on it.

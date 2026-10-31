@@ -7,6 +7,7 @@ import time
 
 from app.core.metrics import emit_contest_signals
 from app.core.observability import init_error_tracking
+from app.modules.realtime.outbox import prune_domain_events_if_due
 from app.modules.submissions.processing import cleanup_expired_upload_intents, process_next_job
 
 logging.basicConfig(
@@ -40,6 +41,7 @@ def main() -> int:
                 emit_contest_signals()
             except Exception:
                 logger.exception("contest signal snapshot failed")
+            prune_domain_events_if_due()
             cleanup_expired_upload_intents()
             next_cleanup = now + 60
         if not process_next_job():

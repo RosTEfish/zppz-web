@@ -26,6 +26,7 @@ from app.modules.guess_archive.router import router as guess_archive_router
 from app.modules.guess_game.router import admin_router as admin_guess_game_router
 from app.modules.guess_game.router import router as guess_game_router
 from app.modules.preview.router import router as preview_router
+from app.modules.realtime.router import router as realtime_router
 from app.modules.song_pool.router import admin_router as admin_song_pool_router
 from app.modules.song_pool.router import router as song_pool_router
 from app.modules.submissions.router import admin_router as admin_submissions_router
@@ -85,6 +86,9 @@ class CachedStaticFiles(StaticFiles):
 
 @app.middleware("http")
 async def log_slow_requests(request: Request, call_next):
+    # SSE stays open for the life of the tab; duration is not a slow request.
+    if request.url.path == f"{settings.api_prefix}/events":
+        return await call_next(request)
     started = perf_counter()
     status_code = 500
     try:
@@ -140,6 +144,7 @@ for router in (
     guess_archive_router,
     preview_router,
     webhooks_router,
+    realtime_router,
     admin_router,
     admin_events_router,
     users_router,

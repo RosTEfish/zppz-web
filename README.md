@@ -164,6 +164,8 @@ set +a
 
 批量投稿下载使用流式 ZIP，并通过 `X-Accel-Buffering: no` 禁止 Nginx 等待完整响应。生产环境的外部反向代理需要保留该响应头，且不能为下载接口强制开启响应缓冲。仓库内的 Docker Nginx 仅对下载路径关闭代理缓冲；普通 JSON API 保持缓冲，带哈希的前端资源使用长期缓存。
 
+全站实时更新走 `GET /api/v1/events`（`text/event-stream`）。Docker 镜像里的 Nginx 已对该路径关闭缓冲和 gzip，并把读超时设为 3600 秒。生产环境如果在 systemd 前面还有一层宿主机 Nginx，需要运维加上同样的 `location = /api/v1/events`，否则事件会被代理缓冲住。配置片段、事件格式，以及为什么用数据库 outbox 而不是 Redis / `LISTEN`，见 [docs/realtime-events.md](docs/realtime-events.md)。
+
 ## 开源许可证与赛事资源
 
 本项目代码以 **MIT 许可证** 开源，详见 [LICENSE](LICENSE)。
