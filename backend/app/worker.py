@@ -5,6 +5,8 @@ import os
 import signal
 import time
 
+from app.core.metrics import emit_contest_signals
+from app.core.observability import init_error_tracking
 from app.modules.submissions.processing import cleanup_expired_upload_intents, process_next_job
 
 
@@ -28,12 +30,17 @@ def _cleanup_enabled() -> bool:
 def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    init_error_tracking(capture_logged_errors=True)
     cleanup_enabled = _cleanup_enabled()
     logger.info("submission worker started (cleanup %s)", "enabled" if cleanup_enabled else "disabled")
     next_cleanup = 0.0
     while not _stopping:
         now = time.monotonic()
         if cleanup_enabled and now >= next_cleanup:
+            try:
+                emit_contest_signals()
+            except Exception:
+                logger.exception("contest signal snapshot failed")
             cleanup_expired_upload_intents()
             next_cleanup = now + 60
         if not process_next_job():

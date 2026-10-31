@@ -256,6 +256,19 @@ if ! grep -q '^TRUSTED_PROXIES=' "$env_file"; then
   printf '\nTRUSTED_PROXIES=127.0.0.1,::1\n' >> "$env_file"
   echo "Set TRUSTED_PROXIES=127.0.0.1,::1 in $env_file"
 fi
+# Optional observability. Empty values keep Sentry off and metrics on admin
+# sessions only. Never overwrite a DSN or token an operator already set.
+if ! grep -q '^SENTRY_DSN=' "$env_file"; then
+  printf '\n# Optional. Empty disables Sentry. Set the DSN on the server; do not commit it.\nSENTRY_DSN=\n' >> "$env_file"
+  echo "Added empty SENTRY_DSN to $env_file"
+fi
+if ! grep -q '^SENTRY_ENVIRONMENT=' "$env_file"; then
+  printf 'SENTRY_ENVIRONMENT=production\n' >> "$env_file"
+fi
+if ! grep -q '^METRICS_TOKEN=' "$env_file"; then
+  printf '# Optional bearer token for GET /api/v1/admin/metrics. Empty keeps admin session auth only.\nMETRICS_TOKEN=\n' >> "$env_file"
+  echo "Added empty METRICS_TOKEN to $env_file"
+fi
 
 # Older Docker-oriented configurations used /data, which is not writable for
 # the unprivileged user used by native systemd deployments. Keep the persistent

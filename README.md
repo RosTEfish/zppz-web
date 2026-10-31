@@ -88,6 +88,43 @@ docker compose run --rm --no-deps --user root --entrypoint chown api -R 1000:100
 
 部署流水线会通过单独的权限文件把 R2 配置合并进服务器持久 `.env`，配置文件不会进入发布包。生产环境固定使用 `OBJECT_STORAGE_BACKEND=r2`，不会在配置缺失或权限检查失败时回退到本地存储。
 
+### 可观测性
+
+生产进程由 systemd 以用户 `deploy` 运行，环境文件是 `$DEPLOY_PATH/.env`（默认 `/opt/zppz/.env`），API 监听 `127.0.0.1`。不需要 Grafana。Sentry 和指标 token 都是可选的：不填写时行为与现在一样，本地和 CI 也不会对外发送错误。
+
+下次部署会在这个文件里补上 `SENTRY_ENVIRONMENT=production`，以及空的 `SENTRY_DSN=` 和 `METRICS_TOKEN=`（已有值不会被覆盖）。在服务器上编辑后重启服务。worker 单独安装时是 `zppz-web-worker`，否则它和 API 在同一个 `zppz-web` 里：
+
+```bash
+sudo systemctl restart zppz-web
+sudo systemctl restart zppz-web-worker
+```
+
+第二条只在该单元存在时需要。不要把 DSN 或 token 放进 Git 或 GitHub Actions。
+
+**错误跟踪。** 设置 `SENTRY_DSN` 后，Web 进程上报未处理异常和直接返回的 HTTP 5xx；投稿 worker 与 webhook worker 上报它们记下来的错误。事件里带规范化路由、当前赛事阶段（`stage`）和数字用户 id（有登录态时）。查询字符串、Cookie、Authorization 以及 password/token/dsn 一类字段会在发送前去掉。`SENTRY_ENVIRONMENT` 默认 `production`。`SENTRY_RELEASE` 可选；留空时使用发布包根目录的 `REVISION`（git sha）。DSN 为空或初始化失败时，站点继续运行且不会发事件。
+
+**指标。** `GET /api/v1/admin/metrics` 返回 Prometheus 文本。管理员登录态可以访问；若设置了 `METRICS_TOKEN`，也可以用 `Authorization: Bearer <token>`。token 只放在请求头里，不要放在 URL 上。建议在服务器本机抓取，而不是把 token 暴露到公网：
+
+```bash
+curl -fsS -H "Authorization: Bearer $METRICS_TOKEN" http://127.0.0.1:8000/api/v1/admin/metrics
+```
+
+建议关注：
+
+- `zppz_submission_jobs`：`queued` 是等待中的投稿处理，`processing` 是已被 worker 认领的，`failed` 是终态失败（已被新任务取代的不计入）。
+- `zppz_webhook_deliveries`：`pending` 与 `retrying` 是积压，`delivering` 是正在投递，`failed` 是超过重试窗口的失败。
+- `zppz_webhook_endpoints{status="failing"}`：连续失败后被标成 failing 的接收方。
+- `zppz_contest_stage`：当前阶段，便于把告警和赛程对上。
+- `zppz_http_responses_total`：投稿（含管理端投稿）和 `POST/DELETE /guess-game/vote` 的 `5xx` 与 `other`。计数在 Web 进程重启后归零；SQLite 生产配置是 `WEB_CONCURRENCY=1`，多个 worker 时每个进程各有一份。
+
+**日志告警。** 负责清理的投稿 worker 每分钟打一行 `contest_signals` JSON，字段与上面的队列、webhook 积压一致。出现失败任务、失败投递或 failing 接收方时级别是 `WARNING`，否则是 `INFO`。
+
+```bash
+journalctl -u zppz-web-worker -u zppz-web -g contest_signals
+```
+
+运维可以先接这两处，而不必上监控栈：Sentry 里对新 issue 告警；对 `contest_signals` 的 `WARNING`，或对 `zppz_submission_jobs{status="failed"}`、`zppz_webhook_deliveries{status="failed"}`、`zppz_webhook_endpoints{status="failing"}` 大于 0 告警。投稿高峰时 `queued` 短时间大于 0 是正常的，适合看它是否持续升高，而不是一出现就 paging。
+
 ### R2 存储桶要求
 
 - 使用私有 Standard 存储桶，不开启 `r2.dev` 公共访问。

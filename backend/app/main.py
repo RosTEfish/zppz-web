@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
+from app.core.observability import init_error_tracking, observe_server_errors
 from app.db.bootstrap import check_schema_current
 from app.modules.admin.router import router as admin_router
 from app.modules.assets.router import router as assets_router
@@ -48,6 +49,7 @@ CANONICAL_HOST = "www.przppz.club"
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    init_error_tracking()
     settings.validate_preview()
     settings.validate_webhooks()
     check_schema_current()
@@ -102,6 +104,11 @@ async def log_slow_requests(request: Request, call_next):
                 status_code,
                 elapsed_ms,
             )
+
+
+@app.middleware("http")
+async def observe_errors(request: Request, call_next):
+    return await observe_server_errors(request, call_next)
 
 
 @app.middleware("http")

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.metrics import collect_contest_signals, render_prometheus, require_metrics_access
 from app.core.security import clear_session_cookie, require_role
 from app.db.session import get_db
 from app.models import DrawAssignment, GuessChart, Song, Submission, User
@@ -49,3 +51,16 @@ def admin_dashboard(_: User = Depends(require_role("admin", "pool_editor")), db:
         "submissions": int(counts[3] or 0),
         "guess_charts": int(counts[4] or 0),
     }
+
+
+class PrometheusTextResponse(PlainTextResponse):
+    media_type = "text/plain; version=0.0.4; charset=utf-8"
+
+
+@router.get("/metrics", response_class=PrometheusTextResponse)
+def admin_metrics(request: Request, db: Session = Depends(get_db)) -> PrometheusTextResponse:
+    require_metrics_access(request, db)
+    return PrometheusTextResponse(
+        render_prometheus(collect_contest_signals(db)),
+        headers={"Cache-Control": "no-store"},
+    )

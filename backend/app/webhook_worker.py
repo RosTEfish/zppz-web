@@ -5,6 +5,7 @@ import signal
 import time
 
 from app.core.config import get_settings
+from app.core.observability import init_error_tracking
 from app.modules.webhooks.service import cleanup_expired_assets, materialize_publication_events, process_next_delivery
 
 
@@ -21,6 +22,7 @@ def _stop(_signum, _frame) -> None:
 def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    init_error_tracking(capture_logged_errors=True)
     logger.info("webhook worker started")
     next_scan = 0.0
     next_cleanup = 0.0

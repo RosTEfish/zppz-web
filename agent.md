@@ -37,7 +37,8 @@
 - Keep deployment preparation non-interactive and idempotent. GitHub Actions should validate the full Alembic chain on a fresh temporary database and execute `python -m app.prepare` twice so repeated automatic deployments remain safe.
 - A successful local implementation is not complete if CI/CD cannot carry it to production automatically. Final verification for deployment-affecting work must include the relevant GitHub Actions commands and the ordering `verify -> upload -> prepare/migrate -> restart -> health check`.
 - Manual server commands may be documented only as recovery procedures, not as the normal deployment path.
-- The server systemd service is `zppz-web.service`.
+- The server systemd service is `zppz-web.service`. The worker unit, when installed, is `zppz-web-worker.service`.
+- Optional observability is env-gated. `SENTRY_DSN` empty disables Sentry. `GET /api/v1/admin/metrics` is Prometheus text for an admin session or `METRICS_TOKEN` bearer. The cleanup submission worker logs `contest_signals` JSON. Values live in `$DEPLOY_PATH/.env` (default `/opt/zppz/.env`); do not put a DSN in git or the GitHub Actions storage env.
 - Service command:
   - `uvicorn app.main:app --host 127.0.0.1 --port 8000`
 - If deploy reports port `8000` already in use, inspect stale `uvicorn app.main:app` processes on the server before restarting.
