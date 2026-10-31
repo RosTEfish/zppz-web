@@ -2,15 +2,14 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.security import get_optional_user, user_payload
 from app.core.cache import ANONYMOUS_BOOTSTRAP_CACHE_CONTROL
+from app.core.security import get_optional_user, user_payload
 from app.db.session import get_db
 from app.models import GuessChart, User
 from app.modules.assets.backgrounds import list_background_assets
-from app.modules.events.service import get_current_event, get_phase_schedule
 from app.modules.events.phase_policy import apply_chart_visibility_filter, get_phase_status
+from app.modules.events.service import get_current_event, get_phase_schedule
 from app.schemas import BootstrapRead
-
 
 router = APIRouter(tags=["bootstrap"])
 

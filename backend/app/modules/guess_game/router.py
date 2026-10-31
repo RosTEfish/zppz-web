@@ -10,8 +10,8 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
-from app.core.config import get_settings
 from app.core.cache import ANONYMOUS_BOOTSTRAP_CACHE_CONTROL, set_public_api_cache
+from app.core.config import get_settings
 from app.core.security import get_current_user, get_optional_user, public_user_payload, require_role, user_payload
 from app.db.session import get_db
 from app.models import (
@@ -35,8 +35,13 @@ from app.modules.downloads import (
     prepare_streaming_zip,
     safe_download_name,
 )
+from app.modules.events.phase_policy import (
+    ALWAYS_PUBLIC_CHART_SOURCE_TYPES,
+    apply_chart_visibility_filter,
+    get_phase_status,
+    is_chart_public,
+)
 from app.modules.events.service import get_current_event
-from app.modules.events.phase_policy import ALWAYS_PUBLIC_CHART_SOURCE_TYPES, apply_chart_visibility_filter, get_phase_status, is_chart_public
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     delete_cover_paths,
@@ -60,21 +65,20 @@ from app.modules.object_storage import get_object_store
 from app.modules.preview.service import build_preview_bundle, commit_preview_nonfatal, delete_preview_bundle
 from app.modules.submissions.service import absolute_storage_path, delete_stored_file, save_upload
 from app.schemas import (
+    AdminGuessChartRead,
     AuthorCandidatesUpdate,
     AuthorGuessRequest,
     BatchDeleteRequest,
     BatchDeleteResponse,
     CommentCreate,
     DownloadPreparation,
-    GuessChartCreate,
-    PublicGuessChartRead,
-    AdminGuessChartRead,
-    GuessCommentRead,
     GuessAvailabilityRead,
+    GuessChartCreate,
+    GuessCommentRead,
     LoveVoteQuotaRead,
+    PublicGuessChartRead,
     VoteRequest,
 )
-
 
 router = APIRouter(prefix="/guess-game", tags=["guess-game"])
 admin_router = APIRouter(prefix="/admin/guess-game", tags=["admin-guess-game"])
@@ -139,7 +143,7 @@ def _public_chart_payloads(
         user_id,
         include_designer=True,
     )
-    for payload, chart in zip(payloads, rows):
+    for payload, chart in zip(payloads, rows, strict=False):
         payload.update(
             {
                 # Vote totals stay admin-only during the guess phase.

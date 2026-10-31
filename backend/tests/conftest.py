@@ -1,11 +1,10 @@
 import atexit
 import os
-from pathlib import Path
 import shutil
 import tempfile
+from pathlib import Path
 
 import pytest
-
 
 TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="zppz-tests-"))
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"

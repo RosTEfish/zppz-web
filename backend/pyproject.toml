@@ -1,7 +1,45 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+src = ["."]
 
 [tool.ruff.lint]
-select = ["F401", "F841"]
+# F keeps the previous F401/F841 checks and the rest of Pyflakes.
+# E501 stays ignored: 145 existing lines already exceed 120, and wrapping them
+# is a formatting pass, not a hardening pass. The line-length above is still
+# the editor hint.
+# S101 stays ignored: tests are assert-based (~1500 hits) and a few production
+# asserts are type-narrowing invariants. Rewriting those changes the exception
+# type under python -O, which is out of scope here.
+select = ["F", "E", "I", "B", "UP", "S"]
+ignore = ["E501", "S101"]
 
+[tool.ruff.lint.per-file-ignores]
+# Fixture passwords, temp paths, and assert-style checks. S101 is already global.
+"tests/**" = ["S105", "S106", "S107", "S108"]
+# Migration SQL interpolates schema-inspection flags and int() ids, not request input.
+"alembic/versions/0002_submission_targets.py" = ["S608"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency defaults are evaluated per request, not at import time.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "app.core.security.require_role",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = false
+
+[tool.coverage.report]
+# Measured with frontend/dist present, which is how CI runs pytest:
+# 77.20% line coverage of app/ (250 passed, 9 skipped). The floor sits
+# two points under that baseline so small additions do not fail the build.
+fail_under = 75
+show_missing = true
+skip_covered = true
+precision = 0

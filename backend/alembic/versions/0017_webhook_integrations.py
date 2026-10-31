@@ -4,9 +4,9 @@ Revision ID: 0017_webhook_integrations
 Revises: 0016_submission_processing_jobs
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0017_webhook_integrations"
 down_revision = "0016_submission_processing_jobs"

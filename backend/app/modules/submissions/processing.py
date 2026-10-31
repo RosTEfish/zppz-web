@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
-from datetime import datetime, timedelta
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
@@ -46,7 +46,6 @@ from app.modules.submissions.service import (
     drain_storage_deletions,
     enqueue_storage_deletion,
 )
-
 
 logger = logging.getLogger(__name__)
 LEASE_SECONDS = 20 * 60

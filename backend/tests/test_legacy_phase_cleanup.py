@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
+import sqlalchemy as sa
+from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from alembic import command
 from alembic.config import Config
-import pytest
-from fastapi.testclient import TestClient
-import sqlalchemy as sa
-from sqlalchemy import select
-
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event
-
 
 LEGACY_PHASE_FIELDS = {
     "registration_deadline",
@@ -228,7 +227,7 @@ def test_0009_sqlite_upgrade_maps_legacy_state_and_preserves_phase_managed_event
     database_url = f"sqlite:///{(tmp_path / 'legacy.db').as_posix()}"
     _create_0008_legacy_schema(database_url)
     legacy_engine = sa.create_engine(database_url)
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     rows = [
         # Legacy submission-open takes precedence over an elapsed guess timestamp.
         (1, "auto", None, True, now - timedelta(days=1)),
@@ -321,7 +320,7 @@ def test_0010_sqlite_upgrade_removes_retired_phases_and_releases_manual_override
     database_url = f"sqlite:///{(tmp_path / 'retired-phases.db').as_posix()}"
     _create_0009_phase_schema(database_url)
     legacy_engine = sa.create_engine(database_url)
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     with legacy_engine.begin() as connection:
         for event_id, mode, manual_phase in (
             (1, "manual", "reveal"),

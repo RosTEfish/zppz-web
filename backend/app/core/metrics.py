@@ -16,7 +16,6 @@ from app.db.session import SessionLocal
 from app.models import SubmissionProcessingJob, WebhookDelivery, WebhookEndpoint
 from app.modules.events.phase_policy import get_phase_status
 
-
 logger = logging.getLogger("app.observability")
 
 JOB_STATUSES = ("queued", "processing", "failed")
@@ -66,9 +65,9 @@ def record_http_response(path: str, status_code: int) -> None:
 def _grouped_counts(db: Session, column, statuses: tuple[str, ...], *filters) -> dict[str, int]:
     found = {status: 0 for status in statuses}
     rows = db.execute(select(column, func.count()).where(column.in_(statuses), *filters).group_by(column)).all()
-    for status, count in rows:
-        if status in found:
-            found[str(status)] = int(count)
+    for label, count in rows:
+        if label in found:
+            found[str(label)] = int(count)
     return found
 
 

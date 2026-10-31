@@ -5,9 +5,9 @@ Revises: 0007_performance_indexes
 Create Date: 2026-07-13
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0008_split_love_vote_quota"
 down_revision = "0007_performance_indexes"

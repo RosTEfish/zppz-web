@@ -5,9 +5,9 @@ Revises: 0018_webhook_scan_watermark
 Create Date: 2026-09-25
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0019_submission_has_readme"
 down_revision = "0018_webhook_scan_watermark"

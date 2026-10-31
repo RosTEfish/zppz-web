@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
 import unicodedata
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Event, GuessChart, GuessVote
 from app.modules.events.service import get_current_event
-
 
 LoveVoteBucket = Literal["below_14", "at_least_14"]
 LOVE_VOTE_BUCKETS: tuple[LoveVoteBucket, ...] = ("below_14", "at_least_14")

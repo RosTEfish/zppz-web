@@ -11,7 +11,6 @@ from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import get_current_event
 from app.schemas import AdminDrawAssignmentRead, DrawAssignmentRead
 
-
 router = APIRouter(prefix="/draw", tags=["draw"])
 admin_router = APIRouter(prefix="/admin/draw", tags=["admin-draw"])
 

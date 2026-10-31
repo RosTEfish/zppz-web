@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from time import perf_counter
 
@@ -25,9 +25,9 @@ from app.modules.events.router import router as events_router
 from app.modules.guess_archive.router import router as guess_archive_router
 from app.modules.guess_game.router import admin_router as admin_guess_game_router
 from app.modules.guess_game.router import router as guess_game_router
+from app.modules.preview.router import router as preview_router
 from app.modules.song_pool.router import admin_router as admin_song_pool_router
 from app.modules.song_pool.router import router as song_pool_router
-from app.modules.preview.router import router as preview_router
 from app.modules.submissions.router import admin_router as admin_submissions_router
 from app.modules.submissions.router import router as submissions_router
 from app.modules.swap.router import admin_router as admin_swap_router
@@ -35,7 +35,6 @@ from app.modules.swap.router import router as swap_router
 from app.modules.users.router import router as users_router
 from app.modules.webhooks.router import admin_router as admin_webhooks_router
 from app.modules.webhooks.router import router as webhooks_router
-
 
 settings = get_settings()
 logger = logging.getLogger("app.requests")

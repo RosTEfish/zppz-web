@@ -1,11 +1,12 @@
-from datetime import datetime, timedelta
 import json
 import shutil
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
@@ -31,7 +32,6 @@ from app.models import (
     User,
     UserSession,
 )
-from app.core.config import get_settings
 
 
 @pytest.fixture(autouse=True)

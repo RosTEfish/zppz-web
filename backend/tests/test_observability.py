@@ -1,7 +1,7 @@
 import asyncio
-from datetime import datetime
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -23,7 +23,6 @@ from app.models import (
     WebhookEvent,
     WebhookIntegration,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

@@ -11,10 +11,9 @@ from app.db.session import get_db
 from app.models import Song, Submission, User
 from app.modules.banlist.service import enforce_song_allowed
 from app.modules.common import serialize_song
-from app.modules.events.service import assert_song_limit, get_current_event
 from app.modules.events.phase_policy import get_phase_status
+from app.modules.events.service import assert_song_limit, get_current_event
 from app.schemas import AdminSongRead, BatchDeleteRequest, BatchDeleteResponse, SongCreate, SongRead
-
 
 router = APIRouter(prefix="/song-pool", tags=["song-pool"])
 admin_router = APIRouter(prefix="/admin/song-pool", tags=["admin-song-pool"])

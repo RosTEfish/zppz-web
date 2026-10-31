@@ -1,12 +1,12 @@
-from io import BytesIO
-from pathlib import Path
 import os
 import re
 import shutil
+from io import BytesIO
+from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-import pytest
 import py7zr
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
@@ -15,7 +15,18 @@ from app.core.config import get_settings
 from app.db.bootstrap import backfill_guess_chart_metadata, seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, GuessAuthorCandidate, GuessAuthorGuess, GuessChart, GuessComment, GuessVote, ImportIssue, Song, Submission, User
+from app.models import (
+    Event,
+    GuessAuthorCandidate,
+    GuessAuthorGuess,
+    GuessChart,
+    GuessComment,
+    GuessVote,
+    ImportIssue,
+    Song,
+    Submission,
+    User,
+)
 from app.modules.guess_game.importer import (
     ArchiveParseError,
     cover_thumbnail_path,

@@ -33,7 +33,6 @@ from app.schemas import (
     WebhookTestRead,
 )
 
-
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 admin_router = APIRouter(prefix="/admin/webhook-integrations", tags=["admin-webhook-integrations"])
 

@@ -13,7 +13,6 @@ from app.modules.assets.backgrounds import BACKGROUND_CACHE_HEADERS, backgrounds
 from app.modules.events.phase_policy import get_phase_status
 from app.modules.events.service import get_current_event
 
-
 router = APIRouter(prefix="/assets", tags=["assets"])
 DOWNLOAD_CACHE_HEADERS = {"Cache-Control": "public, max-age=300", "Content-Encoding": "identity"}
 RULE_CACHE_HEADERS = {"Cache-Control": "no-cache", "Content-Encoding": "identity"}

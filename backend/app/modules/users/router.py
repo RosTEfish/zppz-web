@@ -2,11 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import OWNER_ROLE, USER_IDENTITIES, ensure_roles, hash_password, is_owner, require_role, sync_identity_role, user_payload
+from app.core.security import (
+    OWNER_ROLE,
+    USER_IDENTITIES,
+    ensure_roles,
+    hash_password,
+    is_owner,
+    require_role,
+    sync_identity_role,
+    user_payload,
+)
 from app.db.session import get_db
 from app.models import Role, User, UserSession
 from app.schemas import AdminUserUpdate, ResetPasswordRequest, UserRead
-
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 

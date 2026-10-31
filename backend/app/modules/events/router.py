@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
-from app.core.security import require_role
 from app.core.cache import set_public_api_cache
+from app.core.security import require_role
 from app.db.session import get_db
 from app.models import User
 from app.modules.events.service import (
@@ -20,7 +20,6 @@ from app.schemas import (
     EventRotateResponse,
     EventUpdate,
 )
-
 
 router = APIRouter(tags=["events"])
 admin_router = APIRouter(tags=["admin-events"])

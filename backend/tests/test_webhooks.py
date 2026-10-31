@@ -3,6 +3,7 @@ import shutil
 from datetime import datetime, timedelta
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
@@ -247,7 +248,9 @@ def test_delivery_signs_raw_body_and_retries_server_errors(client: TestClient, m
 
 def test_callback_validation_rejects_private_and_non_https(monkeypatch):
     monkeypatch.setattr(webhook_service.socket, "getaddrinfo", lambda *args, **kwargs: [(None, None, None, None, ("127.0.0.1", 443))])
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException) as private_host:
         webhook_service.validate_callback_url("https://bot.example.com/webhooks")
-    with pytest.raises(Exception):
+    assert private_host.value.status_code == 422
+    with pytest.raises(HTTPException) as insecure:
         webhook_service.validate_callback_url("http://bot.example.com/webhooks")
+    assert insecure.value.status_code == 422

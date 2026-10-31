@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import logging
-from pathlib import Path
 import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
@@ -14,12 +14,13 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import ADMIN_ROLE, OWNER_ROLE
 from app.models import (
+    AdminGuessArchive,
+    ChartPublicationState,
     DrawAssignment,
     Event,
     EventPhase,
     EventPhaseSnapshot,
     EventSetting,
-    AdminGuessArchive,
     GuessAuthorCandidate,
     GuessAuthorGuess,
     GuessChart,
@@ -33,20 +34,18 @@ from app.models import (
     Submission,
     SubmissionProcessingJob,
     SubmissionUploadIntent,
+    SwapExcludedSong,
     SwapRequest,
     SwapRequestItem,
     SwapRound,
-    SwapExcludedSong,
     User,
     UserRole,
     UserSession,
-    ChartPublicationState,
     WebhookDelivery,
     WebhookEvent,
     WebhookEventAsset,
 )
 from app.modules.submissions.service import drain_storage_deletions, enqueue_storage_deletion
-
 
 logger = logging.getLogger(__name__)
 RESET_LOCK = RLock()

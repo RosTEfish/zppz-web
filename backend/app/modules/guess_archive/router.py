@@ -29,7 +29,6 @@ from app.modules.preview.router import _prepare_manifest
 from app.modules.submissions.service import absolute_storage_path
 from app.schemas import ArchiveEditionRead, ArchiveGuessChartRead, DownloadPreparation, PreviewManifestRead
 
-
 router = APIRouter(prefix="/guess-archive", tags=["guess-archive"])
 
 COVER_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable", "Content-Encoding": "identity"}
@@ -139,7 +138,7 @@ def _archive_payloads(db: Session, charts: list[GuessChart]) -> list[dict]:
     ) if admin_ids else set()
     payloads = serialize_charts(db, charts, include_designer=True)
     preview_enabled = get_settings().preview_enabled
-    for payload, chart in zip(payloads, charts):
+    for payload, chart in zip(payloads, charts, strict=False):
         stem = Path(chart.cover_path).stem if chart.cover_path else ""
         can_download = False
         if chart.source_submission_type == "admin":

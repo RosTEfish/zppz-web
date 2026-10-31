@@ -5,10 +5,11 @@ Revises: 0008_split_love_vote_quota
 Create Date: 2026-07-13
 """
 
-from alembic import op
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0009_remove_legacy_phase_settings"
 down_revision = "0008_split_love_vote_quota"
@@ -52,7 +53,7 @@ def upgrade() -> None:
         )
         phases = sa.table("event_phases", sa.column("event_id", sa.Integer()))
         no_schedule = ~sa.exists(sa.select(1).where(phases.c.event_id == settings.c.event_id))
-        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
         migrated_phase = sa.case(
             (settings.c.submissions_open.is_(True), "submission_1"),
             (

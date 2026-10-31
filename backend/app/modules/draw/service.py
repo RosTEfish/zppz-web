@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import random
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
@@ -12,7 +12,6 @@ from app.core.security import SONG_POOL_IDENTITIES
 from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, User
 from app.modules.events.phase_policy import SUBMISSION_PHASES, get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
-
 
 DRAW_RETRY_ATTEMPTS = 3
 DRAW_RETRY_DELAY_SECONDS = 0.04
@@ -131,7 +130,7 @@ def _run_global_draw_once(db: Session, *, allow_redraw: bool) -> list[DrawAssign
     if len(songs) < len(slots):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="曲池曲目数量不足，无法完成全局分配")
 
-    randomizer = random.Random()
+    randomizer = random.SystemRandom()
     available_ids = [song.id for song in songs]
     song_by_id = {song.id: song for song in songs}
     candidates: dict[int, list[int]] = {}
@@ -321,4 +320,4 @@ def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssign
 def _utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)

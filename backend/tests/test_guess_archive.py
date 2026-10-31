@@ -1,10 +1,10 @@
+import shutil
 from io import BytesIO
 from pathlib import Path
-import shutil
 from zipfile import ZipFile
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core.config import get_settings

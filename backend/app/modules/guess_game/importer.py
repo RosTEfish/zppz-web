@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from io import BytesIO
-from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
+import warnings
+from dataclasses import dataclass, field
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from threading import Lock
-import warnings
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from mutagen import File as MutagenFile
 from PIL import Image, UnidentifiedImageError
-
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -431,7 +430,7 @@ def _copy_stream(source, destination, *, max_bytes: int | None = None, label: st
 def _write_formatted_maidata(destination: ZipFile, payload: bytes) -> None:
     try:
         payload = format_maidata_bytes(payload)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     with destination.open("maidata.txt", "w") as output_file:
         output_file.write(payload)

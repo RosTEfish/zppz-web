@@ -1,12 +1,12 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
 
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app

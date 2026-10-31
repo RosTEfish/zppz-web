@@ -5,9 +5,9 @@ Revises: 0009_remove_legacy_phase_settings
 Create Date: 2026-07-15
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0010_remove_reveal_closed_phases"
 down_revision = "0009_remove_legacy_phase_settings"

@@ -1,9 +1,9 @@
 import asyncio
+import re
+import shutil
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-import re
-import shutil
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import pytest
@@ -16,10 +16,24 @@ from app.core.config import get_settings
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
-from app.models import DrawAssignment, Event, GuessChart, GuessComment, GuessVote, ImportIssue, PreviewBundle, Song, StorageDeletion, Submission, SubmissionProcessingJob, SubmissionUploadIntent, User
+from app.models import (
+    DrawAssignment,
+    Event,
+    GuessChart,
+    GuessComment,
+    GuessVote,
+    ImportIssue,
+    PreviewBundle,
+    Song,
+    StorageDeletion,
+    Submission,
+    SubmissionProcessingJob,
+    SubmissionUploadIntent,
+    User,
+)
 from app.modules.downloads import DownloadEntry, prepare_streaming_zip
-from app.modules.submissions import service as submission_service
 from app.modules.submissions import processing as submission_processing
+from app.modules.submissions import service as submission_service
 from app.modules.submissions.processing import claim_next_job, process_job
 from app.modules.submissions.router import _complete_intent
 

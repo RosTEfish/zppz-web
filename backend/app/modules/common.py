@@ -221,7 +221,7 @@ def serialize_charts(
         for chart in charts
     ]
     if get_settings().preview_enabled:
-        for payload, chart in zip(payloads, charts):
+        for payload, chart in zip(payloads, charts, strict=False):
             payload["can_preview"] = (
                 chart.source_submission_id is not None
                 and (

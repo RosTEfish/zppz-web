@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -122,7 +122,7 @@ def create_chart_pair() -> tuple[int, int]:
 
 
 def test_phase_policy_auto_boundaries_and_manual_override():
-    now = datetime(2026, 7, 13, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 13, 4, tzinfo=UTC)
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         assert event and event.settings
@@ -217,7 +217,7 @@ def test_submission_buffer_capabilities_and_public_interactions(client: TestClie
 
 def test_phase_schedule_is_idempotent_and_restore_auto_is_always_available(client: TestClient):
     login(client, "admin", "change-me-please")
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     windows = [
         {
             "phase": "registration",
@@ -263,7 +263,7 @@ def test_phase_schedule_is_idempotent_and_restore_auto_is_always_available(clien
 @pytest.mark.parametrize("removed_phase", ["reveal", "closed", "draw", "swap"])
 def test_phase_schedule_rejects_removed_phase_names(client: TestClient, removed_phase: str):
     login(client, "admin", "change-me-please")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     response = client.put(
         "/api/v1/admin/event/phases",
         json={

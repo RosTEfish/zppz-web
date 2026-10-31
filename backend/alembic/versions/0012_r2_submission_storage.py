@@ -5,9 +5,9 @@ Revises: 0011_banlist
 Create Date: 2026-07-17
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0012_r2_submission_storage"
 down_revision = "0011_banlist"

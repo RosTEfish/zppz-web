@@ -1,7 +1,7 @@
-from pathlib import Path
 import filecmp
 import logging
 import shutil
+from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
@@ -11,7 +11,6 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.models import StorageDeletion
 from app.modules.object_storage import get_object_store
-
 
 ARCHIVE_CONTENT_TYPES = {
     ".zip": "application/zip",

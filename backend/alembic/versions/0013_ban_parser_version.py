@@ -5,9 +5,9 @@ Revises: 0012_r2_submission_storage
 Create Date: 2026-07-17
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0013_ban_parser_version"
 down_revision = "0012_r2_submission_storage"

@@ -21,8 +21,14 @@ from app.modules.banlist.service import (
     serialize_import,
     serialize_preview,
 )
-from app.schemas import BanAliasCreate, BanCheckRequest, BanCheckResponse, BanImportPreview, BanImportRead, BanSearchResponse
-
+from app.schemas import (
+    BanAliasCreate,
+    BanCheckRequest,
+    BanCheckResponse,
+    BanImportPreview,
+    BanImportRead,
+    BanSearchResponse,
+)
 
 router = APIRouter(prefix="/banlist", tags=["banlist"])
 admin_router = APIRouter(prefix="/admin/banlist", tags=["admin-banlist"])

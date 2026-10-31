@@ -20,7 +20,6 @@ from app.modules.preview.service import (
 )
 from app.schemas import PreviewManifestRead
 
-
 router = APIRouter(tags=["preview"])
 
 
@@ -206,7 +205,7 @@ def local_preview_asset(signed_token: str) -> FileResponse:
         if not path.is_file():
             raise FileNotFoundError
     except (FileNotFoundError, ValueError):
-        raise HTTPException(status_code=404, detail="资源不存在")
+        raise HTTPException(status_code=404, detail="资源不存在") from None
     return FileResponse(
         path,
         media_type=mime,

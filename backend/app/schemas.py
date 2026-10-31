@@ -1,8 +1,7 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-
 
 EventPhaseName = Literal[
     "registration",
@@ -172,8 +171,8 @@ class EventPhaseWrite(BaseModel):
 
     @model_validator(mode="after")
     def validate_window(self):
-        starts_at = self.starts_at if self.starts_at.tzinfo is None else self.starts_at.astimezone(timezone.utc).replace(tzinfo=None)
-        ends_at = self.ends_at if self.ends_at.tzinfo is None else self.ends_at.astimezone(timezone.utc).replace(tzinfo=None)
+        starts_at = self.starts_at if self.starts_at.tzinfo is None else self.starts_at.astimezone(UTC).replace(tzinfo=None)
+        ends_at = self.ends_at if self.ends_at.tzinfo is None else self.ends_at.astimezone(UTC).replace(tzinfo=None)
         if starts_at >= ends_at:
             raise ValueError("starts_at must be earlier than ends_at")
         return self

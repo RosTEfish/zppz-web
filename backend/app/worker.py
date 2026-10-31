@@ -9,7 +9,6 @@ from app.core.metrics import emit_contest_signals
 from app.core.observability import init_error_tracking
 from app.modules.submissions.processing import cleanup_expired_upload_intents, process_next_job
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",

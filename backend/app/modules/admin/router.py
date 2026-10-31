@@ -7,10 +7,9 @@ from app.core.metrics import collect_contest_signals, render_prometheus, require
 from app.core.security import clear_session_cookie, require_role
 from app.db.session import get_db
 from app.models import DrawAssignment, GuessChart, Song, Submission, User
-from app.modules.events.service import get_current_event
 from app.modules.admin.service import RESET_CONFIRMATION, reset_all_data
+from app.modules.events.service import get_current_event
 from app.schemas import AdminResetRequest, AdminResetResponse
-
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

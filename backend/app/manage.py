@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from typing import TypedDict
-from urllib.request import Request, urlopen
-
 from datetime import datetime
+from typing import TypedDict
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.core.security import OWNER_ROLE, ensure_roles
 from app.db.session import SessionLocal
-from app.core.config import get_settings
 from app.models import PreviewBundle, Role, SubmissionProcessingJob, User
 from app.modules.object_storage import get_object_store
 from app.modules.preview.service import manifest_payload
@@ -132,8 +132,12 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("ready preview bundle did not produce assets")
         if get_object_store().backend == "r2":
             for name in ("maidata_url", "track_url", "background_url"):
-                request = Request(assets[name], headers={"Range": "bytes=0-0"})
-                with urlopen(request, timeout=15) as response:
+                asset_url = assets[name]
+                if urlparse(str(asset_url)).scheme != "https":
+                    raise RuntimeError(f"{name} must be an https URL")
+                # URLs come from our own ready manifest, and the scheme is checked above.
+                request = Request(asset_url, headers={"Range": "bytes=0-0"})  # noqa: S310
+                with urlopen(request, timeout=15) as response:  # noqa: S310
                     if response.status not in {200, 206}:
                         raise RuntimeError(f"{name} returned HTTP {response.status}")
         print(f"preview manifest check passed ({payload['source_version']})")
