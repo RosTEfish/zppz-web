@@ -24,5 +24,17 @@ COPY bg /app/bg
 COPY banlist /app/banlist
 COPY ruleDetail /app/ruleDetail
 
+# API and workers run as uid/gid 1000. /app and /data are owned by that user so
+# a new volume mounted at /data is writable. A volume created earlier by a root
+# container stays root-owned until it is chowned once (see the Docker Compose
+# section of the README).
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid app --home-dir /home/app --create-home --shell /usr/sbin/nologin app \
+    && mkdir -p /data \
+    && chmod 755 /usr/local/bin/zppz-chart-validate \
+    && chown -R app:app /app /data /home/app
+
+ENV HOME=/home/app
 WORKDIR /app/backend
+USER app
 CMD ["sh", "-c", "python -m app.prepare && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1} --no-proxy-headers"]
