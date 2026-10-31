@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -12,18 +13,42 @@ from app.modules.object_storage import get_object_store
 from app.modules.submissions.service import absolute_storage_path
 from app.modules.submissions.support import MAX_BATCH_FILES, MAX_BATCH_SOURCE_BYTES
 
+# Bulk downloads can HEAD hundreds of objects. Overlap a few calls so the
+# request is not a serial N+1, without opening one connection per file.
+ZIP_HEAD_CONCURRENCY = 8
+
+
+def _head_objects_in_order(store, keys: list[str]) -> list[tuple[bool, object]]:
+    """Head each key with at most ZIP_HEAD_CONCURRENCY calls in flight.
+
+    Results stay aligned with `keys`. A failed head is `(False, exc)` and is
+    not raised, so size limits and missing-file reports still follow input order.
+    """
+    if not keys:
+        return []
+    worker_limit = min(ZIP_HEAD_CONCURRENCY, len(keys))
+
+    def _one(key: str) -> tuple[bool, object]:
+        try:
+            return True, store.head(key)
+        except Exception as exc:
+            return False, exc
+
+    with ThreadPoolExecutor(max_workers=worker_limit) as pool:
+        futures = [pool.submit(_one, key) for key in keys]
+        return [future.result() for future in futures]
+
 
 def _prepare_submission_zip(rows: list[Submission], filename: str) -> PreparedZip:
     if len(rows) > MAX_BATCH_FILES:
         raise HTTPException(status_code=413, detail=f"一次最多下载 {MAX_BATCH_FILES} 份投稿")
     store = get_object_store()
+    headed = _head_objects_in_order(store, [row.storage_path for row in rows])
     existing: list[tuple[Submission, int]] = []
     missing: list[Submission] = []
     total_size = 0
-    for row in rows:
-        try:
-            info = store.head(row.storage_path)
-        except Exception:
+    for row, (found, info) in zip(rows, headed, strict=True):
+        if not found:
             missing.append(row)
             continue
         total_size += info.size
