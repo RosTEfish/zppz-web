@@ -42,6 +42,46 @@ def test_validation_runs_on_pull_requests_and_deploy_reuses_artifacts():
     assert "cargo test --manifest-path tools/zppz-chart-validate/Cargo.toml" in workflow
 
 
+def _active_config_lines(text: str) -> str:
+    kept = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        kept.append(stripped)
+    return "\n".join(kept)
+
+
+def test_frontend_release_ships_precompressed_assets():
+    repo_root = Path(__file__).resolve().parents[2]
+    workflow = (repo_root / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    dockerfile = (repo_root / "frontend" / "Dockerfile").read_text(encoding="utf-8")
+    deploy_script = (repo_root / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")
+    docker_nginx = (repo_root / "infra" / "nginx" / "default.conf").read_text(encoding="utf-8")
+    sample = (repo_root / "infra" / "nginx" / "precompressed.conf.sample").read_text(encoding="utf-8")
+    package_json = (repo_root / "frontend" / "package.json").read_text(encoding="utf-8")
+    script = (repo_root / "frontend" / "scripts" / "precompress-dist.mjs").read_text(encoding="utf-8")
+
+    assert '"precompress": "node scripts/precompress-dist.mjs"' in package_json
+    assert "npm run precompress" in workflow
+    assert workflow.index("npm run precompress") < workflow.index("name: Upload validated frontend")
+    assert "frontend/dist/index.html.gz" in workflow
+    assert "frontend/dist/index.html.br" in workflow
+    assert "npm run precompress" in dockerfile
+    assert "gzip -9" not in dockerfile
+    assert "zstd" not in dockerfile.lower()
+    assert "zstd" not in _active_config_lines(sample).lower()
+    assert "zstd" not in _active_config_lines(docker_nginx).lower()
+    assert "zstdCompress" not in script
+    assert "gzip_static on;" in _active_config_lines(docker_nginx)
+    assert "brotli_static" not in _active_config_lines(docker_nginx)
+    assert "gzip_static on;" in _active_config_lines(sample)
+    assert "brotli_static on;" in _active_config_lines(sample)
+    assert "ngx_brotli" in sample
+    assert 'chmod a+x "$app_dir/frontend"' in deploy_script
+    assert 'chmod -R a+rX "$app_dir/frontend/dist"' in deploy_script
+
+
 def test_deploy_health_check_allows_bounded_cold_start():
     repo_root = Path(__file__).resolve().parents[2]
     deploy_script = (repo_root / "scripts" / "deploy_remote.sh").read_text(encoding="utf-8")

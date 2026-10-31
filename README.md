@@ -80,6 +80,12 @@ docker compose run --rm --no-deps --user root --entrypoint chown api -R 1000:100
 
 推送到 `main` 后，`.github/workflows/deploy.yml` 会自动完成前后端验证、构建发布包并通过 SSH 部署到服务器。Pull request 会跑同一套验证（后端 ruff、pytest 与 75% 行覆盖率门槛、Rust 测试、前端类型检查、测试、构建、包体预算，以及 Playwright 浏览器冒烟），但不会部署；部署任务直接使用这次验证产出的前端 `dist` 和谱面校验器，不再第二次编译。浏览器冒烟复用这次构建的 `frontend/dist`，并用临时 SQLite 起本地 API，不读取生产密钥。`DEPLOY_PORT` 读取 Actions Variable，未配置时使用 22。部署过程中会自动安装后端依赖、执行数据库迁移和默认数据初始化、导入当前 Ban 曲数据、同步谱面元数据与捆绑资源、检查 R2 读写权限，然后重启 systemd 服务并执行健康检查。R2 检查或健康检查失败时，流水线会尝试恢复上一版应用文件并让部署任务失败；不需要人工执行上线命令。
 
+验证任务在 `npm run build` 之后会执行 `npm run precompress`（`frontend/scripts/precompress-dist.mjs`），给足够大的 js/css/html/svg/json/wasm/txt/map 等文件写上同级 `.gz`（gzip 级别 9）和 `.br`（Brotli 质量 11）。png、jpg、webp、avif、woff2 等已压缩格式会跳过。部署任务把带这两个旁路文件的 `frontend/dist` 打进发布包；Docker 前端镜像走同一条命令。不要加 zstd。
+
+主机 Nginx 由运维管理。官方镜像只有 `gzip_static`，Brotli 需要单独安装 [ngx_brotli](https://github.com/google/ngx_brotli) 的 `ngx_http_brotli_static_module`。`infra/nginx/default.conf` 只开启 `gzip_static`（Brotli 指令保持注释，避免未装模块时 `nginx -t` 失败）。给线上 HTTPS 站点合并的片段在 `infra/nginx/precompressed.conf.sample`。`gzip_static` / `brotli_static` 只对 Nginx 自己从磁盘读取的文件生效，反代给 uvicorn 不会用到这些旁路文件。部署脚本会把 `frontend/dist` 设成其他用户可读（默认目录 `/opt/zppz/frontend/dist`）。
+
+下次带有 `.gz` / `.br` 的发布到位后，运维需要：安装 ngx_brotli（若 `nginx -V` 里还没有该模块）；在现有 TLS 站点打开 `brotli_static on;` 和 `gzip_static on;`，让 `/assets/` 等静态路径直接读 `frontend/dist`；`nginx -t` 通过后 reload。客户端同时接受 `br` 和 `gzip` 时应返回 `Content-Encoding: br`，只接受 gzip 时返回 `gzip`。
+
 生产部署要求在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中配置：
 
 - **必填 Variables**：`R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`SERVER_PIP_INDEX_URL`。
