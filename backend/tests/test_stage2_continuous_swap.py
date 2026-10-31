@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from alembic import command
 from alembic.config import Config
+from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -66,7 +67,7 @@ def set_phase(phase: str) -> None:
         event.settings.phase_mode = "manual"
         event.settings.manual_phase = phase
         if phase in {"submission_2", "submission_buffer"}:
-            now = datetime.utcnow()
+            now = utc_now_naive()
             existing = {row.phase for row in event.phases}
             if "submission_2" not in existing:
                 db.add(
@@ -362,7 +363,7 @@ def test_stage2_roll_is_rejected_after_deadline(client: TestClient) -> None:
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         assert event
-        now = datetime.utcnow()
+        now = utc_now_naive()
         db.add(EventPhase(event_id=event.id, phase="submission_2", starts_at=now - timedelta(hours=2), ends_at=now - timedelta(hours=1)))
         event.settings.phase_mode = "auto"
         event.settings.manual_phase = None
@@ -377,7 +378,7 @@ def test_submission_buffer_extends_continuous_swap_deadline(client: TestClient) 
     register(client, "player")
     register(client, "other")
     allocation = create_complete_allocation(free_songs=1)
-    now = datetime.utcnow().replace(microsecond=0)
+    now = utc_now_naive().replace(microsecond=0)
     buffer_end = now + timedelta(hours=2)
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
@@ -424,7 +425,7 @@ def test_0014_preserves_legacy_windows_and_merges_stage2(tmp_path: Path, monkeyp
     database_url = f"sqlite:///{(tmp_path / 'stage2-migration.db').as_posix()}"
     legacy_engine = sa.create_engine(database_url)
     Base.metadata.create_all(bind=legacy_engine)
-    now = datetime.utcnow().replace(microsecond=0)
+    now = utc_now_naive().replace(microsecond=0)
     with SessionLocal(bind=legacy_engine) as db:
         event = Event(name="Migration event", slug="migration-event", is_current=True)
         event.settings = EventSetting(

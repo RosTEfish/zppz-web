@@ -1,6 +1,6 @@
 import json
 import shutil
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -9,6 +9,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.time import as_utc, utc_now, utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -206,7 +207,7 @@ def test_delivery_signs_raw_body_and_retries_server_errors(client: TestClient, m
         delivery = db.scalar(select(WebhookDelivery).where(WebhookDelivery.endpoint_id == endpoint_id))
         delivery.status = "delivering"
         delivery.attempts = 1
-        delivery.lease_until = datetime.utcnow() + timedelta(seconds=60)
+        delivery.lease_until = utc_now_naive() + timedelta(seconds=60)
         delivery_id = delivery.id
         db.commit()
 
@@ -238,7 +239,7 @@ def test_delivery_signs_raw_body_and_retries_server_errors(client: TestClient, m
         integration = db.get(WebhookIntegration, integration_id)
         assert delivery.status == "retrying"
         assert delivery.response_status == 500
-        assert delivery.next_attempt_at > datetime.utcnow()
+        assert as_utc(delivery.next_attempt_at) > utc_now()
         body, headers = calls[0]
         timestamp = int(headers["X-ZPPZ-Timestamp"])
         expected = webhook_service.sign_payload(webhook_service.derive_webhook_secret(integration), timestamp, body)

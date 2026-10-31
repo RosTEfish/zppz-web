@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user, public_user_payload, require_role, user_payload
+from app.core.time import as_utc, utc_now
 from app.db.session import get_db
 from app.models import DrawAssignment, Submission, SwapRequest, SwapRound, User
 from app.modules.common import serialize_song
@@ -124,9 +125,9 @@ def _my_payload(db: Session, user: User, round_row: SwapRound | None = None, las
             )
         ).all()
     )
-    now = datetime.now(UTC)
+    now = utc_now()
     is_round_open = round_row is None or (
-        round_row.status == "open" and _utc_naive(_round_end(round_row)) > _utc_naive(now)
+        round_row.status == "open" and as_utc(_round_end(round_row)) > now
     )
     return {
         "is_open": phase.can("swap") and is_round_open,
@@ -169,12 +170,6 @@ def _audit_payload(rounds: list[SwapRound]) -> dict:
         "rounds": [_audit_round_payload(row) for row in rounds],
         "requests": [_roll_payload(request, include_user=True) for request in all_requests],
     }
-
-
-def _utc_naive(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 @router.get("/me")

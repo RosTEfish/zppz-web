@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.time import as_utc, utc_now, utc_now_naive
 from app.db.session import SessionLocal
 from app.models import AdminGuessArchive, GuessChart, PreviewBundle, Submission
 from app.modules.guess_game.importer import (
@@ -491,7 +492,7 @@ def preview_levels(
 
 def _token(key: str, mime: str, expires_at: datetime) -> str:
     payload = json.dumps(
-        {"key": key, "mime": mime, "exp": int(expires_at.timestamp())},
+        {"key": key, "mime": mime, "exp": int(as_utc(expires_at).timestamp())},
         separators=(",", ":"),
         sort_keys=True,
     ).encode()
@@ -509,7 +510,7 @@ def parse_local_asset_token(token: str) -> tuple[str, str]:
         if not hmac.compare_digest(expected, supplied):
             raise ValueError
         payload = json.loads(urlsafe_b64decode(encoded_text + "=" * (-len(encoded_text) % 4)))
-        if int(payload["exp"]) < int(datetime.utcnow().timestamp()):
+        if int(payload["exp"]) < int(utc_now().timestamp()):
             raise TimeoutError
         return str(payload["key"]), str(payload["mime"])
     except TimeoutError:
@@ -549,7 +550,7 @@ def manifest_payload(
     if bundle.status != "ready":
         return payload
 
-    expires_at = datetime.utcnow() + timedelta(seconds=settings.preview_url_ttl_seconds)
+    expires_at = utc_now_naive() + timedelta(seconds=settings.preview_url_ttl_seconds)
     store = get_object_store()
 
     def asset_url(key: str | None, mime: str | None) -> str | None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 from uuid import uuid4
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.security import get_current_user, is_owner, require_role
+from app.core.time import as_utc, utc_now, utc_now_naive
 from app.db.session import get_db
 from app.models import (
     DrawAssignment,
@@ -122,7 +123,7 @@ def _create_upload_intent(
     if not safe_file_name or any(ord(character) < 32 for character in safe_file_name):
         raise HTTPException(status_code=422, detail="投稿文件名无效")
     suffix = validate_upload_metadata(safe_file_name, file_size, content_type)
-    now = datetime.utcnow()
+    now = utc_now_naive()
     active_intent_statuses = ("pending", "uploaded", "processing")
     in_progress = None
     if submission_id is not None:
@@ -186,7 +187,7 @@ def _create_upload_intent(
         object_key=f"pending/events/{event_id}/users/{user.id}/{intent_id}{suffix}",
         acknowledge_ban_warning=acknowledge_ban_warning,
         is_admin=is_admin,
-        expires_at=datetime.utcnow() + timedelta(seconds=get_settings().upload_intent_ttl_seconds),
+        expires_at=utc_now_naive() + timedelta(seconds=get_settings().upload_intent_ttl_seconds),
     )
     db.add(intent)
     db.commit()
@@ -556,7 +557,7 @@ def _stage_delete_submission(db: Session, row: Submission) -> tuple[str, str | N
     )
     for job in active_jobs:
         job.status = "cancelled"
-        job.finished_at = datetime.utcnow()
+        job.finished_at = utc_now_naive()
         job.lease_until = None
         job.next_attempt_at = None
         job.error_code = "source_deleted"
@@ -713,7 +714,7 @@ async def upload_intent_local_content(
     if intent.is_admin and not _can_manage_submissions(user):
         raise HTTPException(status_code=403, detail="没有权限执行此操作")
     if intent.status not in {"pending", "processing"} or (
-        intent.status == "pending" and intent.expires_at < datetime.utcnow()
+        intent.status == "pending" and as_utc(intent.expires_at) < utc_now()
     ):
         raise HTTPException(status_code=410, detail="上传意图已失效")
     if request.headers.get("content-type", "").split(";", 1)[0].strip() != intent.content_type:
@@ -749,7 +750,7 @@ def _complete_intent(
     if intent.status == "failed":
         raise HTTPException(status_code=422, detail=intent.error_message or "上传校验失败")
     if intent.status not in {"pending", "processing"} or (
-        intent.status == "pending" and intent.expires_at < datetime.utcnow()
+        intent.status == "pending" and as_utc(intent.expires_at) < utc_now()
     ):
         try:
             get_object_store().delete(intent.object_key)
@@ -925,7 +926,7 @@ def _confirm_and_enqueue_intent(
     )
     if existing:
         return serialize_processing_job(db, existing, include_private=bool(intent.is_admin))
-    if intent.status != "pending" or intent.expires_at < datetime.utcnow():
+    if intent.status != "pending" or as_utc(intent.expires_at) < utc_now():
         if intent.status == "pending":
             intent.status = "expired"
             db.commit()

@@ -1,6 +1,6 @@
 import json
 import shutil
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.security import hash_password
+from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
 from app.main import app
@@ -113,8 +114,8 @@ def create_reset_fixture() -> tuple[int, int, int, int]:
         swap_round = SwapRound(
             event_id=event.id,
             round_number=1,
-            starts_at=datetime.utcnow(),
-            ends_at=datetime.utcnow() + timedelta(hours=1),
+            starts_at=utc_now_naive(),
+            ends_at=utc_now_naive() + timedelta(hours=1),
             random_seed="seed",
         )
         db.add(swap_round)
@@ -175,15 +176,15 @@ def create_reset_fixture() -> tuple[int, int, int, int]:
             EventPhase(
                 event_id=event.id,
                 phase="guess",
-                starts_at=datetime.utcnow(),
-                ends_at=datetime.utcnow() + timedelta(hours=1),
+                starts_at=utc_now_naive(),
+                ends_at=utc_now_naive() + timedelta(hours=1),
             )
         )
 
         other_event = Event(name="Old", slug="old", is_current=False, settings=EventSetting())
         db.add(other_event)
         db.flush()
-        db.add(UserSession(user_id=player.id, token_hash="player-session", expires_at=datetime.utcnow() + timedelta(hours=1)))
+        db.add(UserSession(user_id=player.id, token_hash="player-session", expires_at=utc_now_naive() + timedelta(hours=1)))
         db.commit()
 
         settings = get_settings()

@@ -1,7 +1,7 @@
 import json
 import os
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["ADMIN_SEED_PASSWORD"] = "change-me-please"
@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
+from app.core.time import utc_now_naive  # noqa: E402
 from app.db.bootstrap import seed_defaults, sync_permissions_file  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -91,7 +92,7 @@ def test_register_login_and_me(client: TestClient):
 
 
 def test_register_after_registration_deadline_is_assigned_guest(client: TestClient):
-    now = datetime.utcnow()
+    now = utc_now_naive()
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         assert event is not None
@@ -117,7 +118,7 @@ def test_register_after_registration_deadline_is_assigned_guest(client: TestClie
 
 
 def test_manual_registration_reopens_identity_choice_after_scheduled_deadline(client: TestClient):
-    now = datetime.utcnow()
+    now = utc_now_naive()
     with SessionLocal() as db:
         event = db.scalar(select(Event).where(Event.is_current.is_(True)))
         assert event is not None and event.settings is not None

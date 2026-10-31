@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from threading import Lock
 from time import monotonic
 
@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
+from app.core.time import as_utc, utc_now, utc_now_naive
 from app.db.session import get_db
 from app.models import Role, User, UserSession
 
@@ -132,7 +133,7 @@ def issue_session(response: Response, db: Session, user: User) -> str:
     session = UserSession(
         user_id=user.id,
         token_hash=hash_token(token),
-        expires_at=datetime.utcnow() + timedelta(hours=settings.session_expire_hours),
+        expires_at=utc_now_naive() + timedelta(hours=settings.session_expire_hours),
     )
     db.add(session)
     db.commit()
@@ -206,7 +207,7 @@ def _cleanup_expired_sessions(db: Session) -> None:
         expired_ids = list(
             db.scalars(
                 select(UserSession.id)
-                .where(UserSession.expires_at < datetime.utcnow())
+                .where(UserSession.expires_at < utc_now())
                 .order_by(UserSession.expires_at.asc())
                 .limit(_SESSION_CLEANUP_BATCH_SIZE)
             ).all()
@@ -223,7 +224,7 @@ def get_current_session(request: Request, db: Session = Depends(get_db)) -> User
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
     session = _lookup_session(db, token)
-    if not session or session.expires_at < datetime.utcnow():
+    if not session or as_utc(session.expires_at) < utc_now():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已过期")
     user = session.user
     if not user or not user.is_active:
@@ -240,7 +241,7 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
     if not token:
         return None
     session = _lookup_session(db, token)
-    if not session or session.expires_at < datetime.utcnow():
+    if not session or as_utc(session.expires_at) < utc_now():
         return None
     return session.user if session.user.is_active else None
 

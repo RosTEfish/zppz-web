@@ -1,12 +1,13 @@
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.security import SONG_POOL_IDENTITIES
+from app.core.time import as_naive_utc, as_utc, utc_now
 from app.models import (
     Event,
     EventPhase,
@@ -135,26 +136,14 @@ def rotate_current_event(db: Session, payload: EventRotateRequest) -> tuple[Even
     return archived, current, purged
 
 
-def _utc_naive(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
-def _utc_aware(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
 def _validate_phase_rows(payload: EventPhasesUpdate) -> list[tuple[str, datetime, datetime]]:
     if len(payload.phases) > len(PHASES):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Too many phase windows")
     names: set[str] = set()
     rows: list[tuple[str, datetime, datetime]] = []
     for item in payload.phases:
-        starts_at = _utc_naive(item.starts_at)
-        ends_at = _utc_naive(item.ends_at)
+        starts_at = as_naive_utc(item.starts_at)
+        ends_at = as_naive_utc(item.ends_at)
         if item.phase in names:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -190,26 +179,26 @@ def get_phase_schedule(db: Session, event: Event | None = None) -> dict:
         "phase_mode": event.settings.phase_mode,
         "manual_phase": event.settings.manual_phase,
         "timezone": "Asia/Shanghai",
-        "server_time": datetime.now(UTC),
+        "server_time": utc_now(),
         "phases": [
             {
                 "id": row.id,
                 "phase": row.phase,
-                "starts_at": _utc_aware(row.starts_at),
-                "ends_at": _utc_aware(row.ends_at),
+                "starts_at": as_utc(row.starts_at),
+                "ends_at": as_utc(row.ends_at),
             }
-            for row in sorted(event.phases, key=lambda item: (item.starts_at, item.ends_at))
+            for row in sorted(event.phases, key=lambda item: (as_utc(item.starts_at), as_utc(item.ends_at)))
             if row.phase in PHASES
         ],
         "phase_snapshots": [
             {
                 "id": row.id,
                 "original_phase": row.original_phase,
-                "starts_at": _utc_aware(row.starts_at),
-                "ends_at": _utc_aware(row.ends_at),
+                "starts_at": as_utc(row.starts_at),
+                "ends_at": as_utc(row.ends_at),
                 "source_id": row.source_id,
                 "migration_revision": row.migration_revision,
-                "created_at": _utc_aware(row.created_at) if row.created_at else None,
+                "created_at": as_utc(row.created_at) if row.created_at else None,
             }
             for row in snapshots
         ],

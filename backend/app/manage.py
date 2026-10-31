@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 from typing import TypedDict
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -13,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.security import OWNER_ROLE, ensure_roles
+from app.core.time import utc_now
 from app.db.session import SessionLocal
 from app.models import PreviewBundle, Role, SubmissionProcessingJob, User
 from app.modules.object_storage import get_object_store
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                 .values(
                     status="queued",
                     lease_until=None,
-                    next_attempt_at=datetime.utcnow(),
+                    next_attempt_at=utc_now(),
                     error_code="",
                     error_message="",
                 )

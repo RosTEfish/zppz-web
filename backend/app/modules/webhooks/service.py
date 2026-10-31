@@ -9,7 +9,7 @@ import mimetypes
 import secrets
 import socket
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import hash_token
+from app.core.time import as_naive_utc, as_utc, utc_from_timestamp, utc_iso, utc_now, utc_now_naive
 from app.db.session import SessionLocal
 from app.models import (
     AdminGuessArchive,
@@ -52,10 +53,6 @@ RETRY_DELAYS = (10, 30, 120, 600, 1800, 7200, 21600, 43200, 86400)
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _utc_iso(value: datetime) -> str:
-    return value.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
 
 
 def issue_integration_token() -> str:
@@ -200,7 +197,7 @@ def validate_callback_url(url: str) -> str:
 
 
 def _signed_headers(integration: WebhookIntegration, event_id: str, body: bytes) -> dict[str, str]:
-    timestamp = int(datetime.now(UTC).timestamp())
+    timestamp = int(utc_now().timestamp())
     signature = sign_payload(derive_webhook_secret(integration), timestamp, body)
     return {
         "Content-Type": "application/json",
@@ -218,7 +215,7 @@ def verify_endpoint(integration: WebhookIntegration, callback_url: str) -> None:
         "schema_version": 1,
         "event_id": event_id,
         "event_type": "webhook.verification",
-        "occurred_at": _utc_iso(datetime.utcnow()),
+        "occurred_at": utc_iso(utc_now()),
         "challenge": challenge,
     }
     body = _json(payload).encode()
@@ -281,11 +278,11 @@ def upsert_endpoint(
     try:
         verify_endpoint(integration, url)
     except HTTPException as exc:
-        endpoint.last_failure_at = datetime.utcnow()
+        endpoint.last_failure_at = utc_now_naive()
         endpoint.last_error = str(exc.detail)[:500]
         db.commit()
         raise
-    now = datetime.utcnow()
+    now = utc_now_naive()
     endpoint.status = "active"
     endpoint.verified_at = now
     endpoint.activated_at = endpoint.activated_at or now
@@ -511,7 +508,8 @@ def _snapshot_cover(db: Session, webhook_event: WebhookEvent, cover_path: str) -
 def _create_event_for_source(db: Session, event: Event, source: dict, state: ChartPublicationState | None) -> int:
     if state and state.fingerprint == source["fingerprint"]:
         return 0
-    now = datetime.utcnow()
+    now = utc_now()
+    stored = as_naive_utc(now)
     revision = state.revision + 1 if state else 1
     event_type = "chart.updated" if state else "chart.published"
     previous = json.loads(state.snapshot_json) if state else None
@@ -520,7 +518,7 @@ def _create_event_for_source(db: Session, event: Event, source: dict, state: Cha
         "schema_version": 1,
         "event_id": event_uid,
         "event_type": event_type,
-        "occurred_at": _utc_iso(now),
+        "occurred_at": utc_iso(now),
         "competition": {"id": event.id, "slug": event.slug, "name": event.name},
         "source": {"type": source["source_type"], "id": source["source_id"], "revision": revision},
         "chart_set": source["chart_set"],
@@ -543,7 +541,7 @@ def _create_event_for_source(db: Session, event: Event, source: dict, state: Cha
         state.fingerprint = source["fingerprint"]
         state.source_version = source["source_version"]
         state.snapshot_json = _json(source["chart_set"])
-        state.last_published_at = now
+        state.last_published_at = stored
     else:
         db.add(
             ChartPublicationState(
@@ -554,8 +552,8 @@ def _create_event_for_source(db: Session, event: Event, source: dict, state: Cha
                 fingerprint=source["fingerprint"],
                 source_version=source["source_version"],
                 snapshot_json=_json(source["chart_set"]),
-                first_published_at=now,
-                last_published_at=now,
+                first_published_at=stored,
+                last_published_at=stored,
             )
         )
     endpoints = db.scalars(
@@ -574,7 +572,7 @@ def _create_event_for_source(db: Session, event: Event, source: dict, state: Cha
                     webhook_event_id=event_uid,
                     endpoint_id=endpoint.id,
                     status="pending",
-                    next_attempt_at=now,
+                    next_attempt_at=stored,
                 )
             )
     try:
@@ -597,7 +595,7 @@ def materialize_publication_events() -> int:
         event = get_current_event(db)
         phase_status = get_phase_status(db, event)
         visibility_key = chart_visibility_key(phase_status)
-        now = datetime.utcnow()
+        now = utc_now_naive()
         if system_state is None:
             sources = _source_groups(db, event)
         else:
@@ -655,7 +653,7 @@ def seed_publication_baseline(db: Session) -> int:
     if db.get(WebhookSystemState, 1):
         return 0
     event = get_current_event(db)
-    now = datetime.utcnow()
+    now = utc_now_naive()
     created = 0
     for source in _source_groups(db, event):
         existing = db.scalar(
@@ -697,7 +695,7 @@ def _asset_signature(asset_id: str, endpoint_id: str, expires: int) -> str:
 
 
 def asset_url(asset: WebhookEventAsset, endpoint_id: str) -> tuple[str, int]:
-    expires = int(datetime.now(UTC).timestamp()) + get_settings().webhook_asset_url_ttl_seconds
+    expires = int(utc_now().timestamp()) + get_settings().webhook_asset_url_ttl_seconds
     signature = _asset_signature(asset.id, endpoint_id, expires)
     url = (
         f"{get_settings().public_base_url}{get_settings().api_prefix}/integrations/webhook-assets/{asset.id}"
@@ -707,7 +705,7 @@ def asset_url(asset: WebhookEventAsset, endpoint_id: str) -> tuple[str, int]:
 
 
 def validate_asset_signature(asset_id: str, endpoint_id: str, expires: int, signature: str) -> None:
-    now = int(datetime.now(UTC).timestamp())
+    now = int(utc_now().timestamp())
     if expires < now:
         raise HTTPException(status_code=403, detail="Cover URL has expired")
     expected = _asset_signature(asset_id, endpoint_id, expires)
@@ -728,14 +726,14 @@ def _delivery_payload(db: Session, event: WebhookEvent, endpoint: WebhookEndpoin
             "height": asset.height,
             "size_bytes": asset.size_bytes,
             "sha256": asset.sha256,
-            "expires_at": _utc_iso(datetime.utcfromtimestamp(expires)),
+            "expires_at": utc_iso(utc_from_timestamp(expires)),
         }
     payload["chart_set"]["cover"] = cover
     return payload
 
 
 def claim_next_delivery(db: Session) -> int | None:
-    now = datetime.utcnow()
+    now = utc_now()
     candidates = db.scalars(
         select(WebhookDelivery)
         .join(WebhookEndpoint, WebhookEndpoint.id == WebhookDelivery.endpoint_id)
@@ -807,34 +805,35 @@ def process_delivery(delivery_id: int) -> None:
                 error = f"Webhook returned HTTP {response.status_code}"
         except (httpx.HTTPError, HTTPException) as exc:
             error = str(exc.detail if isinstance(exc, HTTPException) else exc)
-        now = datetime.utcnow()
+        now = utc_now()
+        stored = as_naive_utc(now)
         if not error:
             delivery.status = "delivered"
-            delivery.delivered_at = now
+            delivery.delivered_at = stored
             delivery.next_attempt_at = None
             delivery.lease_until = None
             delivery.response_status = response_status
             delivery.last_error = ""
             endpoint.status = "active"
             endpoint.consecutive_failures = 0
-            endpoint.last_success_at = now
+            endpoint.last_success_at = stored
             endpoint.last_error = ""
         else:
             delivery.response_status = response_status
             delivery.last_error = error[:500]
             delivery.lease_until = None
             endpoint.consecutive_failures += 1
-            endpoint.last_failure_at = now
+            endpoint.last_failure_at = stored
             endpoint.last_error = error[:500]
             if endpoint.consecutive_failures >= 5:
                 endpoint.status = "failing"
-            if now - delivery.created_at >= RETRY_WINDOW:
+            if now - as_utc(delivery.created_at) >= RETRY_WINDOW:
                 delivery.status = "failed"
                 delivery.next_attempt_at = None
             else:
                 delay = RETRY_DELAYS[min(max(delivery.attempts - 1, 0), len(RETRY_DELAYS) - 1)]
                 delivery.status = "retrying"
-                delivery.next_attempt_at = now + timedelta(seconds=delay)
+                delivery.next_attempt_at = as_naive_utc(now + timedelta(seconds=delay))
         db.commit()
 
 
@@ -851,8 +850,9 @@ def create_test_delivery(db: Session, integration: WebhookIntegration) -> Webhoo
     endpoint = db.scalar(select(WebhookEndpoint).where(WebhookEndpoint.integration_id == integration.id))
     if not endpoint or endpoint.status not in {"active", "failing"}:
         raise HTTPException(status_code=409, detail="Webhook endpoint is not active")
-    now = datetime.utcnow()
-    if integration.last_test_at and now - integration.last_test_at < timedelta(minutes=1):
+    now = utc_now()
+    stored = as_naive_utc(now)
+    if integration.last_test_at and now - as_utc(integration.last_test_at) < timedelta(minutes=1):
         raise HTTPException(status_code=429, detail="A test event can be sent once per minute")
     current = get_current_event(db)
     event_uid = uuid4().hex
@@ -860,7 +860,7 @@ def create_test_delivery(db: Session, integration: WebhookIntegration) -> Webhoo
         "schema_version": 1,
         "event_id": event_uid,
         "event_type": "webhook.test",
-        "occurred_at": _utc_iso(now),
+        "occurred_at": utc_iso(now),
         "competition": {"id": current.id, "slug": current.slug, "name": current.name},
         "source": {"type": "test", "id": 0, "revision": 1},
         "chart_set": {
@@ -889,8 +889,8 @@ def create_test_delivery(db: Session, integration: WebhookIntegration) -> Webhoo
     object_key = None
     if test_cover.is_file():
         object_key = _snapshot_cover_file(db, webhook_event, test_cover)
-    db.add(WebhookDelivery(webhook_event_id=event_uid, endpoint_id=endpoint.id, status="pending", next_attempt_at=now))
-    integration.last_test_at = now
+    db.add(WebhookDelivery(webhook_event_id=event_uid, endpoint_id=endpoint.id, status="pending", next_attempt_at=stored))
+    integration.last_test_at = stored
     try:
         db.commit()
     except Exception:
@@ -908,14 +908,14 @@ def retry_failed_deliveries(db: Session, integration: WebhookIntegration) -> int
     result = db.execute(
         update(WebhookDelivery)
         .where(WebhookDelivery.endpoint_id == endpoint.id, WebhookDelivery.status == "failed")
-        .values(status="retrying", attempts=0, next_attempt_at=datetime.utcnow(), lease_until=None, last_error="")
+        .values(status="retrying", attempts=0, next_attempt_at=utc_now(), lease_until=None, last_error="")
     )
     db.commit()
     return int(result.rowcount or 0)
 
 
 def cleanup_expired_assets() -> int:
-    cutoff = datetime.utcnow() - timedelta(days=get_settings().webhook_asset_retention_days)
+    cutoff = utc_now() - timedelta(days=get_settings().webhook_asset_retention_days)
     with SessionLocal() as db:
         assets = list(
             db.scalars(

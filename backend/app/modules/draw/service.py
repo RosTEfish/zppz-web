@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
@@ -9,6 +8,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import SONG_POOL_IDENTITIES
+from app.core.time import as_utc, utc_now
 from app.models import DrawAssignment, Event, JTrackSubmission, Song, Submission, User
 from app.modules.events.phase_policy import SUBMISSION_PHASES, get_phase_status
 from app.modules.events.service import assert_song_pool_complete, get_current_event
@@ -189,9 +189,9 @@ def _run_global_draw_once(db: Session, *, allow_redraw: bool) -> list[DrawAssign
 
 def _draw_is_due(event, db: Session) -> bool:
     phase = get_phase_status(db, event)
-    now = datetime.utcnow()
+    now = utc_now()
     registration = next((row for row in event.phases if row.phase == "registration"), None)
-    if registration and _utc_naive(registration.ends_at) > now:
+    if registration and as_utc(registration.ends_at) > now:
         return False
     if _has_submission(db, event.id):
         return False
@@ -201,8 +201,8 @@ def _draw_is_due(event, db: Session) -> bool:
         return False
     guess = next((row for row in event.phases if row.phase == "guess"), None)
     if guess:
-        return _utc_naive(guess.starts_at) > now
-    scheduled_ends = [_utc_naive(row.ends_at) for row in event.phases]
+        return as_utc(guess.starts_at) > now
+    scheduled_ends = [as_utc(row.ends_at) for row in event.phases]
     return bool(scheduled_ends) and max(scheduled_ends) > now
 
 
@@ -317,7 +317,3 @@ def get_draw_results(db: Session, user_id: int | None = None) -> list[DrawAssign
     return _load_draw_results(db, user_id)
 
 
-def _utc_naive(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
