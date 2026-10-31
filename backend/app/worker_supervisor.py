@@ -6,13 +6,14 @@ import subprocess
 import sys
 import time
 
-SUBMISSION_WORKER_COUNT = 2
+# ser1 has about 1.6G RAM, so production runs one submission worker.
+SUBMISSION_WORKER_COUNT = 1
 children: list[subprocess.Popen] = []
 
 
 def _submission_worker_env(index: int) -> dict[str, str]:
     env = os.environ.copy()
-    # Only the first process expires upload intents, so two workers cannot
+    # Only the first process expires upload intents. Another worker must not
     # insert the same storage-deletion row.
     env["SUBMISSION_WORKER_CLEANUP"] = "1" if index == 0 else "0"
     return env
