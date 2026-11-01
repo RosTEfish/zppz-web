@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from alembic import command
-from alembic.config import Config
 from app.core.time import utc_now_naive
 from app.db.bootstrap import seed_defaults
 from app.db.session import Base, SessionLocal, engine
