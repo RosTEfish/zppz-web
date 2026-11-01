@@ -2,13 +2,13 @@ import json
 import logging
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from alembic import command
-from alembic.config import Config
-from alembic.migration import MigrationContext
-from alembic.script import ScriptDirectory
 from app.core.config import get_settings
 from app.core.security import OWNER_ROLE, USER_IDENTITIES, ensure_roles, hash_password
 from app.db.session import Base, engine
