@@ -14,7 +14,7 @@ certifi==2026.10.19
 pytest==8.3.4
 httpx==0.28.1
 Pillow==13.0.0
-py7zr==0.22.0
+py7zr==1.1.4
 rarfile==4.2
 zipstream-ng==1.9.2
 mutagen==1.47.0
