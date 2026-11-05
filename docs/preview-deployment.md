@@ -27,6 +27,11 @@
 6. 在 Cloudflare 响应头规则中，为
    `preview.przppz.club/miaview/*` 添加：
    `Content-Security-Policy: frame-ancestors https://www.przppz.club https://przppz.club`
+7. `preview.przppz.club`（公共 MiaView 静态资源 / R2 自定义域）必须保持
+   Cloudflare Rocket Loader 关闭。优先给 `preview.przppz.club/*` 单独建
+   Page Rule 或 Configuration Rule（Rocket Loader = Off），不要只依赖区域默认值。
+   Rocket Loader 会改写 ES module 脚本标签（`type="module"` 被换成不透明类型）
+   并注入 `rocket-loader.min.js`，导致 WASM/WebGL 播放器无法加载。
 
 不要公开现有投稿 Bucket，也不要将任何投稿对象复制到公共 Bucket。
 
@@ -83,6 +88,7 @@ R2 哈希不一致，发布脚本会报错提醒 bump，避免线上继续用旧
 
 - 未打开预览时 Network 中没有 MiaView / WASM 请求。
 - SDK 与 renderer 来自 `preview.przppz.club/miaview/…`。
+- renderer HTML 里 `player.mjs` 仍为 `type="module"`，且没有 `rocket-loader` 注入。
 - 谱面、音频和背景来自私有 R2 签名地址。
 - 手机端确认后才创建播放器实例。
 - 关闭弹窗后播放器实例被 `destroy()`，相关请求停止。
