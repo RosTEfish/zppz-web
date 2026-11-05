@@ -90,9 +90,13 @@ describe("Account settings page", () => {
     expect(screen.getByLabelText("登录账号")).toBeDisabled();
     expect(screen.getByLabelText("注册 QQ")).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: /显示名/ }), { target: { value: "新显示名" } });
+    const displayName = screen.getByRole("textbox", { name: /显示名/ });
+    await waitFor(() => expect(displayName).toHaveValue("原显示名"));
+    fireEvent.change(displayName, { target: { value: "新显示名" } });
+    expect(displayName).toHaveValue("新显示名");
     expect(screen.getByRole("radio", { name: /访客/ })).toBeEnabled();
     fireEvent.click(screen.getByRole("radio", { name: /访客/ }));
+    expect(screen.getByRole("radio", { name: /访客/ })).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
 
     await waitFor(() => expect(profileBodies).toEqual([{ display_name: "新显示名", identity: "guest" }]));
@@ -139,7 +143,10 @@ describe("Account settings page", () => {
     expect(screen.getByRole("radio", { name: /观众/ })).toBeDisabled();
     expect(screen.getByRole("radio", { name: /访客/ })).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: /显示名/ }), { target: { value: "赛中改名" } });
+    const displayName = screen.getByRole("textbox", { name: /显示名/ });
+    await waitFor(() => expect(displayName).toHaveValue("原显示名"));
+    fireEvent.change(displayName, { target: { value: "赛中改名" } });
+    expect(displayName).toHaveValue("赛中改名");
     fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
     await waitFor(() => expect(profileBodies).toEqual([{ display_name: "赛中改名", identity: "participant" }]));
   });

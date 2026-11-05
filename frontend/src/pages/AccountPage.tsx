@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -24,6 +24,8 @@ export default function AccountPage() {
   const { user, updateProfile, changePassword } = useAuth();
   const { phases, loading: configLoading } = useConfig();
   const [profile, setProfile] = useState({ displayName: user?.display_name ?? "", identity: (user?.identity ?? "audience") as Identity });
+  const draft = useRef(profile);
+  const profileDirty = useRef(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
@@ -34,13 +36,23 @@ export default function AccountPage() {
   const identityEditable = !configLoading && phases?.active_phase === "registration";
 
   useEffect(() => {
-    if (!user) return;
-    setProfile({ displayName: user.display_name, identity: user.identity as Identity });
+    if (!user || profileDirty.current) return;
+    const next = { displayName: user.display_name, identity: user.identity as Identity };
+    draft.current = next;
+    setProfile(next);
   }, [user]);
+
+  function editProfile(patch: Partial<typeof profile>) {
+    profileDirty.current = true;
+    const next = { ...draft.current, ...patch };
+    draft.current = next;
+    setProfile(next);
+  }
 
   async function saveProfile(event: FormEvent) {
     event.preventDefault();
-    const displayName = profile.displayName.trim();
+    const displayName = draft.current.displayName.trim();
+    const identity = draft.current.identity;
     setProfileError("");
     setProfileMessage("");
     if (!displayName) {
@@ -53,7 +65,11 @@ export default function AccountPage() {
     }
     setProfileBusy(true);
     try {
-      await updateProfile(displayName, profile.identity);
+      const saved = await updateProfile(displayName, identity);
+      const next = { displayName: saved.user.display_name, identity: saved.user.identity as Identity };
+      profileDirty.current = false;
+      draft.current = next;
+      setProfile(next);
       setProfileMessage("个人资料已保存");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "保存失败");
@@ -101,7 +117,7 @@ export default function AccountPage() {
             <TextField
               label="显示名"
               value={profile.displayName}
-              onChange={(event) => setProfile((current) => ({ ...current, displayName: event.target.value }))}
+              onChange={(event) => editProfile({ displayName: event.target.value })}
               required
               slotProps={{ htmlInput: { maxLength: 100 } }}
               helperText={`${profile.displayName.trim().length}/100，将用于投稿、评论和榜单展示`}
@@ -109,7 +125,7 @@ export default function AccountPage() {
             />
             <FormControl>
               <Typography component="legend" variant="body2" sx={{ mb: 1, fontWeight: 700 }}>赛事身份</Typography>
-              <RadioGroup row value={profile.identity} onChange={(event) => setProfile((current) => ({ ...current, identity: event.target.value as Identity }))} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 1.25 }}>
+              <RadioGroup row value={profile.identity} onChange={(event) => editProfile({ identity: event.target.value as Identity })} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 1.25 }}>
                 <IdentityChoice value="participant" selected={profile.identity === "participant"} disabled={!identityEditable} icon={<Trophy size={20} />} title="参赛者" description="投曲、参与曲目分配并提交参赛作品" />
                 <IdentityChoice value="audience" selected={profile.identity === "audience"} disabled={!identityEditable} icon={<Eye size={20} />} title="观众" description="为曲池投曲，不参与抽取，可浏览互动" />
                 <IdentityChoice value="guest" selected={profile.identity === "guest"} disabled={!identityEditable} icon={<UserRound size={20} />} title="访客" description="不投曲、不参与抽取，可浏览和互动" />
@@ -130,9 +146,9 @@ export default function AccountPage() {
               <Box><Typography variant="h3">账号安全</Typography><Typography variant="body2" color="text.secondary">更新密码并保护你的登录会话</Typography></Box>
             </Stack>
             <Divider />
-            <TextField label="当前密码" type="password" value={passwords.current} onChange={(event) => setPasswords((current) => ({ ...current, current: event.target.value }))} required autoComplete="current-password" />
-            <TextField label="新密码" type="password" value={passwords.next} onChange={(event) => setPasswords((current) => ({ ...current, next: event.target.value }))} required slotProps={{ htmlInput: { minLength: 6, maxLength: 128 } }} helperText="至少 6 个字符" autoComplete="new-password" />
-            <TextField label="确认新密码" type="password" value={passwords.confirm} onChange={(event) => setPasswords((current) => ({ ...current, confirm: event.target.value }))} required slotProps={{ htmlInput: { minLength: 6, maxLength: 128 } }} autoComplete="new-password" />
+            <TextField label="当前密码" type="password" value={passwords.current} onChange={(event) => { const value = event.target.value; setPasswords((current) => ({ ...current, current: value })); }} required autoComplete="current-password" />
+            <TextField label="新密码" type="password" value={passwords.next} onChange={(event) => { const value = event.target.value; setPasswords((current) => ({ ...current, next: value })); }} required slotProps={{ htmlInput: { minLength: 6, maxLength: 128 } }} helperText="至少 6 个字符" autoComplete="new-password" />
+            <TextField label="确认新密码" type="password" value={passwords.confirm} onChange={(event) => { const value = event.target.value; setPasswords((current) => ({ ...current, confirm: value })); }} required slotProps={{ htmlInput: { minLength: 6, maxLength: 128 } }} autoComplete="new-password" />
             <Alert severity="info">修改成功后，当前设备保持登录，其他设备将需要使用新密码重新登录。</Alert>
             {passwordError ? <Alert severity="error">{passwordError}</Alert> : null}
             {passwordMessage ? <Alert severity="success">{passwordMessage}</Alert> : null}
