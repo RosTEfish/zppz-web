@@ -34,7 +34,7 @@
     "@mui/x-data-grid": "^9.16.0",
     "@mui/x-date-pickers": "^9.16.0",
     "dayjs": "^1.11.23",
-    "lucide-react": "^0.546.0",
+    "lucide-react": "^1.64.0",
     "material-ui-confirm": "^4.0.0",
     "notistack": "^3.0.2",
     "openapi-fetch": "^0.17.0",
